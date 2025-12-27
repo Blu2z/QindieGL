@@ -371,6 +371,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\code\d3d_array.cpp" />
+    <ClCompile Include="..\code\d3d_buffer.cpp" />
     <ClCompile Include="..\code\d3d_blend.cpp" />
     <ClCompile Include="..\code\d3d_clip.cpp" />
     <ClCompile Include="..\code\d3d_combiners.cpp" />
@@ -411,6 +412,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\code\d3d_array.hpp" />
+    <ClInclude Include="..\code\d3d_buffer.hpp" />
     <ClInclude Include="..\code\d3d_combiners.hpp" />
     <ClInclude Include="..\code\d3d_extension.hpp" />
     <ClInclude Include="..\code\d3d_global.hpp" />
