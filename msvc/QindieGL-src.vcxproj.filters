@@ -46,6 +46,9 @@
     <ClCompile Include="..\code\d3d_array.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\code\d3d_buffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\code\d3d_blend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -160,6 +163,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\code\d3d_array.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\code\d3d_buffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\code\d3d_combiners.hpp">
