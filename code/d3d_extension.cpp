@@ -68,6 +68,9 @@ static glext_entry_point_t glext_EntryPoints[] =
 	GL_EXT_ENTRY_POINT( "ARB", "texture_compression", glCompressedTexSubImage3D, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "texture_compression", glGetCompressedTexImage, -1 ),
 
+	//GL_ARB_vertex_buffer_object
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBindBuffer, -1 ),
+
 	//GL_ARB_multitexture
 	GL_EXT_ENTRY_POINT( "ARB", "multitexture", glActiveTexture, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "multitexture", glClientActiveTexture, -1 ),
@@ -270,6 +273,7 @@ void D3DExtension_BuildExtensionsString()
 
 	//we implement them at driver level
 	ExtensionBuf.AddExtension( "GL_ARB_transpose_matrix" );
+	ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
 
 	checkCaps = (D3DPTADDRESSCAPS_MIRRORONCE);
 	if ((D3DGlobal.hD3DCaps.TextureAddressCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_ATI_texture_mirror_once" );
@@ -426,4 +430,3 @@ OPENGL_API PROC WINAPI wrap_wglGetDefaultProcAddress( LPCSTR s )
 {
 	return wrap_wglGetProcAddress(s);
 }
-
