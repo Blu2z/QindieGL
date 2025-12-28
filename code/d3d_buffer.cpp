@@ -18,10 +18,12 @@
 * along with this program; if not, write to the Free Software 
 * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 ***************************************************************************/
+#include <cstring>
 #include <unordered_map>
 
 #include "d3d_wrapper.hpp"
 #include "d3d_global.hpp"
+#include "d3d_utils.hpp"
 #include "d3d_buffer.hpp"
 
 static std::unordered_map<GLuint, D3DBufferObject> g_bufferObjects;
@@ -75,7 +77,7 @@ D3DBufferObject *D3DBuffer_GetObject( GLuint buffer, bool create )
 	object.name = buffer;
 	object.size = 0;
 	object.usage = GL_STATIC_DRAW_ARB;
-	object.data = nullptr;
+	object.storage = nullptr;
 
 	auto result = g_bufferObjects.emplace(buffer, object);
 	if (!result.second) return nullptr;
@@ -100,4 +102,45 @@ OPENGL_API GLboolean WINAPI glIsBufferARB( GLuint buffer )
 	}
 
 	return D3DBuffer_GetObject( buffer, false ) ? GL_TRUE : GL_FALSE;
+}
+
+OPENGL_API void WINAPI glBufferDataARB( GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage )
+{
+	GLuint binding = D3DBuffer_GetBinding( target );
+	if (D3DGlobal.lastError == E_INVALID_ENUM) {
+		return;
+	}
+	if (!binding) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return;
+	}
+
+	D3DBufferObject *bufferObject = D3DBuffer_GetObject( binding, true );
+	if (!bufferObject) {
+		D3DGlobal.lastError = E_OUTOFMEMORY;
+		return;
+	}
+
+	if (bufferObject->storage) {
+		UTIL_Free( bufferObject->storage );
+		bufferObject->storage = nullptr;
+	}
+
+	bufferObject->size = size;
+	bufferObject->usage = usage;
+
+	if (size > 0) {
+		bufferObject->storage = UTIL_Alloc( static_cast<int>(size) );
+		if (!bufferObject->storage) {
+			D3DGlobal.lastError = E_OUTOFMEMORY;
+			return;
+		}
+
+		// TODO: replace CPU storage with D3D buffer when VBO manager is ready
+		if (data) {
+			memcpy( bufferObject->storage, data, static_cast<size_t>(size) );
+		}
+	}
+
+	D3DGlobal.lastError = S_OK;
 }
