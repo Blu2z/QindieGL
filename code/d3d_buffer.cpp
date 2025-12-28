@@ -116,6 +116,44 @@ OPENGL_API void WINAPI glGenBuffersARB( GLsizei n, GLuint *buffers )
 	D3DGlobal.lastError = S_OK;
 }
 
+OPENGL_API void WINAPI glDeleteBuffersARB( GLsizei n, const GLuint *buffers )
+{
+	if (n <= 0 || !buffers) {
+		D3DGlobal.lastError = S_OK;
+		return;
+	}
+
+	for (GLsizei i = 0; i < n; ++i) {
+		GLuint id = buffers[i];
+		if (!id) {
+			continue;
+		}
+
+		auto it = g_bufferObjects.find(id);
+		if (it == g_bufferObjects.end()) {
+			continue;
+		}
+
+		if (g_arrayBufferBinding == id) {
+			g_arrayBufferBinding = 0;
+		}
+		if (g_elementArrayBufferBinding == id) {
+			g_elementArrayBufferBinding = 0;
+		}
+
+		if (it->second.storage) {
+			UTIL_Free( it->second.storage );
+			it->second.storage = nullptr;
+		}
+
+		// TODO: release D3D buffer when D3D-backed VBOs are added
+
+		g_bufferObjects.erase(it);
+	}
+
+	D3DGlobal.lastError = S_OK;
+}
+
 OPENGL_API GLboolean WINAPI glIsBufferARB( GLuint buffer )
 {
 	if (!buffer) {
