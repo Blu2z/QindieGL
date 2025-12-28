@@ -29,6 +29,8 @@
 static std::unordered_map<GLuint, D3DBufferObject> g_bufferObjects;
 static GLuint g_arrayBufferBinding = 0;
 static GLuint g_elementArrayBufferBinding = 0;
+// TODO: reuse deleted buffer IDs when glDeleteBuffersARB is implemented
+static GLuint g_nextBufferId = 1;
 
 void D3DBuffer_Bind( GLenum target, GLuint buffer )
 {
@@ -93,6 +95,25 @@ OPENGL_API void WINAPI glBindBuffer( GLenum target, GLuint buffer )
 OPENGL_API void WINAPI glBindBufferARB( GLenum target, GLuint buffer )
 {
 	glBindBuffer( target, buffer );
+}
+
+OPENGL_API void WINAPI glGenBuffersARB( GLsizei n, GLuint *buffers )
+{
+	if (n <= 0 || !buffers) {
+		D3DGlobal.lastError = S_OK;
+		return;
+	}
+
+	for (GLsizei i = 0; i < n; ++i) {
+		GLuint id = g_nextBufferId++;
+		if (!D3DBuffer_GetObject(id, true)) {
+			D3DGlobal.lastError = E_OUTOFMEMORY;
+			return;
+		}
+		buffers[i] = id;
+	}
+
+	D3DGlobal.lastError = S_OK;
 }
 
 OPENGL_API GLboolean WINAPI glIsBufferARB( GLuint buffer )
