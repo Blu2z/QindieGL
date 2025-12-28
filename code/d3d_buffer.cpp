@@ -92,3 +92,12 @@ OPENGL_API void WINAPI glBindBufferARB( GLenum target, GLuint buffer )
 {
 	glBindBuffer( target, buffer );
 }
+
+OPENGL_API GLboolean WINAPI glIsBufferARB( GLuint buffer )
+{
+	if (!buffer) {
+		return GL_FALSE;
+	}
+
+	return D3DBuffer_GetObject( buffer, false ) ? GL_TRUE : GL_FALSE;
+}
