@@ -25,6 +25,7 @@ extern void D3DExtension_BuildExtensionsString();
 
 extern OPENGL_API void WINAPI glBindBuffer(GLenum target, GLuint buffer);
 extern OPENGL_API void WINAPI glBindBufferARB(GLenum target, GLuint buffer);
+extern OPENGL_API GLboolean WINAPI glIsBufferARB(GLuint buffer);
 extern OPENGL_API void WINAPI glActiveTexture(GLenum texture);
 extern OPENGL_API void WINAPI glClientActiveTexture(GLenum texture);
 extern OPENGL_API void WINAPI glMultiTexCoord1s( GLenum target, GLshort s );
