@@ -25,6 +25,7 @@ extern void D3DExtension_BuildExtensionsString();
 
 extern OPENGL_API void WINAPI glBindBuffer(GLenum target, GLuint buffer);
 extern OPENGL_API void WINAPI glBindBufferARB(GLenum target, GLuint buffer);
+extern OPENGL_API void WINAPI glDeleteBuffersARB(GLsizei n, const GLuint *buffers);
 extern OPENGL_API void WINAPI glGenBuffersARB(GLsizei n, GLuint *buffers);
 extern OPENGL_API GLboolean WINAPI glIsBufferARB(GLuint buffer);
 extern OPENGL_API void WINAPI glBufferDataARB(GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage);
