@@ -26,7 +26,7 @@ struct D3DBufferObject
 	GLuint name;
 	GLsizeiptrARB size;
 	GLenum usage;
-	void *data;
+	void *storage;
 };
 
 extern void D3DBuffer_Bind( GLenum target, GLuint buffer );
