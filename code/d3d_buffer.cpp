@@ -80,6 +80,8 @@ D3DBufferObject *D3DBuffer_GetObject( GLuint buffer, bool create )
 	object.size = 0;
 	object.usage = GL_STATIC_DRAW_ARB;
 	object.storage = nullptr;
+	object.mapped = false;
+	object.mapAccess = GL_WRITE_ONLY_ARB;
 
 	auto result = g_bufferObjects.emplace(buffer, object);
 	if (!result.second) return nullptr;
@@ -114,6 +116,67 @@ OPENGL_API void WINAPI glGenBuffersARB( GLsizei n, GLuint *buffers )
 	}
 
 	D3DGlobal.lastError = S_OK;
+}
+
+OPENGL_API GLvoid* WINAPI glMapBufferARB( GLenum target, GLenum access )
+{
+	GLuint binding = D3DBuffer_GetBinding( target );
+	if (D3DGlobal.lastError == E_INVALID_ENUM) {
+		return nullptr;
+	}
+	if (!binding) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return nullptr;
+	}
+
+	D3DBufferObject *bufferObject = D3DBuffer_GetObject( binding, false );
+	if (!bufferObject || !bufferObject->storage) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return nullptr;
+	}
+
+	switch (access) {
+		case GL_READ_ONLY_ARB:
+		case GL_WRITE_ONLY_ARB:
+		case GL_READ_WRITE_ARB:
+			break;
+		default:
+			D3DGlobal.lastError = E_INVALID_ENUM;
+			return nullptr;
+	}
+
+	if (bufferObject->mapped) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return nullptr;
+	}
+
+	bufferObject->mapped = true;
+	bufferObject->mapAccess = access;
+	// TODO: map/unmap D3D buffer when hardware VBOs are implemented
+	D3DGlobal.lastError = S_OK;
+	return bufferObject->storage;
+}
+
+OPENGL_API GLboolean WINAPI glUnmapBufferARB( GLenum target )
+{
+	GLuint binding = D3DBuffer_GetBinding( target );
+	if (D3DGlobal.lastError == E_INVALID_ENUM) {
+		return GL_FALSE;
+	}
+	if (!binding) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return GL_FALSE;
+	}
+
+	D3DBufferObject *bufferObject = D3DBuffer_GetObject( binding, false );
+	if (!bufferObject || !bufferObject->mapped) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return GL_FALSE;
+	}
+
+	bufferObject->mapped = false;
+	D3DGlobal.lastError = S_OK;
+	return GL_TRUE;
 }
 
 OPENGL_API void WINAPI glDeleteBuffersARB( GLsizei n, const GLuint *buffers )
