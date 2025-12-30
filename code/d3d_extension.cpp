@@ -24,6 +24,7 @@
 #include "d3d_extension.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -206,6 +207,10 @@ static glext_entry_point_t glext_EntryPoints[] =
 	//WGL_ARB_render_texture
 	WGL_EXT_ENTRY_POINT( "ARB", "render_texture", wglBindTexImageARB, -2 ),
 	WGL_EXT_ENTRY_POINT( "ARB", "render_texture", wglReleaseTexImageARB, -2 ),
+	//WGL_ARB_pixel_format
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglChoosePixelFormatARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglGetPixelFormatAttribivARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglGetPixelFormatAttribfvARB, -2 ),
 
 	{ NULL, NULL }
 };
@@ -244,6 +249,29 @@ private:
 	int m_cur;
 	char *m_buf; 
 };
+
+namespace {
+	void LogExtensionsString(const char* label, const char* extensions)
+	{
+		if (!extensions || !*extensions) {
+			logPrintf("%s extensions: <empty>\n", label);
+			return;
+		}
+
+		const size_t length = std::strlen(extensions);
+		const size_t chunkSize = 1024;
+		for (size_t offset = 0; offset < length; offset += chunkSize) {
+			const size_t remaining = length - offset;
+			const size_t count = remaining < chunkSize ? remaining : chunkSize;
+			logPrintf("%s extensions [%u/%u]: %.*s\n",
+				label,
+				static_cast<unsigned int>(offset + count),
+				static_cast<unsigned int>(length),
+				static_cast<int>(count),
+				extensions + offset);
+		}
+	}
+}
 
 void D3DExtension_BuildExtensionsString()
 {
@@ -389,14 +417,19 @@ void D3DExtension_BuildExtensionsString()
 
 	//we implement it at driver level
 	ExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	ExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
 	ExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	//add WGL extensions
 	WExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	WExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
 	WExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	D3DGlobal.szExtensions = ExtensionBuf.CopyBuffer();
 	D3DGlobal.szWExtensions = WExtensionBuf.CopyBuffer();
+
+	LogExtensionsString("GL", D3DGlobal.szExtensions);
+	LogExtensionsString("WGL", D3DGlobal.szWExtensions);
 }
 
 //=========================================
