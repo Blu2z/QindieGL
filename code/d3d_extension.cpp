@@ -198,6 +198,11 @@ static glext_entry_point_t glext_EntryPoints[] =
 	//WGL_ARB_extensions_string
 	WGL_EXT_ENTRY_POINT( "ARB", "extensions_string", wglGetExtensionsStringARB, -2 ),
 
+	//WGL_ARB_pixel_format
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglChoosePixelFormatARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglGetPixelFormatAttribivARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglGetPixelFormatAttribfvARB, -2 ),
+
 	{ NULL, NULL }
 };
 
@@ -403,10 +408,12 @@ void D3DExtension_BuildExtensionsString()
 
 	//we implement it at driver level
 	ExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	ExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
 	ExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	//add WGL extensions
 	WExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	WExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
 	WExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	D3DGlobal.szExtensions = ExtensionBuf.CopyBuffer();
