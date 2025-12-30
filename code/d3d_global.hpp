@@ -161,6 +161,7 @@ typedef struct D3DGlobal_s
 		DWORD				texcoordFix;
 		DWORD				drawcallFastPath;
 		DWORD				useSSE;
+		DWORD				enableARBProgramsStub;
 		struct {
 			DWORD               remixapi;
 			DWORD               orthovertexshader;

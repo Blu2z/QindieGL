@@ -40,6 +40,143 @@ OPENGL_API const char* WINAPI wglGetExtensionsStringARB( HDC )
 	return D3DGlobal.szWExtensions;
 }
 
+namespace {
+	void ARBProgramStub( const char *name )
+	{
+		logPrintf( "WARNING: ARB program stub '%s' called; returning GL_INVALID_OPERATION.\n", name ? name : "<unknown>" );
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+	}
+}
+
+OPENGL_API void WINAPI glProgramStringARB( GLenum, GLenum, GLsizei, const GLvoid * )
+{
+	ARBProgramStub( "glProgramStringARB" );
+}
+
+OPENGL_API void WINAPI glBindProgramARB( GLenum, GLuint )
+{
+	ARBProgramStub( "glBindProgramARB" );
+}
+
+OPENGL_API void WINAPI glDeleteProgramsARB( GLsizei, const GLuint * )
+{
+	ARBProgramStub( "glDeleteProgramsARB" );
+}
+
+OPENGL_API void WINAPI glGenProgramsARB( GLsizei n, GLuint *programs )
+{
+	if (programs && n > 0) {
+		std::fill( programs, programs + n, 0 );
+	}
+	ARBProgramStub( "glGenProgramsARB" );
+}
+
+OPENGL_API void WINAPI glProgramEnvParameter4dARB( GLenum, GLuint, GLdouble, GLdouble, GLdouble, GLdouble )
+{
+	ARBProgramStub( "glProgramEnvParameter4dARB" );
+}
+
+OPENGL_API void WINAPI glProgramEnvParameter4dvARB( GLenum, GLuint, const GLdouble * )
+{
+	ARBProgramStub( "glProgramEnvParameter4dvARB" );
+}
+
+OPENGL_API void WINAPI glProgramEnvParameter4fARB( GLenum, GLuint, GLfloat, GLfloat, GLfloat, GLfloat )
+{
+	ARBProgramStub( "glProgramEnvParameter4fARB" );
+}
+
+OPENGL_API void WINAPI glProgramEnvParameter4fvARB( GLenum, GLuint, const GLfloat * )
+{
+	ARBProgramStub( "glProgramEnvParameter4fvARB" );
+}
+
+OPENGL_API void WINAPI glProgramLocalParameter4dARB( GLenum, GLuint, GLdouble, GLdouble, GLdouble, GLdouble )
+{
+	ARBProgramStub( "glProgramLocalParameter4dARB" );
+}
+
+OPENGL_API void WINAPI glProgramLocalParameter4dvARB( GLenum, GLuint, const GLdouble * )
+{
+	ARBProgramStub( "glProgramLocalParameter4dvARB" );
+}
+
+OPENGL_API void WINAPI glProgramLocalParameter4fARB( GLenum, GLuint, GLfloat, GLfloat, GLfloat, GLfloat )
+{
+	ARBProgramStub( "glProgramLocalParameter4fARB" );
+}
+
+OPENGL_API void WINAPI glProgramLocalParameter4fvARB( GLenum, GLuint, const GLfloat * )
+{
+	ARBProgramStub( "glProgramLocalParameter4fvARB" );
+}
+
+OPENGL_API void WINAPI glGetProgramEnvParameterdvARB( GLenum, GLuint, GLdouble *params )
+{
+	if (params) {
+		params[0] = 0.0;
+		params[1] = 0.0;
+		params[2] = 0.0;
+		params[3] = 0.0;
+	}
+	ARBProgramStub( "glGetProgramEnvParameterdvARB" );
+}
+
+OPENGL_API void WINAPI glGetProgramEnvParameterfvARB( GLenum, GLuint, GLfloat *params )
+{
+	if (params) {
+		params[0] = 0.0f;
+		params[1] = 0.0f;
+		params[2] = 0.0f;
+		params[3] = 0.0f;
+	}
+	ARBProgramStub( "glGetProgramEnvParameterfvARB" );
+}
+
+OPENGL_API void WINAPI glGetProgramLocalParameterdvARB( GLenum, GLuint, GLdouble *params )
+{
+	if (params) {
+		params[0] = 0.0;
+		params[1] = 0.0;
+		params[2] = 0.0;
+		params[3] = 0.0;
+	}
+	ARBProgramStub( "glGetProgramLocalParameterdvARB" );
+}
+
+OPENGL_API void WINAPI glGetProgramLocalParameterfvARB( GLenum, GLuint, GLfloat *params )
+{
+	if (params) {
+		params[0] = 0.0f;
+		params[1] = 0.0f;
+		params[2] = 0.0f;
+		params[3] = 0.0f;
+	}
+	ARBProgramStub( "glGetProgramLocalParameterfvARB" );
+}
+
+OPENGL_API void WINAPI glGetProgramivARB( GLenum, GLenum, GLint *params )
+{
+	if (params) {
+		params[0] = 0;
+	}
+	ARBProgramStub( "glGetProgramivARB" );
+}
+
+OPENGL_API void WINAPI glGetProgramStringARB( GLenum, GLenum, GLvoid *string )
+{
+	if (string) {
+		static_cast<char*>(string)[0] = '\0';
+	}
+	ARBProgramStub( "glGetProgramStringARB" );
+}
+
+OPENGL_API GLboolean WINAPI glIsProgramARB( GLuint )
+{
+	ARBProgramStub( "glIsProgramARB" );
+	return GL_FALSE;
+}
+
 typedef struct glext_entry_point_s
 {
 	const char *name;
@@ -125,6 +262,27 @@ static glext_entry_point_t glext_EntryPoints[] =
 	GL_EXT_ENTRY_POINT( "ARB", "transpose_matrix", glLoadTransposeMatrixd, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "transpose_matrix", glMultTransposeMatrixf, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "transpose_matrix", glMultTransposeMatrixd, -1 ),
+
+	//GL_ARB_program (stub)
+	{ "glProgramStringARB", "GL_ARB_program", -1, (PROC)glProgramStringARB },
+	{ "glBindProgramARB", "GL_ARB_program", -1, (PROC)glBindProgramARB },
+	{ "glDeleteProgramsARB", "GL_ARB_program", -1, (PROC)glDeleteProgramsARB },
+	{ "glGenProgramsARB", "GL_ARB_program", -1, (PROC)glGenProgramsARB },
+	{ "glProgramEnvParameter4dARB", "GL_ARB_program", -1, (PROC)glProgramEnvParameter4dARB },
+	{ "glProgramEnvParameter4dvARB", "GL_ARB_program", -1, (PROC)glProgramEnvParameter4dvARB },
+	{ "glProgramEnvParameter4fARB", "GL_ARB_program", -1, (PROC)glProgramEnvParameter4fARB },
+	{ "glProgramEnvParameter4fvARB", "GL_ARB_program", -1, (PROC)glProgramEnvParameter4fvARB },
+	{ "glProgramLocalParameter4dARB", "GL_ARB_program", -1, (PROC)glProgramLocalParameter4dARB },
+	{ "glProgramLocalParameter4dvARB", "GL_ARB_program", -1, (PROC)glProgramLocalParameter4dvARB },
+	{ "glProgramLocalParameter4fARB", "GL_ARB_program", -1, (PROC)glProgramLocalParameter4fARB },
+	{ "glProgramLocalParameter4fvARB", "GL_ARB_program", -1, (PROC)glProgramLocalParameter4fvARB },
+	{ "glGetProgramEnvParameterdvARB", "GL_ARB_program", -1, (PROC)glGetProgramEnvParameterdvARB },
+	{ "glGetProgramEnvParameterfvARB", "GL_ARB_program", -1, (PROC)glGetProgramEnvParameterfvARB },
+	{ "glGetProgramLocalParameterdvARB", "GL_ARB_program", -1, (PROC)glGetProgramLocalParameterdvARB },
+	{ "glGetProgramLocalParameterfvARB", "GL_ARB_program", -1, (PROC)glGetProgramLocalParameterfvARB },
+	{ "glGetProgramivARB", "GL_ARB_program", -1, (PROC)glGetProgramivARB },
+	{ "glGetProgramStringARB", "GL_ARB_program", -1, (PROC)glGetProgramStringARB },
+	{ "glIsProgramARB", "GL_ARB_program", -1, (PROC)glIsProgramARB },
 
 	//GL_EXT_blend_color
 	GL_EXT_ENTRY_POINT( "EXT", "blend_color", glBlendColor, -1 ),
@@ -212,6 +370,16 @@ public:
 	{
 		return UTIL_AllocString( !m_cur ? "" : m_buf );
 	}
+	void AddExtensionUnchecked( const char *ext )
+	{
+		if (!ext) return;
+		size_t len = strlen(ext);
+		CheckSpace( len + 2 );
+		strcpy_s( m_buf + m_cur, len + 1, ext );
+		*(m_buf + m_cur + len) = ' ';
+		*(m_buf + m_cur + len + 1) = '\0';
+		m_cur += len + 1;
+	}
 	void AddExtension( const char *ext )
 	{
 		if (!ext) return;
@@ -248,6 +416,12 @@ void D3DExtension_BuildExtensionsString()
 
 	if (D3DGlobal.maxActiveTMU > 1) ExtensionBuf.AddExtension( "GL_ARB_multitexture" );
 	ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
+
+	if (D3DGlobal.settings.enableARBProgramsStub) {
+		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_program" );
+		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_vertex_program" );
+		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_fragment_program" );
+	}
 	
 	checkCaps = (D3DPTADDRESSCAPS_BORDER);
 	if ((D3DGlobal.hD3DCaps.TextureAddressCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_ARB_texture_border_clamp" );
@@ -398,6 +572,14 @@ namespace {
 	std::vector<std::string> gMissingProcs;
 	std::vector<std::string> gDisabledProcs;
 
+	bool IsARBProgramExtension( const char *extname )
+	{
+		return extname
+			&& (!strcmp( extname, "GL_ARB_program" )
+				|| !strcmp( extname, "GL_ARB_vertex_program" )
+				|| !strcmp( extname, "GL_ARB_fragment_program" ));
+	}
+
 	void AddUniqueProc(std::vector<std::string>& list, const std::string& name)
 	{
 		if (name.empty()) {
@@ -441,7 +623,13 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 			break;
 
 		if (glext_EntryPoints[i].enabled < 0)
-			glext_EntryPoints[i].enabled = D3DGlobal_GetRegistryValue(glext_EntryPoints[i].extname, "Extensions", glext_EntryPoints[i].enabled==-1 ? 0 : 1);
+		{
+			if (IsARBProgramExtension(glext_EntryPoints[i].extname)) {
+				glext_EntryPoints[i].enabled = D3DGlobal.settings.enableARBProgramsStub ? 1 : 0;
+			} else {
+				glext_EntryPoints[i].enabled = D3DGlobal_GetRegistryValue(glext_EntryPoints[i].extname, "Extensions", glext_EntryPoints[i].enabled==-1 ? 0 : 1);
+			}
+		}
 
 		if (!strcmp(s, glext_EntryPoints[i].name)) {
 			if (!glext_EntryPoints[i].enabled) {
