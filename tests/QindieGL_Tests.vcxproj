@@ -123,6 +123,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="buffer_multitex.cpp" />
     <ClCompile Include="texgen.cpp" />
     <ClCompile Include="_main.cpp" />
   </ItemGroup>

@@ -534,7 +534,10 @@ template<typename T> inline void D3D_SetTexCoord( GLenum target, T s, T t, T r, 
 	//HACK: it seems that drivers were fixed after Carmack's code, not vise versa : )
 	int stage = target;
 	if ( stage >= GL_TEXTURE0_ARB ) stage -= GL_TEXTURE0_ARB;
-	if ( stage < 0 || stage >= D3DGlobal.maxActiveTMU ) return;
+	if ( stage < 0 || stage >= D3DGlobal.maxActiveTMU ) {
+		D3DGlobal.lastError = E_INVALID_ENUM;
+		return;
+	}
 
 	D3DState.CurrentState.isSet.bits.texcoord |= DWORD( num -1 ) << (stage * 2);
 
@@ -547,6 +550,8 @@ template<typename T> inline void D3D_SetTexCoord( GLenum target, T s, T t, T r, 
 		D3DState.CurrentState.currentTexCoord[stage][0] += D3DState.TransformState.texcoordFix[0];
 		D3DState.CurrentState.currentTexCoord[stage][1] += D3DState.TransformState.texcoordFix[1];
 	}
+
+	D3DGlobal.lastError = S_OK;
 }
 
 OPENGL_API void WINAPI glColor3b( GLbyte red, GLbyte green, GLbyte blue )
