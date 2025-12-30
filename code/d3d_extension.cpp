@@ -200,6 +200,21 @@ static glext_entry_point_t glext_EntryPoints[] =
 	{ NULL, NULL }
 };
 
+static bool D3DExtension_CheckDepthTextureSupport()
+{
+	const D3DFORMAT depthFormats[] = { D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D16, D3DFMT_D32, D3DFMT_UNKNOWN };
+	D3DFORMAT adapterFormat = D3DGlobal.hCurrentMode.Format;
+
+	for (int i = 0; depthFormats[i] != D3DFMT_UNKNOWN; ++i) {
+		HRESULT hr = D3DGlobal.pD3D->CheckDeviceFormat(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, adapterFormat, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, depthFormats[i]);
+		if (SUCCEEDED(hr)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 class CExtensionBuf
 {
 public:
@@ -248,6 +263,11 @@ void D3DExtension_BuildExtensionsString()
 
 	if (D3DGlobal.maxActiveTMU > 1) ExtensionBuf.AddExtension( "GL_ARB_multitexture" );
 	ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
+
+	if (D3DExtension_CheckDepthTextureSupport()) {
+		ExtensionBuf.AddExtension( "GL_ARB_depth_texture" );
+		ExtensionBuf.AddExtension( "GL_SGIX_depth_texture" );
+	}
 	
 	checkCaps = (D3DPTADDRESSCAPS_BORDER);
 	if ((D3DGlobal.hD3DCaps.TextureAddressCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_ARB_texture_border_clamp" );
