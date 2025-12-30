@@ -82,6 +82,9 @@ extern OPENGL_API void WINAPI glCopyTexImage3D(GLenum target,  GLint level,  GLe
 extern OPENGL_API void WINAPI glCopyTexSubImage3D(GLenum target,  GLint level,  GLint xoffset,  GLint yoffset,  GLint zoffset,  GLint x,  GLint y,  GLint z,  GLsizei width,  GLsizei height,  GLsizei depth);
 extern OPENGL_API BOOL WINAPI wglSwapInterval(int interval);
 extern OPENGL_API int WINAPI wglGetSwapInterval();
+extern OPENGL_API BOOL WINAPI wglChoosePixelFormatARB(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
+extern OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues);
+extern OPENGL_API BOOL WINAPI wglGetPixelFormatAttribfvARB(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues);
 extern OPENGL_API void WINAPI glSelectTexture(GLenum texture);
 extern OPENGL_API void WINAPI glMTexCoord2f( GLenum target, GLfloat s, GLfloat t );
 extern OPENGL_API void WINAPI glMTexCoord2fv( GLenum target, const GLfloat *v );
