@@ -29,6 +29,7 @@ extern OPENGL_API void WINAPI glDeleteBuffersARB(GLsizei n, const GLuint *buffer
 extern OPENGL_API void WINAPI glGenBuffersARB(GLsizei n, GLuint *buffers);
 extern OPENGL_API GLboolean WINAPI glIsBufferARB(GLuint buffer);
 extern OPENGL_API void WINAPI glBufferDataARB(GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage);
+extern OPENGL_API void WINAPI glGetBufferSubDataARB(GLenum target, GLintptrARB offset, GLsizeiptrARB size, GLvoid *data);
 extern OPENGL_API GLvoid* WINAPI glMapBufferARB(GLenum target, GLenum access);
 extern OPENGL_API GLboolean WINAPI glUnmapBufferARB(GLenum target);
 extern OPENGL_API void WINAPI glActiveTexture(GLenum texture);
