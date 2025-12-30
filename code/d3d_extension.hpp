@@ -39,6 +39,7 @@ extern OPENGL_API void WINAPI glMultiTexCoord1s( GLenum target, GLshort s );
 extern OPENGL_API void WINAPI glMultiTexCoord1i( GLenum target, GLint s );
 extern OPENGL_API void WINAPI glMultiTexCoord1f( GLenum target, GLfloat s );
 extern OPENGL_API void WINAPI glMultiTexCoord1d( GLenum target, GLdouble s );
+extern OPENGL_API void WINAPI glMultiTexCoord1dEXT( GLenum target, GLdouble s );
 extern OPENGL_API void WINAPI glMultiTexCoord2s( GLenum target, GLshort s, GLshort t );
 extern OPENGL_API void WINAPI glMultiTexCoord2i( GLenum target, GLint s, GLint t );
 extern OPENGL_API void WINAPI glMultiTexCoord2f( GLenum target, GLfloat s, GLfloat t );
@@ -51,6 +52,7 @@ extern OPENGL_API void WINAPI glMultiTexCoord4s( GLenum target, GLshort s, GLsho
 extern OPENGL_API void WINAPI glMultiTexCoord4i( GLenum target, GLint s, GLint t, GLint r, GLint q );
 extern OPENGL_API void WINAPI glMultiTexCoord4f( GLenum target, GLfloat s, GLfloat t, GLfloat r, GLfloat q );
 extern OPENGL_API void WINAPI glMultiTexCoord4d( GLenum target, GLdouble s, GLdouble t, GLdouble r, GLdouble q );
+extern OPENGL_API void WINAPI glMultiTexCoord4sdARB( GLenum target, GLshort s, GLshort t, GLshort r, GLshort q );
 extern OPENGL_API void WINAPI glMultiTexCoord1sv( GLenum target, const GLshort *v );
 extern OPENGL_API void WINAPI glMultiTexCoord1iv( GLenum target, const GLint *v );
 extern OPENGL_API void WINAPI glMultiTexCoord1fv( GLenum target, const GLfloat *v );
