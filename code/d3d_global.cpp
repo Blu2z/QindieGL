@@ -975,6 +975,7 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 	D3DGlobal.settings.drawcallFastPath = D3DGlobal_GetRegistryValue( "DrawCallFastPath", "Settings", 0 );
 	D3DGlobal.settings.texcoordFix = D3DGlobal_GetRegistryValue( "TexCoordFix", "Settings", 0 );
 	D3DGlobal.settings.useSSE = D3DGlobal_GetRegistryValue( "UseSSE", "Settings", 0 );
+	D3DGlobal.settings.enableARBProgramsStub = D3DGlobal_GetRegistryValue( "EnableARBProgramsStub", "Settings", 0 );
 
 	//Note: remixapi also read in D3DGlobal_InitializeDirect3D above
 	D3DGlobal.settings.game.remixapi = D3DGlobal_ReadGameConf( "remixapi" );
