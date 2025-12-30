@@ -36,22 +36,6 @@ static void on_glVertexPointer( GLint size, GLenum type, GLsizei stride, const G
 // Vertex arrays
 //==================================================================================
 
-OPENGL_API void WINAPI glBindBuffer( GLenum target, GLuint buffer )
-{
-	switch (target) {
-	case GL_ARRAY_BUFFER_ARB:
-		D3DState.ClientVertexArrayState.arrayBufferBinding = buffer;
-		break;
-	case GL_ELEMENT_ARRAY_BUFFER_ARB:
-		D3DState.ClientVertexArrayState.elementArrayBufferBinding = buffer;
-		break;
-	default:
-		logPrintf("WARNING: glBindBuffer - invalid target 0x%x\n", target);
-		D3DGlobal.lastError = E_INVALID_ENUM;
-		break;
-	}
-}
-
 template<typename T> 
 static void D3DVA_CopyArrayToFloatsInternal( const D3DVAInfo *pVAInfo, int index, GLfloat *out )
 {
