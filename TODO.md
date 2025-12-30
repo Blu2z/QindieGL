@@ -8,5 +8,5 @@
 - glUnmapBufferARB — ✅ реализован
 - glDeleteBuffersARB — ✅ реализован
 - glGetBufferSubDataARB — ✅ реализован
-- glMultiTexCoord1dEXT — ❌ нет реализации
-- glMultiTexCoord4sdARB — ❌ нет реализации
+- glMultiTexCoord1dEXT — ✅ реализован
+- glMultiTexCoord4sdARB — ✅ реализован
