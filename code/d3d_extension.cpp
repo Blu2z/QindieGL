@@ -23,6 +23,10 @@
 #include "d3d_utils.hpp"
 #include "d3d_extension.hpp"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 //This will enable export of our custom extensions
 #define ALLOW_CHS_EXTENSIONS
 
@@ -390,6 +394,22 @@ void D3DExtension_BuildExtensionsString()
 //-----------------------------------------
 // Return a requested extension proc address
 //=========================================
+namespace {
+	std::vector<std::string> gMissingProcs;
+	std::vector<std::string> gDisabledProcs;
+
+	void AddUniqueProc(std::vector<std::string>& list, const std::string& name)
+	{
+		if (name.empty()) {
+			return;
+		}
+
+		if (std::find(list.begin(), list.end(), name) == list.end()) {
+			list.emplace_back(name);
+		}
+	}
+}
+
 static const char *gMissingProcName = NULL;
 static const char *gMissingProcExt = NULL;
 static void WINAPI MissingProcStub()
@@ -441,6 +461,7 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 		gMissingProcName = s;
 		gMissingProcExt = pszDisabledExt;
 		logPrintf("WARNING: wglGetProcAddress: returning stub for disabled proc '%s' (extension '%s')\n", s, pszDisabledExt);
+		AddUniqueProc(gDisabledProcs, std::string(s).append(" (").append(pszDisabledExt).append(")"));
 	}
 	else
 	{
@@ -455,6 +476,7 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 			gMissingProcName = s;
 			gMissingProcExt = NULL;
 			logPrintf("WARNING: wglGetProcAddress: returning stub for unknown proc '%s'\n", s);
+			AddUniqueProc(gMissingProcs, s);
 		}
 	}
 
@@ -464,4 +486,26 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 OPENGL_API PROC WINAPI wrap_wglGetDefaultProcAddress( LPCSTR s )
 {
 	return wrap_wglGetProcAddress(s);
+}
+
+void D3DExtension_DumpMissingProcs()
+{
+	if (gMissingProcs.empty() && gDisabledProcs.empty()) {
+		return;
+	}
+
+	logPrintf("---- Missing/disabled OpenGL entry points summary ----\n");
+	if (!gDisabledProcs.empty()) {
+		logPrintf("Disabled extension entry points (requested anyway):\n");
+		for (const auto& name : gDisabledProcs) {
+			logPrintf("  %s\n", name.c_str());
+		}
+	}
+	if (!gMissingProcs.empty()) {
+		logPrintf("Unknown entry points (not implemented/exposed):\n");
+		for (const auto& name : gMissingProcs) {
+			logPrintf("  %s\n", name.c_str());
+		}
+	}
+	logPrintf("---- End missing/disabled OpenGL entry points summary ----\n");
 }

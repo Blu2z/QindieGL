@@ -130,6 +130,10 @@ void D3DGlobal_Cleanup( bool cleanupAll )
 	rmx_deinit_device();
 #endif
 
+	if (cleanupAll) {
+		D3DExtension_DumpMissingProcs();
+	}
+
 	if ( D3DGlobal.settings.game.orthovertexshader )
 	{
 		if ( D3DGlobal.orthoShaders.vs )
