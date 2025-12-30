@@ -390,10 +390,29 @@ void D3DExtension_BuildExtensionsString()
 //-----------------------------------------
 // Return a requested extension proc address
 //=========================================
+static const char *gMissingProcName = NULL;
+static const char *gMissingProcExt = NULL;
+static void WINAPI MissingProcStub()
+{
+	if (gMissingProcName)
+	{
+		if (gMissingProcExt)
+			logPrintf("ERROR: Missing GL/WGL proc '%s' (extension '%s') invoked; returning GL_INVALID_OPERATION.\n", gMissingProcName, gMissingProcExt);
+		else
+			logPrintf("ERROR: Missing GL/WGL proc '%s' invoked; returning GL_INVALID_OPERATION.\n", gMissingProcName);
+	}
+	else
+	{
+		logPrintf("ERROR: Missing GL/WGL proc invoked; returning GL_INVALID_OPERATION.\n");
+	}
+
+	D3DGlobal.lastError = E_INVALID_OPERATION;
+}
+
 OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 {
 	// WG: some games check for this being NULL, and crash
-	static size_t stubAddress = NULL;// 0xBAD00000;
+	static PROC stubAddress = (PROC)MissingProcStub;
 	const char *pszDisabledExt = NULL;
 
 	for (int i = 0; ; ++i) {
@@ -418,7 +437,11 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 	//++stubAddress;
 
 	if (pszDisabledExt)
-		logPrintf("WARNING: wglGetProcAddress: queried disabled proc '%s' (extension '%s') (stub = 0x%X)\n", s, pszDisabledExt, stubAddress);
+	{
+		gMissingProcName = s;
+		gMissingProcExt = pszDisabledExt;
+		logPrintf("WARNING: wglGetProcAddress: returning stub for disabled proc '%s' (extension '%s')\n", s, pszDisabledExt);
+	}
 	else
 	{
 		FARPROC fp = GetProcAddress(D3DGlobal.hModule, s);
@@ -429,7 +452,9 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 		}
 		else
 		{
-			logPrintf("WARNING: wglGetProcAddress: queried unknown proc '%s' (stub = 0x%X)\n", s, stubAddress);
+			gMissingProcName = s;
+			gMissingProcExt = NULL;
+			logPrintf("WARNING: wglGetProcAddress: returning stub for unknown proc '%s'\n", s);
 		}
 	}
 
