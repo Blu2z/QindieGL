@@ -241,6 +241,8 @@ typedef struct D3DState_s
 	} ClientTextureState;
 	struct {
 		DWORD			vertexArrayEnable;
+		GLuint			arrayBufferBinding;
+		GLuint			elementArrayBufferBinding;
 		D3DVAInfo		vertexInfo;
 		D3DVAInfo		normalInfo;
 		D3DVAInfo		colorInfo;

@@ -113,6 +113,9 @@ static glext_entry_point_t glext_EntryPoints[] =
 	GL_EXT_ENTRY_POINT( "ARB", "multitexture", glMultiTexCoord4fv, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "multitexture", glMultiTexCoord4dv, -1 ),
 
+	//GL_ARB_vertex_buffer_object
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBindBuffer, -2 ),
+
 	//GL_ARB_transpose_matrix
 	GL_EXT_ENTRY_POINT( "ARB", "transpose_matrix", glLoadTransposeMatrixf, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "transpose_matrix", glLoadTransposeMatrixd, -1 ),
@@ -240,6 +243,7 @@ void D3DExtension_BuildExtensionsString()
 	bool bCombineSupportARB( true );
 
 	if (D3DGlobal.maxActiveTMU > 1) ExtensionBuf.AddExtension( "GL_ARB_multitexture" );
+	ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
 	
 	checkCaps = (D3DPTADDRESSCAPS_BORDER);
 	if ((D3DGlobal.hD3DCaps.TextureAddressCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_ARB_texture_border_clamp" );
