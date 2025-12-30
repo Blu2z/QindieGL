@@ -68,6 +68,98 @@ D3DTextureObject :: ~D3DTextureObject()
 	FreeD3DTexture();
 }
 
+static bool D3DTex_IsDepthFormat(D3DFORMAT format)
+{
+	switch (format) {
+	case D3DFMT_D16:
+	case D3DFMT_D24X8:
+	case D3DFMT_D24S8:
+	case D3DFMT_D24X4S4:
+	case D3DFMT_D32:
+	case D3DFMT_D15S1:
+	case D3DFMT_D16_LOCKABLE:
+	case D3DFMT_D32_LOCKABLE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void D3DTex_GetUsagePoolForFormat(D3DFORMAT format, DWORD &usage, D3DPOOL &pool)
+{
+	if (D3DTex_IsDepthFormat(format)) {
+		usage = D3DUSAGE_DEPTHSTENCIL;
+		pool = D3DPOOL_DEFAULT;
+	} else {
+		usage = 0;
+		pool = D3DPOOL_MANAGED;
+	}
+}
+
+static bool D3DTex_IsDepthInternalFormat(GLint internalformat)
+{
+	switch (internalformat) {
+	case GL_DEPTH_COMPONENT:
+	case GL_DEPTH_COMPONENT16:
+	case GL_DEPTH_COMPONENT24:
+	case GL_DEPTH_COMPONENT32:
+	case GL_DEPTH_COMPONENT16_ARB:
+	case GL_DEPTH_COMPONENT24_ARB:
+	case GL_DEPTH_COMPONENT32_ARB:
+	case GL_DEPTH_COMPONENT16_SGIX:
+	case GL_DEPTH_COMPONENT24_SGIX:
+	case GL_DEPTH_COMPONENT32_SGIX:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool D3DTex_CheckDepthTextureFormat(D3DFORMAT format)
+{
+	D3DFORMAT adapterFormat = D3DGlobal.hCurrentMode.Format;
+	HRESULT hr = D3DGlobal.pD3D->CheckDeviceFormat(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, adapterFormat, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, format);
+	return SUCCEEDED(hr);
+}
+
+static D3DFORMAT D3DTex_SelectDepthFormat(GLint internalformat)
+{
+	const D3DFORMAT genericFormats[] = { D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D16, D3DFMT_D32, D3DFMT_UNKNOWN };
+	const D3DFORMAT depth16Formats[] = { D3DFMT_D16, D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D32, D3DFMT_UNKNOWN };
+	const D3DFORMAT depth24Formats[] = { D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D32, D3DFMT_D16, D3DFMT_UNKNOWN };
+	const D3DFORMAT depth32Formats[] = { D3DFMT_D32, D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D16, D3DFMT_UNKNOWN };
+
+	const D3DFORMAT *formats = genericFormats;
+	switch (internalformat) {
+	case GL_DEPTH_COMPONENT16:
+	case GL_DEPTH_COMPONENT16_ARB:
+	case GL_DEPTH_COMPONENT16_SGIX:
+		formats = depth16Formats;
+		break;
+	case GL_DEPTH_COMPONENT24:
+	case GL_DEPTH_COMPONENT24_ARB:
+	case GL_DEPTH_COMPONENT24_SGIX:
+		formats = depth24Formats;
+		break;
+	case GL_DEPTH_COMPONENT32:
+	case GL_DEPTH_COMPONENT32_ARB:
+	case GL_DEPTH_COMPONENT32_SGIX:
+		formats = depth32Formats;
+		break;
+	default:
+		formats = genericFormats;
+		break;
+	}
+
+	for (int i = 0; formats[i] != D3DFMT_UNKNOWN; ++i) {
+		if (D3DTex_CheckDepthTextureFormat(formats[i])) {
+			return formats[i];
+		}
+	}
+
+	return D3DFMT_UNKNOWN;
+}
+
 void D3DTextureObject :: FreeD3DTexture()
 {
 	if (m_pD3DTexture) {
@@ -113,18 +205,27 @@ HRESULT D3DTextureObject :: CreateD3DTexture( GLenum target, GLsizei width, GLsi
 		mipmaps = GL_TRUE;
 
 	HRESULT hr;
+	DWORD usage;
+	D3DPOOL pool;
+
+	if (D3DTex_IsDepthFormat(format) && (target == GL_TEXTURE_3D_EXT || target == GL_TEXTURE_CUBE_MAP_ARB)) {
+		logPrintf("ERROR: Depth textures are not supported for target 0x%x\n", target);
+		return E_INVALIDARG;
+	}
+
+	D3DTex_GetUsagePoolForFormat(format, usage, pool);
 		
 	if (target == GL_TEXTURE_3D_EXT) {
 		//logPrintf("CreateD3DTexture: %i x %i x %i x %s (mipmaps = %s)\n", width, height, depth, D3DGlobal_FormatToString(m_format), mipmaps ? "true" : "false" );
-		hr = D3DGlobal.pDevice->CreateVolumeTexture(width, height, depth, mipmaps ? 0 : 1, 0, format, D3DPOOL_MANAGED, &m_pD3DVolumeTexture, NULL);
+		hr = D3DGlobal.pDevice->CreateVolumeTexture(width, height, depth, mipmaps ? 0 : 1, usage, format, pool, &m_pD3DVolumeTexture, NULL);
 		if (m_pD3DVolumeTexture) m_pD3DVolumeTexture->SetPriority( m_priority );
 	} else if (target == GL_TEXTURE_CUBE_MAP_ARB) {
 		//logPrintf("CreateD3DTexture: %i x %i x %s (cubemap) (mipmaps = %s)\n", width, height, D3DGlobal_FormatToString(m_format), mipmaps ? "true" : "false" );
-		hr = D3DGlobal.pDevice->CreateCubeTexture(width, mipmaps ? 0 : 1, 0, format, D3DPOOL_MANAGED, &m_pD3DCubeTexture, NULL);
+		hr = D3DGlobal.pDevice->CreateCubeTexture(width, mipmaps ? 0 : 1, usage, format, pool, &m_pD3DCubeTexture, NULL);
 		if (m_pD3DCubeTexture) m_pD3DCubeTexture->SetPriority( m_priority );
 	} else {
 		//logPrintf("CreateD3DTexture: %i x %i x %s (mipmaps = %s)\n", width, height, D3DGlobal_FormatToString(m_format), mipmaps ? "true" : "false" );
-		hr = D3DGlobal.pDevice->CreateTexture(width, height, mipmaps ? 0 : 1, 0, format, D3DPOOL_MANAGED, &m_pD3DTexture, NULL);
+		hr = D3DGlobal.pDevice->CreateTexture(width, height, mipmaps ? 0 : 1, usage, format, pool, &m_pD3DTexture, NULL);
 		if (m_pD3DTexture) m_pD3DTexture->SetPriority( m_priority );
 	}
 
@@ -143,11 +244,14 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 	}
 
 	HRESULT hr;
+	DWORD usage;
+	D3DPOOL pool;
 
 	if (m_target == GL_TEXTURE_3D_EXT)
 	{
 		LPDIRECT3DVOLUMETEXTURE9 newTexture;
-		hr = D3DGlobal.pDevice->CreateVolumeTexture(m_width, m_height, m_depth, mipmaps ? 0 : 1, 0, m_format, D3DPOOL_MANAGED, &newTexture, NULL);
+		D3DTex_GetUsagePoolForFormat(m_format, usage, pool);
+		hr = D3DGlobal.pDevice->CreateVolumeTexture(m_width, m_height, m_depth, mipmaps ? 0 : 1, usage, m_format, pool, &newTexture, NULL);
 		if (FAILED(hr)) return hr;	
 
 		LPDIRECT3DVOLUME9 srcsurf, dstsurf;
@@ -169,7 +273,8 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 	else if (m_target == GL_TEXTURE_CUBE_MAP_ARB)
 	{
 		LPDIRECT3DCUBETEXTURE9 newTexture;
-		hr = D3DGlobal.pDevice->CreateCubeTexture(m_width, mipmaps ? 0 : 1, 0, m_format, D3DPOOL_MANAGED, &newTexture, NULL);
+		D3DTex_GetUsagePoolForFormat(m_format, usage, pool);
+		hr = D3DGlobal.pDevice->CreateCubeTexture(m_width, mipmaps ? 0 : 1, usage, m_format, pool, &newTexture, NULL);
 		if (FAILED(hr)) return hr;	
 
 		LPDIRECT3DSURFACE9 srcsurf, dstsurf;
@@ -193,7 +298,8 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 	else
 	{
 		LPDIRECT3DTEXTURE9 newTexture;
-		hr = D3DGlobal.pDevice->CreateTexture(m_width, m_height, mipmaps ? 0 : 1, 0, m_format, D3DPOOL_MANAGED, &newTexture, NULL);
+		D3DTex_GetUsagePoolForFormat(m_format, usage, pool);
+		hr = D3DGlobal.pDevice->CreateTexture(m_width, m_height, mipmaps ? 0 : 1, usage, m_format, pool, &newTexture, NULL);
 		if (FAILED(hr)) return hr;	
 
 		LPDIRECT3DSURFACE9 srcsurf, dstsurf;
@@ -220,7 +326,40 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 
 HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels )
 {
-	switch (internalformat) {
+	if (D3DTex_IsDepthFormat(m_format)) {
+		switch (m_format) {
+		case D3DFMT_D16:
+		case D3DFMT_D16_LOCKABLE:
+			m_internalFormat = D3D_TEXTYPE_D16;
+			m_dstbytes = 2;
+			break;
+		case D3DFMT_D24X8:
+			m_internalFormat = D3D_TEXTYPE_D24X8;
+			m_dstbytes = 4;
+			break;
+		case D3DFMT_D24S8:
+			m_internalFormat = D3D_TEXTYPE_D24S8;
+			m_dstbytes = 4;
+			break;
+		case D3DFMT_D24X4S4:
+			m_internalFormat = D3D_TEXTYPE_D24X4S4;
+			m_dstbytes = 4;
+			break;
+		case D3DFMT_D15S1:
+			m_internalFormat = D3D_TEXTYPE_D15S1;
+			m_dstbytes = 2;
+			break;
+		case D3DFMT_D32:
+		case D3DFMT_D32_LOCKABLE:
+			m_internalFormat = D3D_TEXTYPE_D32;
+			m_dstbytes = 4;
+			break;
+		default:
+			logPrintf("WARNING: Depth texture format %s is not supported\n", D3DGlobal_FormatToString(m_format));
+			return E_INVALIDARG;
+		}
+	} else {
+		switch (internalformat) {
 	case GL_INTENSITY:
 	case GL_INTENSITY8:
 		m_internalFormat = D3D_TEXTYPE_INTENSITY;
@@ -270,11 +409,17 @@ HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint
 		logPrintf("WARNING: Texture internal format 0x%x is not supported\n", internalformat);
 		return E_INVALIDARG;
 	}
+	}
 
 	HRESULT hr;
 	GLubyte *dstdata;
 	GLint pitch;
 	GLint pitch2;
+
+	if (D3DTex_IsDepthFormat(m_format) && pixels) {
+		logPrintf("WARNING: Depth texture data upload is not supported for format %s\n", D3DGlobal_FormatToString(m_format));
+		return E_INVALID_OPERATION;
+	}
 
 	if (!pixels)
 		return S_OK;
@@ -334,6 +479,11 @@ HRESULT D3DTextureObject :: FillTextureSubLevel( GLint cubeface, GLint level, GL
 	GLubyte *dstdata;
 	GLint pitch;
 	GLint pitch2;
+
+	if (D3DTex_IsDepthFormat(m_format)) {
+		logPrintf("WARNING: Depth texture subimage updates are not supported for format %s\n", D3DGlobal_FormatToString(m_format));
+		return E_INVALID_OPERATION;
+	}
 
 	if (m_target == GL_TEXTURE_3D_EXT) {
 		D3DBOX updaterect;
@@ -788,6 +938,11 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 		D3DGlobal.lastError = E_INVALIDARG;
 		return;
 	}
+	if (D3DTex_IsDepthInternalFormat(internalformat) && level > 0) {
+		logPrintf("WARNING: Depth texture mipmaps are not supported for internal format 0x%x\n", internalformat);
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return;
+	}
 	int cubeFace = 0;
 	if (targetIndex == D3D_TEXTARGET_CUBE)
 		cubeFace = target - GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB;
@@ -799,7 +954,26 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 	if ( level == 0 ) 
 	{
 		D3DFORMAT d3dFormat;
-		switch (internalformat) {
+		if (D3DTex_IsDepthInternalFormat(internalformat)) {
+			if (targetIndex == D3D_TEXTARGET_3D || targetIndex == D3D_TEXTARGET_CUBE) {
+				logPrintf("WARNING: Depth textures are not supported for target 0x%x\n", target);
+				D3DGlobal.lastError = E_INVALID_OPERATION;
+				return;
+			}
+
+			d3dFormat = D3DTex_SelectDepthFormat(internalformat);
+			if (d3dFormat == D3DFMT_UNKNOWN) {
+				logPrintf("WARNING: Depth texture internal format 0x%x is not supported by D3D9\n", internalformat);
+				D3DGlobal.lastError = E_INVALID_OPERATION;
+				return;
+			}
+
+			if (pixels) {
+				logPrintf("WARNING: Depth texture data upload is not supported; creating empty depth texture\n");
+				pixels = nullptr;
+			}
+		} else {
+			switch (internalformat) {
 		case GL_INTENSITY:
 		case GL_INTENSITY8:
 			d3dFormat = D3DFMT_A8L8;
@@ -847,6 +1021,7 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 			logPrintf("WARNING: Texture internal format 0x%x is not supported\n", internalformat);
 			D3DGlobal.lastError = E_INVALIDARG;
 			return;
+		}
 		}
 
 		if (!cubeFace)
