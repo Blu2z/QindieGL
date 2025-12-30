@@ -74,6 +74,7 @@ static glext_entry_point_t glext_EntryPoints[] =
 	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGenBuffersARB, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glIsBufferARB, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBufferDataARB, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGetBufferSubDataARB, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glMapBufferARB, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glUnmapBufferARB, -1 ),
 

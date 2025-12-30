@@ -266,3 +266,36 @@ OPENGL_API void WINAPI glBufferDataARB( GLenum target, GLsizeiptrARB size, const
 
 	D3DGlobal.lastError = S_OK;
 }
+
+OPENGL_API void WINAPI glGetBufferSubDataARB( GLenum target, GLintptrARB offset, GLsizeiptrARB size, GLvoid *data )
+{
+	GLuint binding = D3DBuffer_GetBinding( target );
+	if (D3DGlobal.lastError == E_INVALID_ENUM) {
+		return;
+	}
+	if (!binding) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return;
+	}
+	if (!data || size < 0 || offset < 0) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return;
+	}
+
+	D3DBufferObject *bufferObject = D3DBuffer_GetObject( binding, false );
+	if (!bufferObject || !bufferObject->storage) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return;
+	}
+	if (offset + size > bufferObject->size) {
+		D3DGlobal.lastError = E_INVALID_OPERATION;
+		return;
+	}
+
+	if (size > 0) {
+		auto *source = static_cast<const unsigned char *>(bufferObject->storage);
+		memcpy( data, source + static_cast<size_t>(offset), static_cast<size_t>(size) );
+	}
+
+	D3DGlobal.lastError = S_OK;
+}
