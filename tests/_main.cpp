@@ -8,12 +8,14 @@ static int tests_total = 0;
 static int tests_ok = 0;
 
 extern void do_texgen_tests();
+extern void do_buffer_multitex_tests();
 
 int main()
 {
     printf("QindieGL Tests\n");
 
     do_texgen_tests();
+    do_buffer_multitex_tests();
 
     printf("Tests results: %d/%d\n", tests_ok, tests_total);
     system("pause");

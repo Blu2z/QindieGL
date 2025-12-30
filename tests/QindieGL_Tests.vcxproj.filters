@@ -18,6 +18,9 @@
     <ClCompile Include="_main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="buffer_multitex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="texgen.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
