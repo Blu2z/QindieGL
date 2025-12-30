@@ -116,9 +116,6 @@ static glext_entry_point_t glext_EntryPoints[] =
 	GL_EXT_ENTRY_POINT( "ARB", "multitexture", glMultiTexCoord4fv, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "multitexture", glMultiTexCoord4dv, -1 ),
 
-	//GL_ARB_vertex_buffer_object
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBindBuffer, -2 ),
-
 	//GL_ARB_transpose_matrix
 	GL_EXT_ENTRY_POINT( "ARB", "transpose_matrix", glLoadTransposeMatrixf, -1 ),
 	GL_EXT_ENTRY_POINT( "ARB", "transpose_matrix", glLoadTransposeMatrixd, -1 ),

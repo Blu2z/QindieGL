@@ -34,7 +34,6 @@ extern OPENGL_API GLvoid* WINAPI glMapBufferARB(GLenum target, GLenum access);
 extern OPENGL_API GLboolean WINAPI glUnmapBufferARB(GLenum target);
 extern OPENGL_API void WINAPI glActiveTexture(GLenum texture);
 extern OPENGL_API void WINAPI glClientActiveTexture(GLenum texture);
-extern OPENGL_API void WINAPI glBindBuffer(GLenum target, GLuint buffer);
 extern OPENGL_API void WINAPI glMultiTexCoord1s( GLenum target, GLshort s );
 extern OPENGL_API void WINAPI glMultiTexCoord1i( GLenum target, GLint s );
 extern OPENGL_API void WINAPI glMultiTexCoord1f( GLenum target, GLfloat s );
