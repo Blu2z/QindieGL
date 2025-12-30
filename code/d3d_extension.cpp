@@ -24,6 +24,7 @@
 #include "d3d_extension.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -235,6 +236,29 @@ private:
 	char *m_buf; 
 };
 
+namespace {
+	void LogExtensionsString(const char* label, const char* extensions)
+	{
+		if (!extensions || !*extensions) {
+			logPrintf("%s extensions: <empty>\n", label);
+			return;
+		}
+
+		const size_t length = std::strlen(extensions);
+		const size_t chunkSize = 1024;
+		for (size_t offset = 0; offset < length; offset += chunkSize) {
+			const size_t remaining = length - offset;
+			const size_t count = remaining < chunkSize ? remaining : chunkSize;
+			logPrintf("%s extensions [%u/%u]: %.*s\n",
+				label,
+				static_cast<unsigned int>(offset + count),
+				static_cast<unsigned int>(length),
+				static_cast<int>(count),
+				extensions + offset);
+		}
+	}
+}
+
 void D3DExtension_BuildExtensionsString()
 {
 	assert( D3DGlobal.pD3D != NULL );
@@ -387,6 +411,9 @@ void D3DExtension_BuildExtensionsString()
 
 	D3DGlobal.szExtensions = ExtensionBuf.CopyBuffer();
 	D3DGlobal.szWExtensions = WExtensionBuf.CopyBuffer();
+
+	LogExtensionsString("GL", D3DGlobal.szExtensions);
+	LogExtensionsString("WGL", D3DGlobal.szWExtensions);
 }
 
 //=========================================
