@@ -24,6 +24,7 @@
 #include "d3d_extension.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -355,8 +356,37 @@ static glext_entry_point_t glext_EntryPoints[] =
 	//WGL_ARB_extensions_string
 	WGL_EXT_ENTRY_POINT( "ARB", "extensions_string", wglGetExtensionsStringARB, -2 ),
 
+	//WGL_ARB_pbuffer
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglCreatePbufferARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglGetPbufferDCARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglReleasePbufferDCARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglDestroyPbufferARB, -2 ),
+
+	//WGL_ARB_render_texture
+	WGL_EXT_ENTRY_POINT( "ARB", "render_texture", wglBindTexImageARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "render_texture", wglReleaseTexImageARB, -2 ),
+	//WGL_ARB_pixel_format
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglChoosePixelFormatARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglGetPixelFormatAttribivARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglGetPixelFormatAttribfvARB, -2 ),
+
 	{ NULL, NULL }
 };
+
+static bool D3DExtension_CheckDepthTextureSupport()
+{
+	const D3DFORMAT depthFormats[] = { D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D16, D3DFMT_D32, D3DFMT_UNKNOWN };
+	D3DFORMAT adapterFormat = D3DGlobal.hCurrentMode.Format;
+
+	for (int i = 0; depthFormats[i] != D3DFMT_UNKNOWN; ++i) {
+		HRESULT hr = D3DGlobal.pD3D->CheckDeviceFormat(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, adapterFormat, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, depthFormats[i]);
+		if (SUCCEEDED(hr)) {
+			return true;
+		}
+	}
+
+	return false;
+}
 
 class CExtensionBuf
 {
@@ -403,6 +433,29 @@ private:
 	char *m_buf; 
 };
 
+namespace {
+	void LogExtensionsString(const char* label, const char* extensions)
+	{
+		if (!extensions || !*extensions) {
+			logPrintf("%s extensions: <empty>\n", label);
+			return;
+		}
+
+		const size_t length = std::strlen(extensions);
+		const size_t chunkSize = 1024;
+		for (size_t offset = 0; offset < length; offset += chunkSize) {
+			const size_t remaining = length - offset;
+			const size_t count = remaining < chunkSize ? remaining : chunkSize;
+			logPrintf("%s extensions [%u/%u]: %.*s\n",
+				label,
+				static_cast<unsigned int>(offset + count),
+				static_cast<unsigned int>(length),
+				static_cast<int>(count),
+				extensions + offset);
+		}
+	}
+}
+
 void D3DExtension_BuildExtensionsString()
 {
 	assert( D3DGlobal.pD3D != NULL );
@@ -421,6 +474,9 @@ void D3DExtension_BuildExtensionsString()
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_program" );
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_vertex_program" );
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_fragment_program" );
+	if (D3DExtension_CheckDepthTextureSupport()) {
+		ExtensionBuf.AddExtension( "GL_ARB_depth_texture" );
+		ExtensionBuf.AddExtension( "GL_SGIX_depth_texture" );
 	}
 	
 	checkCaps = (D3DPTADDRESSCAPS_BORDER);
@@ -553,14 +609,19 @@ void D3DExtension_BuildExtensionsString()
 
 	//we implement it at driver level
 	ExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	ExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
 	ExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	//add WGL extensions
 	WExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	WExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
 	WExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	D3DGlobal.szExtensions = ExtensionBuf.CopyBuffer();
 	D3DGlobal.szWExtensions = WExtensionBuf.CopyBuffer();
+
+	LogExtensionsString("GL", D3DGlobal.szExtensions);
+	LogExtensionsString("WGL", D3DGlobal.szWExtensions);
 }
 
 //=========================================

@@ -67,6 +67,9 @@
     <ClCompile Include="..\code\d3d_extension.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\code\d3d_wgl_pixel_format.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\code\d3d_feedback.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
