@@ -44,6 +44,11 @@ GitHub Actions runs `msvc/QindieGL.sln` builds on every push and pull request us
 The workflow builds Release configurations for Win32 and x64, verifies the `opengl32.dll` output, and uploads the `bin/Release.<platform>` artifacts to the workflow run.
 Check the Actions tab in GitHub for the latest CI status and downloadable build outputs.
 
+### Releases
+
+Release builds are published from GitHub Actions when you push a version tag (for example, `v1.2.3`) or manually trigger the **Release** workflow with a tag input.
+The workflow packages `opengl32.dll`, `QindieGL.ini`, `README.md`, and the `resources/` folder into per-platform ZIP files and attaches them to the GitHub Release with auto-generated notes.
+
 ## Setup
 
 Please perform the following steps to install and enable QindieGL:
