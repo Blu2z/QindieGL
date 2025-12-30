@@ -38,6 +38,12 @@ QindieGL is a wrapper library which emulates OpenGL API using Microsoft Direct3D
 
 [![Quake II with QindieGL](https://cloud.githubusercontent.com/assets/20521208/20456521/d9c1e7ae-aeaa-11e6-99f7-d972bc49dbf0.jpg?raw=true)](https://cloud.githubusercontent.com/assets/20521208/20456526/d9dfa41a-aeaa-11e6-8d30-5973df9cf778.jpg) [![Quake III with QindieGL](https://cloud.githubusercontent.com/assets/20521208/20456522/d9c2621a-aeaa-11e6-8041-dd9af8798389.jpg?raw=true)](https://cloud.githubusercontent.com/assets/20521208/20456523/d9c49ab2-aeaa-11e6-8f9b-a33899f66c3c.jpg)
 
+## CI
+
+GitHub Actions runs `msvc/QindieGL.sln` builds on every push and pull request using `windows-latest`.
+The workflow builds Release configurations for Win32 and x64, verifies the `opengl32.dll` output, and uploads the `bin/Release.<platform>` artifacts to the workflow run.
+Check the Actions tab in GitHub for the latest CI status and downloadable build outputs.
+
 ## Setup
 
 Please perform the following steps to install and enable QindieGL:
