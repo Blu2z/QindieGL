@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [Win32, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+      - name: Build (Release)
+        run: msbuild msvc/QindieGL.sln /m /p:Configuration=Release /p:Platform=${{ matrix.platform }}
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $outDir = "bin/Release.${{ matrix.platform }}"
+          if (-not (Test-Path $outDir)) { throw "Output directory not found: $outDir" }
+          $dll = Join-Path $outDir "opengl32.dll"
+          if (-not (Test-Path $dll)) { throw "Build output not found: $dll" }
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qindiegl-${{ matrix.platform }}-release
+          path: bin/Release.${{ matrix.platform }}
