@@ -22,6 +22,7 @@
 #define QINDIEGL_D3D_EXTENSION_H
 
 extern void D3DExtension_BuildExtensionsString();
+extern void D3DExtension_DumpMissingProcs();
 
 extern OPENGL_API void WINAPI glBindBuffer(GLenum target, GLuint buffer);
 extern OPENGL_API void WINAPI glBindBufferARB(GLenum target, GLuint buffer);
