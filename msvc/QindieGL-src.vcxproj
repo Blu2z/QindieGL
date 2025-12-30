@@ -378,6 +378,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClCompile Include="..\code\d3d_cpu_detect.cpp" />
     <ClCompile Include="..\code\d3d_eval.cpp" />
     <ClCompile Include="..\code\d3d_extension.cpp" />
+    <ClCompile Include="..\code\d3d_wgl_pixel_format.cpp" />
     <ClCompile Include="..\code\d3d_feedback.cpp" />
     <ClCompile Include="..\code\d3d_get.cpp" />
     <ClCompile Include="..\code\d3d_global.cpp" />
