@@ -1648,6 +1648,55 @@ OPENGL_API int WINAPI wglGetSwapInterval()
 	return (D3DGlobal.vSync ? 1 : 0);
 }
 
+OPENGL_API HPBUFFERARB WINAPI wglCreatePbufferARB( HDC hDC, int iPixelFormat, int iWidth, int iHeight, const int *piAttribList )
+{
+	_CRT_UNUSED( hDC );
+	_CRT_UNUSED( iPixelFormat );
+	_CRT_UNUSED( iWidth );
+	_CRT_UNUSED( iHeight );
+	_CRT_UNUSED( piAttribList );
+	logPrintf("WARNING: wglCreatePbufferARB is not supported\n");
+	return NULL;
+}
+
+OPENGL_API HDC WINAPI wglGetPbufferDCARB( HPBUFFERARB hPbuffer )
+{
+	_CRT_UNUSED( hPbuffer );
+	logPrintf("WARNING: wglGetPbufferDCARB is not supported\n");
+	return NULL;
+}
+
+OPENGL_API int WINAPI wglReleasePbufferDCARB( HPBUFFERARB hPbuffer, HDC hDC )
+{
+	_CRT_UNUSED( hPbuffer );
+	_CRT_UNUSED( hDC );
+	logPrintf("WARNING: wglReleasePbufferDCARB is not supported\n");
+	return FALSE;
+}
+
+OPENGL_API BOOL WINAPI wglDestroyPbufferARB( HPBUFFERARB hPbuffer )
+{
+	_CRT_UNUSED( hPbuffer );
+	logPrintf("WARNING: wglDestroyPbufferARB is not supported\n");
+	return FALSE;
+}
+
+OPENGL_API BOOL WINAPI wglBindTexImageARB( HPBUFFERARB hPbuffer, int iBuffer )
+{
+	_CRT_UNUSED( hPbuffer );
+	_CRT_UNUSED( iBuffer );
+	logPrintf("WARNING: wglBindTexImageARB is not supported\n");
+	return FALSE;
+}
+
+OPENGL_API BOOL WINAPI wglReleaseTexImageARB( HPBUFFERARB hPbuffer, int iBuffer )
+{
+	_CRT_UNUSED( hPbuffer );
+	_CRT_UNUSED( iBuffer );
+	logPrintf("WARNING: wglReleaseTexImageARB is not supported\n");
+	return FALSE;
+}
+
 OPENGL_API void WINAPI glPNTrianglesiATI( GLenum pname, GLint param )
 {
 	_CRT_UNUSED( pname ); _CRT_UNUSED( param );

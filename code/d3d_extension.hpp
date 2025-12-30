@@ -82,6 +82,17 @@ extern OPENGL_API void WINAPI glCopyTexImage3D(GLenum target,  GLint level,  GLe
 extern OPENGL_API void WINAPI glCopyTexSubImage3D(GLenum target,  GLint level,  GLint xoffset,  GLint yoffset,  GLint zoffset,  GLint x,  GLint y,  GLint z,  GLsizei width,  GLsizei height,  GLsizei depth);
 extern OPENGL_API BOOL WINAPI wglSwapInterval(int interval);
 extern OPENGL_API int WINAPI wglGetSwapInterval();
+
+#ifndef HPBUFFERARB
+typedef void* HPBUFFERARB;
+#endif
+
+extern OPENGL_API HPBUFFERARB WINAPI wglCreatePbufferARB(HDC hDC, int iPixelFormat, int iWidth, int iHeight, const int *piAttribList);
+extern OPENGL_API HDC WINAPI wglGetPbufferDCARB(HPBUFFERARB hPbuffer);
+extern OPENGL_API int WINAPI wglReleasePbufferDCARB(HPBUFFERARB hPbuffer, HDC hDC);
+extern OPENGL_API BOOL WINAPI wglDestroyPbufferARB(HPBUFFERARB hPbuffer);
+extern OPENGL_API BOOL WINAPI wglBindTexImageARB(HPBUFFERARB hPbuffer, int iBuffer);
+extern OPENGL_API BOOL WINAPI wglReleaseTexImageARB(HPBUFFERARB hPbuffer, int iBuffer);
 extern OPENGL_API BOOL WINAPI wglChoosePixelFormatARB(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
 extern OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues);
 extern OPENGL_API BOOL WINAPI wglGetPixelFormatAttribfvARB(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues);
