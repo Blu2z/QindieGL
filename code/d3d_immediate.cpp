@@ -973,6 +973,10 @@ OPENGL_API void WINAPI glMultiTexCoord1d( GLenum target, GLdouble s )
 {
 	D3D_SetTexCoord( target, s, 0.0, 0.0, 1.0, 1 );
 }
+OPENGL_API void WINAPI glMultiTexCoord1dEXT( GLenum target, GLdouble s )
+{
+	D3D_SetTexCoord( target, s, 0.0, 0.0, 1.0, 1 );
+}
 OPENGL_API void WINAPI glMultiTexCoord2s( GLenum target, GLshort s, GLshort t )
 {
 	D3D_SetTexCoord( target, s, t, (GLshort)0, (GLshort)1, 2 );
@@ -1020,6 +1024,10 @@ OPENGL_API void WINAPI glMultiTexCoord4f( GLenum target, GLfloat s, GLfloat t, G
 OPENGL_API void WINAPI glMultiTexCoord4d( GLenum target, GLdouble s, GLdouble t, GLdouble r, GLdouble q )
 {
 	D3D_SetTexCoord( target, s, t, r, q, 4 );
+}
+OPENGL_API void WINAPI glMultiTexCoord4sdARB( GLenum target, GLshort s, GLshort t, GLshort r, GLshort q )
+{
+	D3D_SetTexCoord( target, static_cast<GLfloat>( s ), static_cast<GLfloat>( t ), static_cast<GLfloat>( r ), static_cast<GLfloat>( q ), 4 );
 }
 OPENGL_API void WINAPI glMultiTexCoord1sv( GLenum target, const GLshort *v )
 {
