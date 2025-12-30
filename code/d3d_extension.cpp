@@ -197,6 +197,16 @@ static glext_entry_point_t glext_EntryPoints[] =
 	//WGL_ARB_extensions_string
 	WGL_EXT_ENTRY_POINT( "ARB", "extensions_string", wglGetExtensionsStringARB, -2 ),
 
+	//WGL_ARB_pbuffer
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglCreatePbufferARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglGetPbufferDCARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglReleasePbufferDCARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "pbuffer", wglDestroyPbufferARB, -2 ),
+
+	//WGL_ARB_render_texture
+	WGL_EXT_ENTRY_POINT( "ARB", "render_texture", wglBindTexImageARB, -2 ),
+	WGL_EXT_ENTRY_POINT( "ARB", "render_texture", wglReleaseTexImageARB, -2 ),
+
 	{ NULL, NULL }
 };
 

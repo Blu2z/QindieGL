@@ -82,6 +82,17 @@ extern OPENGL_API void WINAPI glCopyTexImage3D(GLenum target,  GLint level,  GLe
 extern OPENGL_API void WINAPI glCopyTexSubImage3D(GLenum target,  GLint level,  GLint xoffset,  GLint yoffset,  GLint zoffset,  GLint x,  GLint y,  GLint z,  GLsizei width,  GLsizei height,  GLsizei depth);
 extern OPENGL_API BOOL WINAPI wglSwapInterval(int interval);
 extern OPENGL_API int WINAPI wglGetSwapInterval();
+
+#ifndef HPBUFFERARB
+typedef void* HPBUFFERARB;
+#endif
+
+extern OPENGL_API HPBUFFERARB WINAPI wglCreatePbufferARB(HDC hDC, int iPixelFormat, int iWidth, int iHeight, const int *piAttribList);
+extern OPENGL_API HDC WINAPI wglGetPbufferDCARB(HPBUFFERARB hPbuffer);
+extern OPENGL_API int WINAPI wglReleasePbufferDCARB(HPBUFFERARB hPbuffer, HDC hDC);
+extern OPENGL_API BOOL WINAPI wglDestroyPbufferARB(HPBUFFERARB hPbuffer);
+extern OPENGL_API BOOL WINAPI wglBindTexImageARB(HPBUFFERARB hPbuffer, int iBuffer);
+extern OPENGL_API BOOL WINAPI wglReleaseTexImageARB(HPBUFFERARB hPbuffer, int iBuffer);
 extern OPENGL_API void WINAPI glSelectTexture(GLenum texture);
 extern OPENGL_API void WINAPI glMTexCoord2f( GLenum target, GLfloat s, GLfloat t );
 extern OPENGL_API void WINAPI glMTexCoord2fv( GLenum target, const GLfloat *v );
