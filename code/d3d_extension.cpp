@@ -456,6 +456,10 @@ namespace {
 	}
 }
 
+namespace {
+	bool gEnableARBProgramsStub = false;
+}
+
 void D3DExtension_BuildExtensionsString()
 {
 	assert( D3DGlobal.pD3D != NULL );
@@ -470,7 +474,12 @@ void D3DExtension_BuildExtensionsString()
 	if (D3DGlobal.maxActiveTMU > 1) ExtensionBuf.AddExtension( "GL_ARB_multitexture" );
 	ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
 
-	if (D3DGlobal.settings.enableARBProgramsStub) {
+	gEnableARBProgramsStub = D3DGlobal.settings.enableARBProgramsStub != 0
+		|| D3DGlobal_GetRegistryValue( "GL_ARB_program", "Extensions", 0 )
+		|| D3DGlobal_GetRegistryValue( "GL_ARB_vertex_program", "Extensions", 0 )
+		|| D3DGlobal_GetRegistryValue( "GL_ARB_fragment_program", "Extensions", 0 );
+
+	if (gEnableARBProgramsStub) {
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_program" );
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_vertex_program" );
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_fragment_program" );
@@ -693,7 +702,7 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 		if (glext_EntryPoints[i].enabled < 0)
 		{
 			if (IsARBProgramExtension(glext_EntryPoints[i].extname)) {
-				glext_EntryPoints[i].enabled = D3DGlobal.settings.enableARBProgramsStub ? 1 : 0;
+				glext_EntryPoints[i].enabled = gEnableARBProgramsStub ? 1 : 0;
 			} else {
 				glext_EntryPoints[i].enabled = D3DGlobal_GetRegistryValue(glext_EntryPoints[i].extname, "Extensions", glext_EntryPoints[i].enabled==-1 ? 0 : 1);
 			}
