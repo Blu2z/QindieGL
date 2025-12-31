@@ -20,6 +20,7 @@
 ***************************************************************************/
 #include "d3d_wrapper.hpp"
 #include "d3d_extension.hpp"
+#include "d3d_global.hpp"
 
 #include <vector>
 
@@ -124,6 +125,51 @@ static int GetPixelFormatCount(HDC hdc)
 	return ::DescribePixelFormat(hdc, 1, 0, NULL);
 }
 
+static int GetGlobalColorBits()
+{
+	const int redBits = D3DGlobal.rgbaBits[0];
+	const int greenBits = D3DGlobal.rgbaBits[1];
+	const int blueBits = D3DGlobal.rgbaBits[2];
+	const int alphaBits = D3DGlobal.rgbaBits[3];
+	return redBits + greenBits + blueBits + alphaBits;
+}
+
+static int GetColorBits(const PIXELFORMATDESCRIPTOR &pfd)
+{
+	if (pfd.cColorBits > 0) {
+		return pfd.cColorBits;
+	}
+
+	return GetGlobalColorBits();
+}
+
+static int GetDepthBits(const PIXELFORMATDESCRIPTOR &pfd)
+{
+	if (pfd.cDepthBits > 0) {
+		return pfd.cDepthBits;
+	}
+
+	return D3DGlobal.depthBits;
+}
+
+static int GetStencilBits(const PIXELFORMATDESCRIPTOR &pfd)
+{
+	if (pfd.cStencilBits > 0) {
+		return pfd.cStencilBits;
+	}
+
+	return D3DGlobal.stencilBits;
+}
+
+static int GetColorComponentBits(int pfdBits, int componentIndex)
+{
+	if (pfdBits > 0) {
+		return pfdBits;
+	}
+
+	return D3DGlobal.rgbaBits[componentIndex];
+}
+
 static bool EvaluateAttribRequirement(const PIXELFORMATDESCRIPTOR &pfd, int attrib, int value)
 {
 	switch (attrib) {
@@ -138,20 +184,20 @@ static bool EvaluateAttribRequirement(const PIXELFORMATDESCRIPTOR &pfd, int attr
 	case WGL_PIXEL_TYPE_ARB:
 		return GetPixelType(pfd) == value;
 	case WGL_COLOR_BITS_ARB:
-		return pfd.cColorBits >= value;
+		return GetColorBits(pfd) >= value;
 	case WGL_ALPHA_BITS_ARB:
-		return pfd.cAlphaBits >= value;
+		return GetColorComponentBits(pfd.cAlphaBits, 3) >= value;
 	case WGL_DEPTH_BITS_ARB:
-		return pfd.cDepthBits >= value;
+		return GetDepthBits(pfd) >= value;
 	case WGL_STENCIL_BITS_ARB:
-		return pfd.cStencilBits >= value;
+		return GetStencilBits(pfd) >= value;
 	case WGL_ACCELERATION_ARB:
 		return GetAccelType() == value;
 	case WGL_SWAP_METHOD_ARB:
 		return GetSwapMethod(pfd) == value;
 	default:
-		logPrintf("wglChoosePixelFormatARB: unsupported attribute 0x%X ignored\n", attrib);
-		return true;
+		logPrintf("wglChoosePixelFormatARB: unsupported attribute 0x%X\n", attrib);
+		return false;
 	}
 }
 
@@ -234,28 +280,28 @@ OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, i
 			piValues[i] = GetPixelType(pfd);
 			break;
 		case WGL_COLOR_BITS_ARB:
-			piValues[i] = pfd.cColorBits;
+			piValues[i] = GetColorBits(pfd);
 			break;
 		case WGL_RED_BITS_ARB:
-			piValues[i] = pfd.cRedBits;
+			piValues[i] = GetColorComponentBits(pfd.cRedBits, 0);
 			break;
 		case WGL_RED_SHIFT_ARB:
 			piValues[i] = pfd.cRedShift;
 			break;
 		case WGL_GREEN_BITS_ARB:
-			piValues[i] = pfd.cGreenBits;
+			piValues[i] = GetColorComponentBits(pfd.cGreenBits, 1);
 			break;
 		case WGL_GREEN_SHIFT_ARB:
 			piValues[i] = pfd.cGreenShift;
 			break;
 		case WGL_BLUE_BITS_ARB:
-			piValues[i] = pfd.cBlueBits;
+			piValues[i] = GetColorComponentBits(pfd.cBlueBits, 2);
 			break;
 		case WGL_BLUE_SHIFT_ARB:
 			piValues[i] = pfd.cBlueShift;
 			break;
 		case WGL_ALPHA_BITS_ARB:
-			piValues[i] = pfd.cAlphaBits;
+			piValues[i] = GetColorComponentBits(pfd.cAlphaBits, 3);
 			break;
 		case WGL_ALPHA_SHIFT_ARB:
 			piValues[i] = pfd.cAlphaShift;
@@ -276,10 +322,10 @@ OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, i
 			piValues[i] = pfd.cAccumAlphaBits;
 			break;
 		case WGL_DEPTH_BITS_ARB:
-			piValues[i] = pfd.cDepthBits;
+			piValues[i] = GetDepthBits(pfd);
 			break;
 		case WGL_STENCIL_BITS_ARB:
-			piValues[i] = pfd.cStencilBits;
+			piValues[i] = GetStencilBits(pfd);
 			break;
 		case WGL_AUX_BUFFERS_ARB:
 			piValues[i] = pfd.cAuxBuffers;
