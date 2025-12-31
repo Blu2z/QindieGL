@@ -474,6 +474,7 @@ void D3DExtension_BuildExtensionsString()
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_program" );
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_vertex_program" );
 		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_fragment_program" );
+	}
 	if (D3DExtension_CheckDepthTextureSupport()) {
 		ExtensionBuf.AddExtension( "GL_ARB_depth_texture" );
 		ExtensionBuf.AddExtension( "GL_SGIX_depth_texture" );
