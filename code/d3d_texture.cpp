@@ -247,8 +247,10 @@ HRESULT D3DTextureObject :: CreateD3DTexture( GLenum target, GLsizei width, GLsi
 	m_internalFormat = D3D_TEXTYPE_GENERIC;
 	m_dstbytes = 0;
 
-	if (m_autogenMipmaps)
+	if (m_autogenMipmaps) {
 		mipmaps = GL_TRUE;
+		m_mipmaps = GL_TRUE;
+	}
 
 	HRESULT hr;
 	DWORD usage;
@@ -920,8 +922,25 @@ HRESULT D3DTextureObject :: DumpTexture()
 
 void D3DTextureObject :: CheckMipmapAutogen()
 {
-	if (m_autogenMipmaps)
-		m_pD3DBaseTexture->GenerateMipSubLevels();
+	if (!m_autogenMipmaps) {
+		return;
+	}
+	if (!m_pD3DBaseTexture) {
+		logPrintf("WARNING: Mipmap generation requested without a valid texture\n");
+		return;
+	}
+	if (D3DTex_IsDepthFormat(m_format)) {
+		logPrintf("WARNING: Mipmap generation is not supported for depth texture format %s\n", D3DGlobal_FormatToString(m_format));
+		return;
+	}
+	if (m_pD3DBaseTexture->GetLevelCount() <= 1) {
+		logPrintf("WARNING: Mipmap generation requested but texture has no mip levels\n");
+		return;
+	}
+	HRESULT hr = D3DXFilterTexture(m_pD3DBaseTexture, nullptr, 0, D3DX_FILTER_BOX);
+	if (FAILED(hr)) {
+		logPrintf("WARNING: Mipmap generation failed with error '%s'\n", DXGetErrorString(hr));
+	}
 }
 
 void D3DTextureObject :: SetAddressMode( GLenum coord, GLenum mode ) 

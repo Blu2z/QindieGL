@@ -607,8 +607,7 @@ void D3DExtension_BuildExtensionsString()
 	//we implement it at driver level
 	ExtensionBuf.AddExtension( "GL_NV_texgen_reflection" );
 
-//	checkCaps = (D3DCAPS2_CANAUTOGENMIPMAP);
-	//if ((D3DGlobal.hD3DCaps.Caps2 & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_SGIS_generate_mipmap" );
+	ExtensionBuf.AddExtension( "GL_SGIS_generate_mipmap" );
 
 	//For Quake2 that won't use ARB extension
 	if (D3DGlobal.maxActiveTMU > 1) ExtensionBuf.AddExtension( "GL_SGIS_multitexture" );
