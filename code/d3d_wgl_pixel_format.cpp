@@ -22,6 +22,7 @@
 #include "d3d_extension.hpp"
 #include "d3d_global.hpp"
 
+#include <cstring>
 #include <vector>
 
 #ifndef WGL_NUMBER_PIXEL_FORMATS_ARB
@@ -79,24 +80,73 @@ static bool GetPixelFormatDescriptor(HDC hdc, int requestedFormat, PIXELFORMATDE
 		return false;
 	}
 
+	auto clampToByte = [](int value) -> BYTE {
+		if (value < 0) {
+			return 0;
+		}
+		if (value > 255) {
+			return 255;
+		}
+		return static_cast<BYTE>(value);
+	};
+
+	auto buildFallbackPfd = [&]() -> bool {
+		const int redBits = D3DGlobal.rgbaBits[0];
+		const int greenBits = D3DGlobal.rgbaBits[1];
+		const int blueBits = D3DGlobal.rgbaBits[2];
+		const int alphaBits = D3DGlobal.rgbaBits[3];
+		const int colorBits = redBits + greenBits + blueBits + alphaBits;
+
+		if (colorBits <= 0 && D3DGlobal.depthBits <= 0) {
+			logPrintf("wgl*PixelFormatARB: fallback PFD unavailable (no global bit data)\n");
+			return false;
+		}
+
+		std::memset(&outPfd, 0, sizeof(outPfd));
+		outPfd.nSize = sizeof(outPfd);
+		outPfd.nVersion = 1;
+		outPfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL;
+		if (D3DGlobal.hPresentParams.BackBufferCount > 0) {
+			outPfd.dwFlags |= PFD_DOUBLEBUFFER;
+		}
+		if (D3DGlobal.hPresentParams.SwapEffect == D3DSWAPEFFECT_COPY) {
+			outPfd.dwFlags |= PFD_SWAP_COPY;
+		}
+		outPfd.iPixelType = PFD_TYPE_RGBA;
+		outPfd.cColorBits = clampToByte(colorBits);
+		outPfd.cRedBits = clampToByte(redBits);
+		outPfd.cGreenBits = clampToByte(greenBits);
+		outPfd.cBlueBits = clampToByte(blueBits);
+		outPfd.cAlphaBits = clampToByte(alphaBits);
+		outPfd.cDepthBits = clampToByte(D3DGlobal.depthBits);
+		outPfd.cStencilBits = clampToByte(D3DGlobal.stencilBits);
+		outPfd.iLayerType = PFD_MAIN_PLANE;
+		return true;
+	};
+
 	int format = requestedFormat;
 	if (format <= 0) {
 		format = ::GetPixelFormat(hdc);
-		if (format <= 0) {
-			SetLastError(ERROR_INVALID_PIXEL_FORMAT);
-			logPrintf("wgl*PixelFormatARB: HDC %p has no pixel format\n", hdc);
-			return false;
-		}
 	}
 
-	if (!::DescribePixelFormat(hdc, format, sizeof(outPfd), &outPfd)) {
-		SetLastError(ERROR_INVALID_PIXEL_FORMAT);
+	if (format > 0 && ::DescribePixelFormat(hdc, format, sizeof(outPfd), &outPfd)) {
+		outFormat = format;
+		return true;
+	}
+
+	if (buildFallbackPfd()) {
+		outFormat = (format > 0) ? format : 1;
+		logPrintf("wgl*PixelFormatARB: using fallback PFD for HDC %p\n", hdc);
+		return true;
+	}
+
+	SetLastError(ERROR_INVALID_PIXEL_FORMAT);
+	if (format <= 0) {
+		logPrintf("wgl*PixelFormatARB: HDC %p has no pixel format\n", hdc);
+	} else {
 		logPrintf("wgl*PixelFormatARB: DescribePixelFormat failed for HDC %p format %d\n", hdc, format);
-		return false;
 	}
-
-	outFormat = format;
-	return true;
+	return false;
 }
 
 static int GetSwapMethod(const PIXELFORMATDESCRIPTOR &pfd)
@@ -122,7 +172,15 @@ static int GetAccelType()
 
 static int GetPixelFormatCount(HDC hdc)
 {
-	return ::DescribePixelFormat(hdc, 1, 0, NULL);
+	int count = ::DescribePixelFormat(hdc, 1, 0, NULL);
+	if (count <= 0) {
+		PIXELFORMATDESCRIPTOR pfd = {};
+		int format = 0;
+		if (GetPixelFormatDescriptor(hdc, 0, pfd, format)) {
+			return 1;
+		}
+	}
+	return count;
 }
 
 static int GetGlobalColorBits()
@@ -253,6 +311,7 @@ OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, i
 	}
 
 	int totalFormats = GetPixelFormatCount(hdc);
+	bool unsupported = false;
 	for (UINT i = 0; i < nAttributes; ++i) {
 		switch (piAttributes[i]) {
 		case WGL_NUMBER_PIXEL_FORMATS_ARB:
@@ -349,9 +408,15 @@ OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, i
 			break;
 		default:
 			piValues[i] = 0;
+			unsupported = true;
 			logPrintf("wglGetPixelFormatAttribivARB: unsupported attribute 0x%X\n", piAttributes[i]);
 			break;
 		}
+	}
+
+	if (unsupported) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return FALSE;
 	}
 
 	return TRUE;
