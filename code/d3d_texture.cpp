@@ -127,6 +127,28 @@ static bool D3DTex_IsDepthInternalFormat(GLint internalformat)
 	}
 }
 
+static bool D3DTex_IsRectangleTarget(GLenum target)
+{
+	switch (target) {
+	case GL_TEXTURE_RECTANGLE_ARB:
+	case GL_TEXTURE_RECTANGLE_NV:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool D3DTex_ValidateRectangleTarget(GLenum target)
+{
+	if (!D3DTex_IsRectangleTarget(target)) {
+		return true;
+	}
+
+	logPrintf("ERROR: GL_TEXTURE_RECTANGLE is not supported (requires non-normalized texture coordinates).\n");
+	D3DGlobal.lastError = E_INVALID_OPERATION;
+	return false;
+}
+
 static bool D3DTex_CheckDepthTextureFormat(D3DFORMAT format)
 {
 	D3DFORMAT adapterFormat = D3DGlobal.hCurrentMode.Format;
@@ -957,6 +979,9 @@ void D3DTextureObject :: SetMinFilter( GLenum mode )
 
 static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
 {
+	if (!D3DTex_ValidateRectangleTarget(target)) {
+		return;
+	}
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
 		D3DGlobal.lastError = E_INVALIDARG;
@@ -1103,6 +1128,9 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 
 static void D3DTex_LoadSubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
 {
+	if (!D3DTex_ValidateRectangleTarget(target)) {
+		return;
+	}
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
 		D3DGlobal.lastError = E_INVALIDARG;
@@ -1131,6 +1159,9 @@ static void D3DTex_LoadSubImage(GLenum target, GLint level, GLint xoffset, GLint
 
 static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid *pixels)
 {
+	if (!D3DTex_ValidateRectangleTarget(target)) {
+		return;
+	}
 	if (!D3DGlobal.supportsS3TC) {
 		logPrintf("WARNING: S3TC texture compression is not supported\n");
 		return;
@@ -1216,8 +1247,11 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 	}
 }
 
-static void D3DTex_LoadCompressedSubImage( GLenum /*target*/, GLint /*level*/, GLint xoffset, GLint yoffset, GLint /*zoffset*/, GLsizei width, GLsizei height, GLsizei /*depth*/, GLenum /*format*/, GLsizei /*imageSize*/, const GLvoid* /*pixels*/ )
+static void D3DTex_LoadCompressedSubImage( GLenum target, GLint /*level*/, GLint xoffset, GLint yoffset, GLint /*zoffset*/, GLsizei width, GLsizei height, GLsizei /*depth*/, GLenum /*format*/, GLsizei /*imageSize*/, const GLvoid* /*pixels*/ )
 {
+	if (!D3DTex_ValidateRectangleTarget(target)) {
+		return;
+	}
 	if (!D3DGlobal.supportsS3TC) {
 		logPrintf("WARNING: S3TC texture compression is not supported\n");
 		return;
@@ -1233,6 +1267,9 @@ static void D3DTex_LoadCompressedSubImage( GLenum /*target*/, GLint /*level*/, G
 
 static void D3DTex_CopySubImage( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height )
 {
+	if (!D3DTex_ValidateRectangleTarget(target)) {
+		return;
+	}
 	if (D3DGlobal.skipCopyImage) {
 		D3DGlobal.skipCopyImage--;
 		return;
