@@ -610,12 +610,16 @@ void D3DExtension_BuildExtensionsString()
 
 	//we implement it at driver level
 	ExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	ExtensionBuf.AddExtension( "WGL_ARB_pbuffer" );
 	ExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
+	ExtensionBuf.AddExtension( "WGL_ARB_render_texture" );
 	ExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	//add WGL extensions
 	WExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
+	WExtensionBuf.AddExtension( "WGL_ARB_pbuffer" );
 	WExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
+	WExtensionBuf.AddExtension( "WGL_ARB_render_texture" );
 	WExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
 
 	D3DGlobal.szExtensions = ExtensionBuf.CopyBuffer();
