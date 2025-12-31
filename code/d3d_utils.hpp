@@ -204,6 +204,9 @@ inline int UTIL_GLTextureTargettoInternalIndex( GLenum target )
 		return 0;
 	case GL_TEXTURE_2D: 
 		return 1;
+	case GL_TEXTURE_RECTANGLE_ARB:
+	case GL_TEXTURE_RECTANGLE_NV:
+		return 1;
 	case GL_TEXTURE_3D_EXT: 
 		return 2;
 	case GL_TEXTURE_CUBE_MAP_ARB:
