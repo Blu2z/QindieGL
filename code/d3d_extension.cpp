@@ -477,6 +477,7 @@ void D3DExtension_BuildExtensionsString()
 	}
 	if (D3DExtension_CheckDepthTextureSupport()) {
 		ExtensionBuf.AddExtension( "GL_ARB_depth_texture" );
+		ExtensionBuf.AddExtension( "GL_ARB_shadow" );
 		ExtensionBuf.AddExtension( "GL_SGIX_depth_texture" );
 	}
 	

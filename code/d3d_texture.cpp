@@ -136,10 +136,10 @@ static bool D3DTex_CheckDepthTextureFormat(D3DFORMAT format)
 
 static D3DFORMAT D3DTex_SelectDepthFormat(GLint internalformat)
 {
-	const D3DFORMAT genericFormats[] = { D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D16, D3DFMT_D32, D3DFMT_UNKNOWN };
-	const D3DFORMAT depth16Formats[] = { D3DFMT_D16, D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D32, D3DFMT_UNKNOWN };
-	const D3DFORMAT depth24Formats[] = { D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D32, D3DFMT_D16, D3DFMT_UNKNOWN };
-	const D3DFORMAT depth32Formats[] = { D3DFMT_D32, D3DFMT_D24X8, D3DFMT_D24S8, D3DFMT_D16, D3DFMT_UNKNOWN };
+	const D3DFORMAT genericFormats[] = { D3DFMT_D24X8, D3DFMT_D16, D3DFMT_UNKNOWN };
+	const D3DFORMAT depth16Formats[] = { D3DFMT_D16, D3DFMT_D24X8, D3DFMT_UNKNOWN };
+	const D3DFORMAT depth24Formats[] = { D3DFMT_D24X8, D3DFMT_D16, D3DFMT_UNKNOWN };
+	const D3DFORMAT depth32Formats[] = { D3DFMT_D24X8, D3DFMT_D16, D3DFMT_UNKNOWN };
 
 	const D3DFORMAT *formats = genericFormats;
 	switch (internalformat) {
@@ -979,6 +979,16 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 	{
 		D3DFORMAT d3dFormat;
 		if (D3DTex_IsDepthInternalFormat(internalformat)) {
+			if (format != GL_DEPTH_COMPONENT
+#ifdef GL_DEPTH_STENCIL
+				&& format != GL_DEPTH_STENCIL
+#endif
+				) {
+				logPrintf("WARNING: Depth texture format 0x%x is not supported for internal format 0x%x\n", format, internalformat);
+				D3DGlobal.lastError = E_INVALID_OPERATION;
+				return;
+			}
+
 			if (targetIndex == D3D_TEXTARGET_3D || targetIndex == D3D_TEXTARGET_CUBE) {
 				logPrintf("WARNING: Depth textures are not supported for target 0x%x\n", target);
 				D3DGlobal.lastError = E_INVALID_OPERATION;
