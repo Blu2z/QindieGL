@@ -560,6 +560,7 @@ void D3DExtension_BuildExtensionsString()
 	if ( D3DGlobal.supportsS3TC ) ExtensionBuf.AddExtension( "GL_EXT_texture_compression_s3tc" );
 	checkCaps = (D3DPTEXTURECAPS_CUBEMAP);
 	if ((D3DGlobal.hD3DCaps.TextureCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_EXT_texture_cube_map" );
+	ExtensionBuf.AddExtension( "GL_EXT_texture_rectangle" );
 	
 	checkCaps = (D3DTEXOPCAPS_ADD);
 	if ((D3DGlobal.hD3DCaps.TextureOpCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_EXT_texture_env_add" );
