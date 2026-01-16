@@ -131,7 +131,9 @@ static bool D3DTex_IsRectangleTarget(GLenum target)
 {
 	switch (target) {
 	case GL_TEXTURE_RECTANGLE_ARB:
+#if defined(GL_TEXTURE_RECTANGLE_NV) && (GL_TEXTURE_RECTANGLE_NV != GL_TEXTURE_RECTANGLE_ARB)
 	case GL_TEXTURE_RECTANGLE_NV:
+#endif
 		return true;
 	default:
 		return false;
