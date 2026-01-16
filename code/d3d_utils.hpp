@@ -205,7 +205,9 @@ inline int UTIL_GLTextureTargettoInternalIndex( GLenum target )
 	case GL_TEXTURE_2D: 
 		return 1;
 	case GL_TEXTURE_RECTANGLE_ARB:
+#if defined(GL_TEXTURE_RECTANGLE_NV) && (GL_TEXTURE_RECTANGLE_NV != GL_TEXTURE_RECTANGLE_ARB)
 	case GL_TEXTURE_RECTANGLE_NV:
+#endif
 		return 1;
 	case GL_TEXTURE_3D_EXT: 
 		return 2;
