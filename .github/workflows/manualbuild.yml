@@ -32,7 +32,7 @@ jobs:
         platform: [Win32, x64]
         include:
           - zip_name: QindieGL
-            bin_name: Release
+            bin_name: Release.Win32
             config: Release
             platform: Win32
           - zip_name: QindieGL_NoRemixMods
