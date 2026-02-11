@@ -384,6 +384,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClCompile Include="..\code\d3d_global.cpp" />
     <ClCompile Include="..\code\d3d_helpers.cpp" />
     <ClCompile Include="..\code\d3d_immediate.cpp" />
+    <ClCompile Include="..\code\d3d_kotor_log.cpp" />
     <ClCompile Include="..\code\d3d_light.cpp" />
     <ClCompile Include="..\code\d3d_lists.cpp" />
     <ClCompile Include="..\code\d3d_material.cpp" />
@@ -419,6 +420,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClInclude Include="..\code\d3d_global.hpp" />
     <ClInclude Include="..\code\d3d_helpers.hpp" />
     <ClInclude Include="..\code\d3d_immediate.hpp" />
+    <ClInclude Include="..\code\d3d_kotor_log.hpp" />
     <ClInclude Include="..\code\d3d_matrix_detection.hpp" />
     <ClInclude Include="..\code\d3d_matrix_stack.hpp" />
     <ClInclude Include="..\code\d3d_object.hpp" />

@@ -22,6 +22,7 @@
 #include "d3d_global.hpp"
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
+#include "d3d_kotor_log.hpp"
 #include "d3d_immediate.hpp"
 #include "d3d_array.hpp"
 #include "d3d_object.hpp"
@@ -981,6 +982,9 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 	D3DGlobal.settings.game.remixapi = D3DGlobal_ReadGameConf( "remixapi" );
 	D3DGlobal.settings.game.orthovertexshader = D3DGlobal_ReadGameConf( "orthovertexshader" );
 	D3DGlobal.settings.game.orthoskipuntextureddraws = D3DGlobal_ReadGameConf( "orthoskipuntextureddraws" );
+	D3DGlobal.settings.game.kotor_debug_log = D3DGlobal_ReadGameConf( "kotor_debug_log" );
+
+	kotor_log_init();
 
 	D3DGlobal.normalPtrGuessEnabled = 0;
 	{
@@ -1487,6 +1491,13 @@ OPENGL_API BOOL WINAPI wrap_wglSwapBuffers( HDC )
 #ifndef QINDIEGLSRC_NO_REMIX
 		hook_frame_ended();
 #endif
+		// KotOR diagnostic: check Ctrl+D for frame dump request
+		{
+			key_inputs_t keys = keypress_get();
+			if (keys.ctrl && keys.d)
+				kotor_log_request_dump();
+		}
+		kotor_log_frame_end();
 		//call this last, as it clears they key pressed/released flag
 		keypress_frame_ended();
 	}

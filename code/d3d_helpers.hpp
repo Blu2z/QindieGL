@@ -24,6 +24,7 @@ typedef union key_inputs_u
 		unsigned int u : 1;
 		unsigned int p : 1;
 		unsigned int c : 1;
+		unsigned int d : 1;
 		unsigned int imgui : 1;
 	};
 	unsigned int all;

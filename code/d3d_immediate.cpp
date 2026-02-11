@@ -23,6 +23,7 @@
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
 #include "d3d_immediate.hpp"
+#include "d3d_kotor_log.hpp"
 
 //==================================================================================
 // OpenGL Immediate Mode
@@ -286,6 +287,8 @@ void D3DIMBuffer :: End( )
 			logPrintf( "WARNING: glBegin - unsupported mode 0x%x\n", m_primitiveType );
 			break;
 		}
+
+		kotor_log_draw_call_im(m_primitiveType, m_vertexCount, iFVF);
 	}
 
 	++m_swapFrame;

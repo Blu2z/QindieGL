@@ -23,6 +23,7 @@
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
 #include "d3d_texture.hpp"
+#include "d3d_kotor_log.hpp"
 #include "d3d_matrix_stack.hpp"
 #include "d3d_combiners.hpp"
 #include "d3d_matrix_detection.hpp"
@@ -208,6 +209,8 @@ static void D3DState_SetTransform()
 				return;
 			}
 
+			kotor_log_set_transform("WORLD(combined)", (const float*)((D3DXMATRIX*)D3DGlobal.modelviewMatrixStack->top()));
+
 			if (prev_dectection_enabled)
 			{
 				//in case user just disabled it, clear the view matrix
@@ -229,11 +232,13 @@ static void D3DState_SetTransform()
 				D3DGlobal.lastError = hr;
 				return;
 			}
+			kotor_log_set_transform("WORLD(model)", (const float*)((D3DXMATRIX*)D3DGlobal.modelMatrixStack->top()));
 			hr = D3DGlobal.pDevice->SetTransform(D3DTS_VIEW, D3DGlobal.viewMatrixStack->top());
 			if (FAILED(hr)) {
 				D3DGlobal.lastError = hr;
 				return;
 			}
+			kotor_log_set_transform("VIEW", (const float*)((D3DXMATRIX*)D3DGlobal.viewMatrixStack->top()));
 
 			prev_dectection_enabled = true;
 		}
@@ -536,6 +541,8 @@ void D3DState_SetTexture()
 			D3DGlobal.lastError = hr;
 			break;
 		}
+
+		kotor_log_set_texture(currentSampler, bestTexture ? (void*)bestTexture->GetD3DTexture() : nullptr, bestTexture ? bestTexture->GetGLIndex() : 0);
 
 		if (bestTexture) {
 			D3DState.TransformState.texcoordFix[0] = 0.5f / bestTexture->GetWidth();

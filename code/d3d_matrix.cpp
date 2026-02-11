@@ -24,6 +24,7 @@
 #include "d3d_matrix_stack.hpp"
 #include "d3d_matrix_detection.hpp"
 #include "d3d_utils.hpp"
+#include "d3d_kotor_log.hpp"
 //==================================================================================
 // Some words about projection matrices
 //----------------------------------------------------------------------------------
@@ -103,6 +104,8 @@ OPENGL_API void WINAPI glLoadIdentity()
 		D3DGlobal.modelMatrixStack->load_identity( );
 		D3DGlobal.viewMatrixStack->load_identity( );
 	}
+
+	kotor_log_load_identity(D3DState.TransformState.matrixMode);
 }
 
 static void ProjectionMatrix_GLtoD3D( FLOAT *m )
@@ -217,6 +220,8 @@ OPENGL_API void WINAPI glMultMatrixf( const GLfloat *m )
 	{
 		D3DGlobal.modelMatrixStack->multiply( m );
 	}
+
+	kotor_log_mult_matrix(D3DState.TransformState.matrixMode, m);
 }
 OPENGL_API void WINAPI glMultMatrixd( const GLdouble *m )
 {
@@ -347,6 +352,8 @@ OPENGL_API void WINAPI glPopMatrix( void )
 		D3DGlobal.modelMatrixStack->pop( );
 		D3DGlobal.viewMatrixStack->pop( );
 	}
+
+	kotor_log_pop_matrix(D3DState.TransformState.matrixMode, D3DState.currentMatrixStack ? D3DState.currentMatrixStack->stack_depth() : 0);
 }
 OPENGL_API void WINAPI glPushMatrix( void )
 {
@@ -359,6 +366,8 @@ OPENGL_API void WINAPI glPushMatrix( void )
 		D3DGlobal.modelMatrixStack->push( );
 		D3DGlobal.viewMatrixStack->push( );
 	}
+
+	kotor_log_push_matrix(D3DState.TransformState.matrixMode, D3DState.currentMatrixStack->stack_depth());
 }
 OPENGL_API void WINAPI glRotatef( GLfloat angle, GLfloat x, GLfloat y, GLfloat z )
 {
@@ -373,6 +382,8 @@ OPENGL_API void WINAPI glRotatef( GLfloat angle, GLfloat x, GLfloat y, GLfloat z
 	{
 		D3DGlobal.modelMatrixStack->multiply( m );
 	}
+
+	kotor_log_rotate(D3DState.TransformState.matrixMode, angle, x, y, z);
 }
 OPENGL_API void WINAPI glRotated( GLdouble angle, GLdouble x, GLdouble y, GLdouble z )
 {
@@ -400,6 +411,8 @@ OPENGL_API void WINAPI glScalef( GLfloat x, GLfloat y, GLfloat z )
 	{
 		D3DGlobal.modelMatrixStack->multiply( m );
 	}
+
+	kotor_log_scale(D3DState.TransformState.matrixMode, x, y, z);
 }
 OPENGL_API void WINAPI glScaled( GLdouble x, GLdouble y, GLdouble z )
 {
@@ -426,6 +439,8 @@ OPENGL_API void WINAPI glTranslatef( GLfloat x, GLfloat y, GLfloat z )
 	{
 		D3DGlobal.modelMatrixStack->multiply( m );
 	}
+
+	kotor_log_translate(D3DState.TransformState.matrixMode, x, y, z);
 }
 OPENGL_API void WINAPI glTranslated( GLdouble x, GLdouble y, GLdouble z )
 {

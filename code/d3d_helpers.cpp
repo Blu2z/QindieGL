@@ -120,6 +120,8 @@ key_inputs_t keypress_get(bool immediate)
 		///
 		HANDLE_KEY( 'C', c );
 		///
+		HANDLE_KEY( 'D', d );
+		///
 		HANDLE_KEY( VK_F8, imgui );
 	}
 

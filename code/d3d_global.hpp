@@ -166,6 +166,7 @@ typedef struct D3DGlobal_s
 			DWORD               remixapi;
 			DWORD               orthovertexshader;
 			DWORD               orthoskipuntextureddraws;
+			DWORD               kotor_debug_log;
 		} game;
 	} settings;
 	struct {

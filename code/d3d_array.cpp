@@ -26,6 +26,7 @@
 #include "d3d_array.hpp"
 #include "d3d_matrix_stack.hpp"
 #include "d3d_helpers.hpp"
+#include "d3d_kotor_log.hpp"
 
 //!DO NOT UNCOMMENT THIS UNLESS YOU MAKE PERFORMANCE TESTS!
 //#define VA_USE_IMMEDIATE_MODE
@@ -828,6 +829,8 @@ void D3DVABuffer :: DrawPrimitive()
 
 	if (FAILED(hr))
 		D3DGlobal.lastError = hr;
+
+	kotor_log_draw_call_va(m_primitiveType, m_primitiveIndexCount, m_lockCount);
 }
 
 //------------------------------------------------------------------------------------------------------
