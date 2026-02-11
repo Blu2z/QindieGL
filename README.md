@@ -1,3 +1,5 @@
+# Fork to support RTX Remix in Knights of the Old Republic.
+
 # QindieGL
 ## QindieGL Is Not Driver, It's Emulator
 
