@@ -12,26 +12,26 @@ ROOT = .
 
 all:
     cd "$(MAKEDIR)"
-    @if exist "$(MAKEDIR)\core\makefile" cd "$(MAKEDIR)\core" && $(MAKE) /NOLOGO /$(MAKEFLAGS)
+    @if exist "$(MAKEDIR)\core\Makefile" cd "$(MAKEDIR)\core" && $(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS)
     cd "$(MAKEDIR)\src"
-    @$(MAKE) /NOLOGO /$(MAKEFLAGS)
-    @if exist "$(MAKEDIR)\bugs\makefile" cd "$(MAKEDIR)\bugs" && $(MAKE) /NOLOGO /$(MAKEFLAGS)
+    @$(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS)
+    @if exist "$(MAKEDIR)\bugs\Makefile" cd "$(MAKEDIR)\bugs" && $(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS)
     cd "$(MAKEDIR)"
 
 clean:
     cd "$(MAKEDIR)"
-    @if exist "$(MAKEDIR)\core\makefile" cd "$(MAKEDIR)\core" && $(MAKE) /NOLOGO /$(MAKEFLAGS) clean
+    @if exist "$(MAKEDIR)\core\Makefile" cd "$(MAKEDIR)\core" && $(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS) clean
     cd "$(MAKEDIR)\src"
-    @$(MAKE) /NOLOGO /$(MAKEFLAGS) clean
-    @if exist "$(MAKEDIR)\bugs\makefile" cd "$(MAKEDIR)\bugs" && $(MAKE) /NOLOGO /$(MAKEFLAGS) clean
+    @$(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS) clean
+    @if exist "$(MAKEDIR)\bugs\Makefile" cd "$(MAKEDIR)\bugs" && $(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS) clean
     cd "$(MAKEDIR)"
 
 realclean: clean
     cd "$(MAKEDIR)"
-    @if exist "$(MAKEDIR)\core\makefile" cd "$(MAKEDIR)\core" && $(MAKE) /NOLOGO /$(MAKEFLAGS) realclean
+    @if exist "$(MAKEDIR)\core\Makefile" cd "$(MAKEDIR)\core" && $(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS) realclean
     cd "$(MAKEDIR)\src"
-    @$(MAKE) /NOLOGO /$(MAKEFLAGS) realclean
-    @if exist "$(MAKEDIR)\bugs\makefile" cd "$(MAKEDIR)\bugs" && $(MAKE) /NOLOGO /$(MAKEFLAGS) realclean
+    @$(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS) realclean
+    @if exist "$(MAKEDIR)\bugs\Makefile" cd "$(MAKEDIR)\bugs" && $(MAKE) /F Makefile /NOLOGO /$(MAKEFLAGS) realclean
     cd "$(MAKEDIR)"
     -rmdir /q /s $(INCDS) 2> nul
     -rmdir /q /s $(LIBDS) 2> nul

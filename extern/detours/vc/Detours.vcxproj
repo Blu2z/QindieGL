@@ -73,20 +73,20 @@ SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake</NMakeBuildCommandLine>
+nmake /F Makefile</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>SET DETOURS_CONFIG=$(Configuration)
 SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean
-nmake</NMakeReBuildCommandLine>
+nmake /F Makefile clean
+nmake /F Makefile</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>SET DETOURS_CONFIG=$(Configuration)
 SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean</NMakeCleanCommandLine>
+nmake /F Makefile clean</NMakeCleanCommandLine>
     <NMakeIncludeSearchPath>$(ProjectDir)..\include;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -95,20 +95,20 @@ SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake</NMakeBuildCommandLine>
+nmake /F Makefile</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>SET DETOURS_CONFIG=$(Configuration)
 SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean
-nmake</NMakeReBuildCommandLine>
+nmake /F Makefile clean
+nmake /F Makefile</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>SET DETOURS_CONFIG=$(Configuration)
 SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean</NMakeCleanCommandLine>
+nmake /F Makefile clean</NMakeCleanCommandLine>
     <NMakeIncludeSearchPath>$(ProjectDir)..\include;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -116,18 +116,18 @@ nmake clean</NMakeCleanCommandLine>
 
 cd ..
 
-nmake</NMakeBuildCommandLine>
+nmake /F Makefile</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean
-nmake</NMakeReBuildCommandLine>
+nmake /F Makefile clean
+nmake /F Makefile</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean</NMakeCleanCommandLine>
+nmake /F Makefile clean</NMakeCleanCommandLine>
     <NMakeIncludeSearchPath>$(ProjectDir)..\include;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -135,18 +135,18 @@ nmake clean</NMakeCleanCommandLine>
 
 cd ..
 
-nmake</NMakeBuildCommandLine>
+nmake /F Makefile</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean
-nmake</NMakeReBuildCommandLine>
+nmake /F Makefile clean
+nmake /F Makefile</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 
 cd ..
 
-nmake clean</NMakeCleanCommandLine>
+nmake /F Makefile clean</NMakeCleanCommandLine>
     <NMakeIncludeSearchPath>$(ProjectDir)..\include;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -167,7 +167,7 @@ nmake clean</NMakeCleanCommandLine>
     <PreBuildEvent>
       <Command>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 cd ..
-nmake</Command>
+nmake /F Makefile</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -188,7 +188,7 @@ nmake</Command>
     <PreBuildEvent>
       <Command>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 cd ..
-nmake</Command>
+nmake /F Makefile</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -212,7 +212,7 @@ nmake</Command>
     <PreBuildEvent>
       <Command>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 cd ..
-nmake</Command>
+nmake /F Makefile</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -236,7 +236,7 @@ nmake</Command>
     <PreBuildEvent>
       <Command>SET DETOURS_TARGET_PROCESSOR=$(PlatformTarget)
 cd ..
-nmake</Command>
+nmake /F Makefile</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
