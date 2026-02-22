@@ -1004,6 +1004,10 @@ static DWORD D3DState_IsEnabledState( GLenum cap )
 		return D3DState.EnableState.stencilTestEnabled;
 	case GL_STENCIL_TEST_TWO_SIDE_EXT:
 		return D3DState.EnableState.twoSideStencilEnabled;
+	case GL_VERTEX_PROGRAM_ARB:
+		return D3DState.EnableState.vertexProgramEnabled;
+	case GL_FRAGMENT_PROGRAM_ARB:
+		return D3DState.EnableState.fragmentProgramEnabled;
 	case GL_TEXTURE_1D:
 		return D3DState.EnableState.textureTargetEnabled[D3DState.TextureState.currentTMU][D3D_TEXTARGET_1D];
 	case GL_TEXTURE_2D:
@@ -1264,6 +1268,17 @@ static void D3DState_EnableDisableState( GLenum cap, DWORD value )
 			D3DState.EnableState.twoSideStencilEnabled = value;
 			D3DState_SetRenderState( D3DRS_TWOSIDEDSTENCILMODE, D3DState.EnableState.twoSideStencilEnabled );
 		}
+		break;
+
+	case GL_VERTEX_PROGRAM_ARB:
+		D3DState.EnableState.vertexProgramEnabled = value;
+		break;
+	case GL_FRAGMENT_PROGRAM_ARB:
+		D3DState.EnableState.fragmentProgramEnabled = value;
+		break;
+	case GL_VERTEX_PROGRAM_POINT_SIZE_ARB:
+	case GL_VERTEX_PROGRAM_TWO_SIDE_ARB:
+		// silently accept
 		break;
 
 	case GL_AUTO_NORMAL:
