@@ -47,6 +47,7 @@ OPENGL_API const GLubyte * WINAPI glGetString( GLenum name )
 	case GL_RENDERER: return (const GLubyte*)D3DGlobal.szRendererName;
 	case GL_WRAPPER_NAME_CHS: return (const GLubyte*)WRAPPER_GL_WRAPPER_NAME_STRING;
 	case GL_WRAPPER_VERSION_CHS: return (const GLubyte*)WRAPPER_GL_WRAPPER_VERSION_STRING;
+	case GL_PROGRAM_ERROR_STRING_ARB: return (const GLubyte*)""; // no error
 	default: return (GLubyte*)"";
 	}
 }
@@ -523,6 +524,25 @@ template<typename T> static void glGet( GLenum pname, T *params )
 
 	case GL_MAX_PN_TRIANGLES_TESSELATION_LEVEL_ATI:
 		params[0] = 7;
+		break;
+
+	// ARB_vertex_program / ARB_fragment_program queries
+	case GL_MAX_VERTEX_ATTRIBS_ARB:
+		params[0] = (T)16;
+		break;
+	case GL_MAX_TEXTURE_IMAGE_UNITS_ARB:
+		params[0] = (T)D3DGlobal.maxActiveTMU;
+		break;
+	case GL_MAX_PROGRAM_MATRIX_STACK_DEPTH_ARB:
+		params[0] = (T)1;
+		break;
+	case GL_MAX_PROGRAM_MATRICES_ARB:
+		params[0] = (T)8;
+		break;
+
+	// ARB_occlusion_query
+	case GL_QUERY_COUNTER_BITS_ARB:
+		params[0] = (T)32;
 		break;
 
 	case GL_COLOR_CLEAR_VALUE: {

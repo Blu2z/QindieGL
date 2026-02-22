@@ -142,4 +142,44 @@ extern OPENGL_API void WINAPI glGetCompressedTexImage(GLenum target, GLint level
 extern OPENGL_API void WINAPI glPNTrianglesiATI( GLenum pname, GLint param );
 extern OPENGL_API void WINAPI glPNTrianglesfATI( GLenum pname, GLfloat param );
 
+// GL_EXT_blend_func_separate / GL_EXT_blend_equation_separate
+extern OPENGL_API void WINAPI glBlendFuncSeparateEXT( GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha, GLenum dfactorAlpha );
+extern OPENGL_API void WINAPI glBlendEquationSeparateEXT( GLenum modeRGB, GLenum modeAlpha );
+
+// GL 2.0 stencil separate
+extern OPENGL_API void WINAPI glStencilFuncSeparate( GLenum face, GLenum func, GLint ref, GLuint mask );
+extern OPENGL_API void WINAPI glStencilOpSeparate( GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass );
+extern OPENGL_API void WINAPI glStencilMaskSeparate( GLenum face, GLuint mask );
+
+// ARB_vertex_program vertex attrib functions
+extern OPENGL_API void WINAPI glVertexAttrib1fARB( GLuint index, GLfloat x );
+extern OPENGL_API void WINAPI glVertexAttrib2fARB( GLuint index, GLfloat x, GLfloat y );
+extern OPENGL_API void WINAPI glVertexAttrib3fARB( GLuint index, GLfloat x, GLfloat y, GLfloat z );
+extern OPENGL_API void WINAPI glVertexAttrib4fARB( GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w );
+extern OPENGL_API void WINAPI glVertexAttrib1fvARB( GLuint index, const GLfloat *v );
+extern OPENGL_API void WINAPI glVertexAttrib2fvARB( GLuint index, const GLfloat *v );
+extern OPENGL_API void WINAPI glVertexAttrib3fvARB( GLuint index, const GLfloat *v );
+extern OPENGL_API void WINAPI glVertexAttrib4fvARB( GLuint index, const GLfloat *v );
+extern OPENGL_API void WINAPI glVertexAttrib4NubvARB( GLuint index, const GLubyte *v );
+extern OPENGL_API void WINAPI glVertexAttribPointerARB( GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid *pointer );
+extern OPENGL_API void WINAPI glEnableVertexAttribArrayARB( GLuint index );
+extern OPENGL_API void WINAPI glDisableVertexAttribArrayARB( GLuint index );
+extern OPENGL_API void WINAPI glGetVertexAttribfvARB( GLuint index, GLenum pname, GLfloat *params );
+extern OPENGL_API void WINAPI glGetVertexAttribivARB( GLuint index, GLenum pname, GLint *params );
+extern OPENGL_API void WINAPI glGetVertexAttribPointervARB( GLuint index, GLenum pname, GLvoid **pointer );
+
+// ARB_occlusion_query
+extern OPENGL_API void WINAPI glGenQueriesARB( GLsizei n, GLuint *ids );
+extern OPENGL_API void WINAPI glDeleteQueriesARB( GLsizei n, const GLuint *ids );
+extern OPENGL_API GLboolean WINAPI glIsQueryARB( GLuint id );
+extern OPENGL_API void WINAPI glBeginQueryARB( GLenum target, GLuint id );
+extern OPENGL_API void WINAPI glEndQueryARB( GLenum target );
+extern OPENGL_API void WINAPI glGetQueryivARB( GLenum target, GLenum pname, GLint *params );
+extern OPENGL_API void WINAPI glGetQueryObjectivARB( GLuint id, GLenum pname, GLint *params );
+extern OPENGL_API void WINAPI glGetQueryObjectuivARB( GLuint id, GLenum pname, GLuint *params );
+
+// ARB_point_parameters
+extern OPENGL_API void WINAPI glPointParameterfARB( GLenum pname, GLfloat param );
+extern OPENGL_API void WINAPI glPointParameterfvARB( GLenum pname, const GLfloat *params );
+
 #endif //QINDIEGL_D3D_EXTENSION_H

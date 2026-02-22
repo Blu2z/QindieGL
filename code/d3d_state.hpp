@@ -91,6 +91,8 @@ typedef struct D3DState_s
 		DWORD			texGenEnabled[MAX_D3D_TMU];
 		DWORD			textureTargetEnabled[MAX_D3D_TMU][D3D_TEXTARGET_MAX];
 		DWORD			lightEnabled[IMPL_MAX_LIGHTS];
+		DWORD			vertexProgramEnabled;
+		DWORD			fragmentProgramEnabled;
 	} EnableState;
 	struct {
 		DWORD			fogColor;

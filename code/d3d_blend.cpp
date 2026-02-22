@@ -110,6 +110,42 @@ OPENGL_API void WINAPI glBlendEquation( GLenum mode )
 	}
 }
 
+OPENGL_API void WINAPI glBlendFuncSeparateEXT( GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha, GLenum dfactorAlpha )
+{
+	// Set RGB blend factors using the standard blend func path
+	glBlendFunc( sfactorRGB, dfactorRGB );
+
+	// Set alpha-specific blend factors via D3DRS_SEPARATEALPHABLENDENABLE
+	if (D3DGlobal.hD3DCaps.PrimitiveMiscCaps & D3DPMISCCAPS_SEPARATEALPHABLEND) {
+		DWORD srcAlpha = UTIL_GLtoD3DBlendFunc(sfactorAlpha);
+		DWORD dstAlpha = UTIL_GLtoD3DBlendFunc(dfactorAlpha);
+
+		// Only enable separate alpha blend if factors actually differ
+		if (sfactorRGB != sfactorAlpha || dfactorRGB != dfactorAlpha) {
+			D3DState_SetRenderState( D3DRS_SEPARATEALPHABLENDENABLE, TRUE );
+			D3DState_SetRenderState( D3DRS_SRCBLENDALPHA, srcAlpha );
+			D3DState_SetRenderState( D3DRS_DESTBLENDALPHA, dstAlpha );
+		} else {
+			D3DState_SetRenderState( D3DRS_SEPARATEALPHABLENDENABLE, FALSE );
+		}
+	}
+}
+
+OPENGL_API void WINAPI glBlendEquationSeparateEXT( GLenum modeRGB, GLenum modeAlpha )
+{
+	// Set RGB blend op
+	glBlendEquation( modeRGB );
+
+	// Set alpha blend op
+	if (D3DGlobal.hD3DCaps.PrimitiveMiscCaps & D3DPMISCCAPS_SEPARATEALPHABLEND) {
+		DWORD alphaOp = UTIL_GLtoD3DBlendOp(modeAlpha);
+		if (modeRGB != modeAlpha) {
+			D3DState_SetRenderState( D3DRS_SEPARATEALPHABLENDENABLE, TRUE );
+			D3DState_SetRenderState( D3DRS_BLENDOPALPHA, alphaOp );
+		}
+	}
+}
+
 OPENGL_API void WINAPI glLogicOp( GLenum )
 {
 	logPrintf("WARNING: glLogicOp is not supported\n");
