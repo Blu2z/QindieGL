@@ -32,6 +32,7 @@
 #include "d3d_helpers.hpp"
 #include "d3d_lists.hpp"
 #include "d3d_arb_program.hpp"
+#include "d3d_pbuffer.hpp"
 #include "hooking.h"
 #include "rmx_gen.h"
 #include "rmx_light.h"
@@ -116,9 +117,13 @@ void D3DGlobal_Reset()
 		D3DGlobal.pSystemMemFB = nullptr;
 	}
 
+	PBuffer_ReleaseResources();
+
 	Sleep( 20 );
 	D3DGlobal.pDevice->Reset(&D3DGlobal.hPresentParams);
 	Sleep( 20 );
+
+	PBuffer_RecreateResources();
 
 	D3DGlobal.pIMBuffer = new D3DIMBuffer;
 	D3DGlobal.pVABuffer = new D3DVABuffer;
@@ -130,6 +135,7 @@ void D3DGlobal_Cleanup( bool cleanupAll )
 
 	D3DDisplayList_Cleanup();
 	ARB_Cleanup();
+	PBuffer_Cleanup();
 
 #ifndef QINDIEGLSRC_NO_REMIX
 	rmx_deinit_device();
@@ -1340,6 +1346,38 @@ OPENGL_API BOOL WINAPI wrap_wglMakeCurrent(HDC hdc, HGLRC hglrc)
 		if (!D3DGlobal.pDevice)
 			return FALSE;
 
+		// Check if this DC belongs to a PBuffer
+		PBufferContext* pb = PBuffer_FindByDC( hdc );
+		if ( pb ) {
+			// Switch rendering to PBuffer render target
+			if ( D3DGlobal.sceneBegan ) {
+				D3DGlobal.pDevice->EndScene();
+				D3DGlobal.sceneBegan = false;
+			}
+			PBuffer_SaveMainRenderTarget();
+			if ( pb->colorSurface ) {
+				D3DGlobal.pDevice->SetRenderTarget( 0, pb->colorSurface );
+			}
+			if ( pb->depthStencil ) {
+				D3DGlobal.pDevice->SetDepthStencilSurface( pb->depthStencil );
+			}
+			pb->isActive = true;
+
+			// Set viewport to PBuffer size
+			D3DVIEWPORT9 vp;
+			vp.X = 0; vp.Y = 0;
+			vp.Width = pb->width; vp.Height = pb->height;
+			vp.MinZ = 0.0f; vp.MaxZ = 1.0f;
+			D3DGlobal.pDevice->SetViewport( &vp );
+
+			return TRUE;
+		}
+
+		// Check if we're switching back from PBuffer to main window
+		// (hdc is a real window DC, not a PBuffer DC)
+		// Restore main render target if it was saved
+		PBuffer_RestoreMainRenderTarget();
+
 		//check if mode was switched
 		if (D3DGlobal.hDC != hdc) {
 			logPrintf("--- Resetting mode ---\n");
@@ -1700,55 +1738,6 @@ OPENGL_API BOOL WINAPI wglSwapInterval( int interval )
 OPENGL_API int WINAPI wglGetSwapInterval()
 {
 	return (D3DGlobal.vSync ? 1 : 0);
-}
-
-OPENGL_API HPBUFFERARB WINAPI wglCreatePbufferARB( HDC hDC, int iPixelFormat, int iWidth, int iHeight, const int *piAttribList )
-{
-	_CRT_UNUSED( hDC );
-	_CRT_UNUSED( iPixelFormat );
-	_CRT_UNUSED( iWidth );
-	_CRT_UNUSED( iHeight );
-	_CRT_UNUSED( piAttribList );
-	logPrintf("WARNING: wglCreatePbufferARB is not supported\n");
-	return NULL;
-}
-
-OPENGL_API HDC WINAPI wglGetPbufferDCARB( HPBUFFERARB hPbuffer )
-{
-	_CRT_UNUSED( hPbuffer );
-	logPrintf("WARNING: wglGetPbufferDCARB is not supported\n");
-	return NULL;
-}
-
-OPENGL_API int WINAPI wglReleasePbufferDCARB( HPBUFFERARB hPbuffer, HDC hDC )
-{
-	_CRT_UNUSED( hPbuffer );
-	_CRT_UNUSED( hDC );
-	logPrintf("WARNING: wglReleasePbufferDCARB is not supported\n");
-	return FALSE;
-}
-
-OPENGL_API BOOL WINAPI wglDestroyPbufferARB( HPBUFFERARB hPbuffer )
-{
-	_CRT_UNUSED( hPbuffer );
-	logPrintf("WARNING: wglDestroyPbufferARB is not supported\n");
-	return FALSE;
-}
-
-OPENGL_API BOOL WINAPI wglBindTexImageARB( HPBUFFERARB hPbuffer, int iBuffer )
-{
-	_CRT_UNUSED( hPbuffer );
-	_CRT_UNUSED( iBuffer );
-	logPrintf("WARNING: wglBindTexImageARB is not supported\n");
-	return FALSE;
-}
-
-OPENGL_API BOOL WINAPI wglReleaseTexImageARB( HPBUFFERARB hPbuffer, int iBuffer )
-{
-	_CRT_UNUSED( hPbuffer );
-	_CRT_UNUSED( iBuffer );
-	logPrintf("WARNING: wglReleaseTexImageARB is not supported\n");
-	return FALSE;
 }
 
 OPENGL_API void WINAPI glPNTrianglesiATI( GLenum pname, GLint param )

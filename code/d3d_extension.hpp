@@ -91,8 +91,10 @@ extern OPENGL_API HPBUFFERARB WINAPI wglCreatePbufferARB(HDC hDC, int iPixelForm
 extern OPENGL_API HDC WINAPI wglGetPbufferDCARB(HPBUFFERARB hPbuffer);
 extern OPENGL_API int WINAPI wglReleasePbufferDCARB(HPBUFFERARB hPbuffer, HDC hDC);
 extern OPENGL_API BOOL WINAPI wglDestroyPbufferARB(HPBUFFERARB hPbuffer);
+extern OPENGL_API BOOL WINAPI wglQueryPbufferARB(HPBUFFERARB hPbuffer, int iAttribute, int *piValue);
 extern OPENGL_API BOOL WINAPI wglBindTexImageARB(HPBUFFERARB hPbuffer, int iBuffer);
 extern OPENGL_API BOOL WINAPI wglReleaseTexImageARB(HPBUFFERARB hPbuffer, int iBuffer);
+extern OPENGL_API BOOL WINAPI wglSetPbufferAttribARB(HPBUFFERARB hPbuffer, const int *piAttribList);
 extern OPENGL_API BOOL WINAPI wglChoosePixelFormatARB(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
 extern OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues);
 extern OPENGL_API BOOL WINAPI wglGetPixelFormatAttribfvARB(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues);

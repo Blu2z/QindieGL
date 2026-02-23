@@ -70,6 +70,12 @@
 #define WGL_SWAP_UNDEFINED_ARB 0x202A
 #define WGL_TYPE_RGBA_ARB 0x202B
 #define WGL_TYPE_COLORINDEX_ARB 0x202C
+#define WGL_DRAW_TO_PBUFFER_ARB 0x202D
+#define WGL_MAX_PBUFFER_PIXELS_ARB 0x202E
+#define WGL_MAX_PBUFFER_WIDTH_ARB 0x202F
+#define WGL_MAX_PBUFFER_HEIGHT_ARB 0x2030
+#define WGL_BIND_TO_TEXTURE_RGB_ARB 0x2070
+#define WGL_BIND_TO_TEXTURE_RGBA_ARB 0x2071
 #endif
 
 static bool GetPixelFormatDescriptor(HDC hdc, int requestedFormat, PIXELFORMATDESCRIPTOR &outPfd, int &outFormat)
@@ -253,6 +259,11 @@ static bool EvaluateAttribRequirement(const PIXELFORMATDESCRIPTOR &pfd, int attr
 		return GetAccelType() == value;
 	case WGL_SWAP_METHOD_ARB:
 		return GetSwapMethod(pfd) == value;
+	case WGL_DRAW_TO_PBUFFER_ARB:
+		return (value != 0); // we support PBuffers on all formats
+	case WGL_BIND_TO_TEXTURE_RGB_ARB:
+	case WGL_BIND_TO_TEXTURE_RGBA_ARB:
+		return (value != 0); // we support render-to-texture
 	default:
 		logPrintf("wglChoosePixelFormatARB: unsupported attribute 0x%X\n", attrib);
 		return false;
@@ -405,6 +416,20 @@ OPENGL_API BOOL WINAPI wglGetPixelFormatAttribivARB(HDC hdc, int iPixelFormat, i
 		case WGL_SHARE_ACCUM_ARB:
 		case WGL_SWAP_LAYER_BUFFERS_ARB:
 			piValues[i] = 0;
+			break;
+		case WGL_DRAW_TO_PBUFFER_ARB:
+			piValues[i] = TRUE;
+			break;
+		case WGL_MAX_PBUFFER_PIXELS_ARB:
+			piValues[i] = 4096 * 4096;
+			break;
+		case WGL_MAX_PBUFFER_WIDTH_ARB:
+		case WGL_MAX_PBUFFER_HEIGHT_ARB:
+			piValues[i] = 4096;
+			break;
+		case WGL_BIND_TO_TEXTURE_RGB_ARB:
+		case WGL_BIND_TO_TEXTURE_RGBA_ARB:
+			piValues[i] = TRUE;
 			break;
 		default:
 			piValues[i] = 0;

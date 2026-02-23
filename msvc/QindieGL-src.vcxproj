@@ -393,6 +393,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClCompile Include="..\code\d3d_matrix_stack.cpp" />
     <ClCompile Include="..\code\d3d_misc.cpp" />
     <ClCompile Include="..\code\d3d_object.cpp" />
+    <ClCompile Include="..\code\d3d_pbuffer.cpp" />
     <ClCompile Include="..\code\d3d_pixels.cpp" />
     <ClCompile Include="..\code\d3d_state.cpp" />
     <ClCompile Include="..\code\d3d_stencil.cpp" />
@@ -425,6 +426,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClInclude Include="..\code\d3d_matrix_detection.hpp" />
     <ClInclude Include="..\code\d3d_matrix_stack.hpp" />
     <ClInclude Include="..\code\d3d_object.hpp" />
+    <ClInclude Include="..\code\d3d_pbuffer.hpp" />
     <ClInclude Include="..\code\d3d_pixels.hpp" />
     <ClInclude Include="..\code\d3d_state.hpp" />
     <ClInclude Include="..\code\d3d_texture.hpp" />
