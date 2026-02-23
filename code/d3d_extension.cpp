@@ -20,8 +20,10 @@
 ***************************************************************************/
 #include "d3d_wrapper.hpp"
 #include "d3d_global.hpp"
+#include "d3d_state.hpp"
 #include "d3d_utils.hpp"
 #include "d3d_extension.hpp"
+#include "d3d_arb_program.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -74,13 +76,20 @@ namespace {
 	static GLfloat gARBLocalParamsVP[ARB_MAX_LOCAL_PARAMS][4];
 	static GLfloat gARBLocalParamsFP[ARB_MAX_LOCAL_PARAMS][4];
 
-	GLfloat (*ARB_EnvParams( GLenum target ))[4] {
-		return (target == GL_VERTEX_PROGRAM_ARB) ? gARBEnvParamsVP : gARBEnvParamsFP;
-	}
-	GLfloat (*ARB_LocalParams( GLenum target ))[4] {
+
+	GLfloat (*ARB_LocalParams_Internal( GLenum target ))[4] {
 		return (target == GL_VERTEX_PROGRAM_ARB) ? gARBLocalParamsVP : gARBLocalParamsFP;
 	}
+	GLfloat (*ARB_EnvParams_Internal( GLenum target ))[4] {
+		return (target == GL_VERTEX_PROGRAM_ARB) ? gARBEnvParamsVP : gARBEnvParamsFP;
+	}
 }
+
+// Accessors for d3d_arb_program.cpp (cannot be in anonymous namespace)
+GLfloat (*ARB_EnvParams( GLenum target ))[4] { return ARB_EnvParams_Internal( target ); }
+GLfloat (*ARB_LocalParams( GLenum target ))[4] { return ARB_LocalParams_Internal( target ); }
+GLuint ARB_GetBoundVertexProgram() { return gARBBoundVertexProgram; }
+GLuint ARB_GetBoundFragmentProgram() { return gARBBoundFragmentProgram; }
 
 OPENGL_API void WINAPI glProgramStringARB( GLenum target, GLenum format, GLsizei len, const GLvoid *string )
 {
@@ -91,6 +100,14 @@ OPENGL_API void WINAPI glProgramStringARB( GLenum target, GLenum format, GLsizei
 		pd.source.assign( static_cast<const char*>(string), len );
 		logPrintf("glProgramStringARB: stored %s program %u (%d bytes)\n",
 			target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", bound, len);
+
+		// Compile ARB program to D3D9 shader
+		if ( D3DGlobal.pDevice && !D3DGlobal.settings.game.enableARBProgramsStub ) {
+			std::string errorStr;
+			if ( !ARB_CompileProgram( bound, target, static_cast<const char*>(string), len, errorStr ) ) {
+				logPrintf("WARNING: ARB program %u compilation failed: %s\n", bound, errorStr.c_str());
+			}
+		}
 	}
 }
 
@@ -113,6 +130,8 @@ OPENGL_API void WINAPI glDeleteProgramsARB( GLsizei n, const GLuint *programs )
 	for (GLsizei i = 0; i < n; ++i) {
 		gARBProgramIDs.erase(programs[i]);
 		gARBProgramStore.erase(programs[i]);
+		// Clean up compiled shader
+		ARB_DeleteCompiledProgram( programs[i] );
 		if (gARBBoundVertexProgram == programs[i]) gARBBoundVertexProgram = 0;
 		if (gARBBoundFragmentProgram == programs[i]) gARBBoundFragmentProgram = 0;
 	}
