@@ -420,6 +420,16 @@ OPENGL_API void WINAPI glGetVertexAttribfvARB( GLuint index, GLenum pname, GLflo
 		params[0] = 0;
 	}
 }
+OPENGL_API void WINAPI glGetVertexAttribdvARB( GLuint index, GLenum pname, GLdouble *params )
+{
+	if (!params) return;
+	if (pname == GL_CURRENT_VERTEX_ATTRIB_ARB && index < 16) {
+		params[0] = (GLdouble)gVertexAttribs[index][0]; params[1] = (GLdouble)gVertexAttribs[index][1];
+		params[2] = (GLdouble)gVertexAttribs[index][2]; params[3] = (GLdouble)gVertexAttribs[index][3];
+	} else {
+		params[0] = 0;
+	}
+}
 OPENGL_API void WINAPI glGetVertexAttribivARB( GLuint index, GLenum pname, GLint *params )
 {
 	if (!params) return;
@@ -726,6 +736,7 @@ static glext_entry_point_t glext_EntryPoints[] =
 	{ "glVertexAttribPointerARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttribPointerARB },
 	{ "glEnableVertexAttribArrayARB", "GL_ARB_vertex_program", -1, (PROC)glEnableVertexAttribArrayARB },
 	{ "glDisableVertexAttribArrayARB", "GL_ARB_vertex_program", -1, (PROC)glDisableVertexAttribArrayARB },
+	{ "glGetVertexAttribdvARB", "GL_ARB_vertex_program", -1, (PROC)glGetVertexAttribdvARB },
 	{ "glGetVertexAttribfvARB", "GL_ARB_vertex_program", -1, (PROC)glGetVertexAttribfvARB },
 	{ "glGetVertexAttribivARB", "GL_ARB_vertex_program", -1, (PROC)glGetVertexAttribivARB },
 	{ "glGetVertexAttribPointervARB", "GL_ARB_vertex_program", -1, (PROC)glGetVertexAttribPointervARB },
@@ -1029,19 +1040,19 @@ void D3DExtension_BuildExtensionsString()
 	// Note: we don't add GL_VERSION_2_0 to extension string since it's not a real extension.
 	// GL 2.0 functions are found via wglGetProcAddress.
 
-	//we implement it at driver level
-	ExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
-	ExtensionBuf.AddExtension( "WGL_ARB_pbuffer" );
-	ExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
-	ExtensionBuf.AddExtension( "WGL_ARB_render_texture" );
-	ExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
+	//we implement it at driver level — always advertise
+	ExtensionBuf.AddExtensionUnchecked( "WGL_ARB_extensions_string" );
+	ExtensionBuf.AddExtensionUnchecked( "WGL_ARB_pbuffer" );
+	ExtensionBuf.AddExtensionUnchecked( "WGL_ARB_pixel_format" );
+	ExtensionBuf.AddExtensionUnchecked( "WGL_ARB_render_texture" );
+	ExtensionBuf.AddExtensionUnchecked( "WGL_EXT_swap_control" );
 
 	//add WGL extensions
-	WExtensionBuf.AddExtension( "WGL_ARB_extensions_string" );
-	WExtensionBuf.AddExtension( "WGL_ARB_pbuffer" );
-	WExtensionBuf.AddExtension( "WGL_ARB_pixel_format" );
-	WExtensionBuf.AddExtension( "WGL_ARB_render_texture" );
-	WExtensionBuf.AddExtension( "WGL_EXT_swap_control" );
+	WExtensionBuf.AddExtensionUnchecked( "WGL_ARB_extensions_string" );
+	WExtensionBuf.AddExtensionUnchecked( "WGL_ARB_pbuffer" );
+	WExtensionBuf.AddExtensionUnchecked( "WGL_ARB_pixel_format" );
+	WExtensionBuf.AddExtensionUnchecked( "WGL_ARB_render_texture" );
+	WExtensionBuf.AddExtensionUnchecked( "WGL_EXT_swap_control" );
 
 	D3DGlobal.szExtensions = ExtensionBuf.CopyBuffer();
 	D3DGlobal.szWExtensions = WExtensionBuf.CopyBuffer();
@@ -1161,10 +1172,9 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 
 	if (pszDisabledExt)
 	{
-		gMissingProcName = s;
-		gMissingProcExt = pszDisabledExt;
-		logPrintf("WARNING: wglGetProcAddress: returning stub for disabled proc '%s' (extension '%s')\n", s, pszDisabledExt);
+		logPrintf("WARNING: wglGetProcAddress: returning NULL for disabled proc '%s' (extension '%s')\n", s, pszDisabledExt);
 		AddUniqueProc(gDisabledProcs, std::string(s).append(" (").append(pszDisabledExt).append(")"));
+		return NULL;
 	}
 	else
 	{
