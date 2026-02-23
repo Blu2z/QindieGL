@@ -21,6 +21,10 @@
 #ifndef QINDIEGL_D3D_PBUFFER_H
 #define QINDIEGL_D3D_PBUFFER_H
 
+#ifndef HPBUFFERARB
+typedef void* HPBUFFERARB;
+#endif
+
 //==================================================================================
 // WGL_ARB_pbuffer / WGL_ARB_render_texture → D3D9 render target textures
 //==================================================================================
