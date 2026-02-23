@@ -26,11 +26,11 @@ jobs:
           - name: QindieGL
             config: Release
             platform: Win32
-            bin_name: Release
+            bin_name: Release.x86
           - name: QindieGL_NoRemixMods
             config: ReleaseNoRemixMods
             platform: Win32
-            bin_name: ReleaseNoRemixMods
+            bin_name: ReleaseNoRemixMods.x86
           - name: QindieGL.x64
             config: Release
             platform: x64

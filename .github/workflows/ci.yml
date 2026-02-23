@@ -21,7 +21,8 @@ jobs:
       - name: Verify build output
         shell: pwsh
         run: |
-          $outDir = "bin/Release.${{ matrix.platform }}"
+          $platformTarget = if ('${{ matrix.platform }}' -eq 'Win32') { 'x86' } else { '${{ matrix.platform }}' }
+          $outDir = "bin/Release.$platformTarget"
           if (-not (Test-Path $outDir)) { throw "Output directory not found: $outDir" }
           $dll = Join-Path $outDir "opengl32.dll"
           if (-not (Test-Path $dll)) { throw "Build output not found: $dll" }
@@ -29,4 +30,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qindiegl-${{ matrix.platform }}-release
-          path: bin/Release.${{ matrix.platform }}
+          path: bin/Release.${{ matrix.platform == 'Win32' && 'x86' || matrix.platform }}
