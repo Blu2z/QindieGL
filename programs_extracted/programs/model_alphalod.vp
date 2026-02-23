@@ -1,0 +1,40 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// Alpha lod for model we just replace alpha of incoming color
+// by alpha value specificated by uniform parameter
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS  : POSITION;
+    float2 TEX0 : TEXCOORD0;
+    float4 COL0 : COLOR0;
+};
+
+struct outdata
+{
+    float4 POS  : POSITION;
+    float2 TEX0 : TEXCOORD0;
+    float4 COL0 : COLOR0;
+};
+
+////////////////////////////////////////////////////
+
+uniform float alpha_lod_value;
+
+
+
+outdata main(indata IN)
+{
+	outdata OUT;
+	
+
+    OUT.POS = mul(glstate.matrix.mvp, IN.POS);
+    OUT.TEX0 = IN.TEX0;
+    OUT.COL0 = IN.COL0;
+    OUT.COL0.a = alpha_lod_value;
+    
+    	
+	return OUT;
+}

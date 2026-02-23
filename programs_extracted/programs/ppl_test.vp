@@ -1,0 +1,80 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS		: POSITION;
+    float3 NORMAL	: NORMAL;
+    float2 TEX0	    : TEXCOORD0; 
+    float3 TANGENT	: TEXCOORD2;
+    float4 COL		: COLOR0;
+ };
+
+
+struct outdata
+{
+     float4 HPOS : POSITION;
+     float2 TEX0 : TEXCOORD0; //diffuse
+     float3 TEX1 : TEXCOORD1; //light direction
+     float3 TEX2 : TEXCOORD2; //half angle vector
+     float4 COL	 : COLOR0;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////
+
+//uniform float3 light_dir;
+
+uniform float3 eye_pos;
+uniform float3 light_pos;
+uniform float3 light_color;
+uniform float4x4 mdlToWorld; 
+
+
+outdata main(indata IN )
+{
+  outdata OUT;
+  
+  OUT.HPOS = mul(glstate.matrix.mvp, IN.POS);
+  OUT.TEX0 = IN.TEX0;
+  OUT.COL.rgb  = light_color;
+
+
+mdlToWorld=transpose(mdlToWorld);
+float3 vpos = mul(mdlToWorld,IN.POS).xyz;
+ 
+  
+  float3 light_dir = normalize(light_pos-vpos);
+  
+  
+  IN.NORMAL=normalize(IN.NORMAL);
+  IN.TANGENT=normalize(IN.TANGENT);
+  float3  BINORMAL=normalize(cross(IN.NORMAL,IN.TANGENT));
+  
+
+///////////////////////////////////////////////
+//CORRECT TRANSFORMATION OF LIGHT VECTOR TO TEXTURE SPACE!!
+//TESTED!!!  BY TANGENT SPACE!!  COOL!
+ 
+ 
+ float3x3 to_tangent=float3x3(IN.TANGENT,
+							  BINORMAL,
+							  IN.NORMAL);
+							
+ float3 tmp1=mul(to_tangent,light_dir);
+ 
+ OUT.TEX1=normalize(tmp1); //light dir tangent space vector
+ //////////////////////////////////////////////
+  
+
+//specular!!!
+
+float3 eye_dir=normalize(eye_pos-vpos);
+
+float3 half_angle=normalize(eye_dir+light_dir);
+
+ OUT.TEX2 = mul(to_tangent,half_angle);
+  
+ return OUT;
+}

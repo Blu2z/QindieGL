@@ -1,0 +1,62 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// Dynamic waveble tree
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS  : POSITION;
+    float2 TEX0 : TEXCOORD0;
+    float4 COL0 : COLOR0;
+};
+
+struct outdata
+{
+	float4 POS  : POSITION;
+    float2 TEX0 : TEXCOORD0;
+    float4 COL0 : COLOR0;
+};
+
+////////////////////////////////////////////////////
+
+uniform float Time;
+
+outdata main(indata IN)
+{
+	outdata OUT;
+	
+    float4 tr_in_pos=IN.POS;
+
+
+    //Not linear interpolation!!! Soft interpolation between points (height)
+
+
+	float intens0=0.0;
+	float intens1=IN.POS.y/2.0;
+	float intens2=IN.POS.y;
+	
+	float ind=0.1;
+	float tmp1=lerp(intens0,intens1,ind);
+	float tmp2=lerp(intens1,intens2,ind);
+	float rez=lerp(tmp1,tmp2,ind);
+		
+
+
+	float time_offset=glstate.matrix.mvp._m30+glstate.matrix.mvp._m31+glstate.matrix.mvp._m32;
+
+	Time+=time_offset;
+
+//    tr_in_pos.x+=sin((Time/300.0)+dot((float3)IN.POS,float3(1.0,0.0,0.0)))*(tr_in_pos.y*0.03);    
+//    tr_in_pos.z+=cos((Time/300.0)+dot((float3)IN.POS,float3(1.0,0.0,0.0)))*(tr_in_pos.y*0.03);    
+	
+    tr_in_pos.x+=sin((Time/300.0))*(rez*0.2);    
+    tr_in_pos.z+=cos((Time/300.0))*(rez*0.2);    
+
+	
+    OUT.POS = mul(glstate.matrix.mvp, tr_in_pos);
+    OUT.TEX0 = IN.TEX0;
+    OUT.COL0 = IN.COL0;
+	
+	return OUT;
+}

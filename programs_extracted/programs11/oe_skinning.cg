@@ -1,0 +1,102 @@
+//======================================================================
+//skinning function
+
+uniform float4    bone_matrix[201];  
+
+
+struct SSkinningResult
+{
+		float4 pos;
+		float3 norm;
+		float3 tang;
+};
+
+#define NUM_BONES_PER_VERTEX 2
+
+SSkinningResult	skinning(float4 _src_pos, 
+						float3 _src_norm, 
+						float3 _src_tangent, 
+						float2 _bone_indices,  
+						float2 _bone_weights)
+
+{
+	float3	 res_pos  = 0;
+	float3	 res_norm = 0;
+	float3	 res_tang = 0;
+
+	//!! Can be optimized via accumulating multiply matrices together with weighting
+
+#ifdef CAN_USE_RIGID_SKINNING
+
+		float idx =  _bone_indices[ 0 ] * 3.0f;
+
+		//get transformation matrix of  bone
+		float3x4 tm_bone = float3x4(bone_matrix[ idx + 0 ],
+				   					bone_matrix[ idx + 1 ],
+									bone_matrix[ idx + 2 ]);
+
+		//get transformation matrix of bone with just rotation ( no translation )
+		//need for normal transformations 
+		float3x3 tm_bone_rot = float3x3(tm_bone[ 0 ].xyz,
+										tm_bone[ 1 ].xyz,
+										tm_bone[ 2 ].xyz);
+
+		//transforming position
+		res_pos		= mul( tm_bone,		_src_pos );
+			
+		res_norm	= mul( tm_bone_rot,	_src_norm );
+
+	#ifdef USE_NORMALMAP
+			res_tang	= mul( tm_bone_rot, _src_tangent );
+	#endif
+
+#else
+
+	
+	for( int i = 0; i < NUM_BONES_PER_VERTEX; i++ )
+	{
+		float idx =  _bone_indices[ i ] * 3.0f;
+
+		float weight = _bone_weights[ i ]; // * (1.0f/ 254.0f);
+
+		//get transformation matrix of  bone
+		float3x4 tm_bone = float3x4(bone_matrix[ idx + 0 ],
+				   					bone_matrix[ idx + 1 ],
+									bone_matrix[ idx + 2 ]);
+
+		//get transformation matrix of bone with just rotation ( no translation )
+		//need for normal transformations 
+		float3x3 tm_bone_rot = float3x3(tm_bone[ 0 ].xyz,
+										tm_bone[ 1 ].xyz,
+										tm_bone[ 2 ].xyz);
+
+		//transforming position
+		float3 t_pos	= mul( tm_bone,		_src_pos );
+		res_pos		+= ( weight * t_pos );
+			
+		float3 t_norm	= mul( tm_bone_rot,	_src_norm );
+		res_norm	+= ( weight * t_norm );
+
+	#ifdef USE_NORMALMAP
+			float3 t_tang	= mul( tm_bone_rot, _src_tangent );
+			res_tang	+= ( weight * t_tang );
+	#endif
+
+	}
+
+#endif
+
+	SSkinningResult sr;
+
+	sr.pos.xyz		= res_pos;
+	sr.pos.w		= 1.0f;
+
+	//sr.norm		= normalize( res_norm );
+	sr.norm		= res_norm; //do not normalize per - vertex skinned mesh!
+
+#ifdef USE_NORMALMAP
+	sr.tang		= normalize( res_tang );
+#endif
+
+	return sr;
+}

@@ -1,0 +1,37 @@
+/////////////////////////////////////////////////////////
+//  Shader (bluring image). 7 samples
+//  Offsets passed by vertex coords
+/////////////////////////////////////////////////////////
+
+
+uniform	 sampler2D scr_image:TEXUNIT0;
+
+
+float4 main(  float2 TEX0 : TEXCOORD0,
+			  float2 TEX1 : TEXCOORD1,
+			  float2 TEX2 : TEXCOORD2,
+			  float2 TEX3 : TEXCOORD3,
+			  float2 TEX4 : TEXCOORD4,
+			  float2 TEX5 : TEXCOORD5,
+			  float2 TEX6 : TEXCOORD6
+		  
+	 	     ):COLOR
+{
+
+	float4 out_color;
+
+
+	out_color=tex2D(scr_image,TEX0)+
+			  tex2D(scr_image,TEX1)+
+			  tex2D(scr_image,TEX2)+
+			  tex2D(scr_image,TEX3)+
+			  tex2D(scr_image,TEX4)+
+			  tex2D(scr_image,TEX5)+
+			  tex2D(scr_image,TEX6);
+
+	out_color*=(1.0/7.0);
+
+	return out_color;
+
+}
+

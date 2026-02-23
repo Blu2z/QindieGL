@@ -1,0 +1,123 @@
+#include "oe_common.cg"
+
+/////////////////////////////////////////////////
+//Hardware skinning
+/////////////////////////////////////////////////
+
+//
+
+#ifdef SKINNED_MESH
+
+	struct SInData
+	{
+		float4 pos	    : POSITION;
+		float2 uv0	    : TEXCOORD0; 
+
+		float3 norm	    : NORMAL;
+		float3 tangent  : TEXCOORD3; 
+
+		float2 bone_id  : TEXCOORD1; 
+		float2 bone_w   : TEXCOORD2; 
+
+	};
+
+#else
+
+	struct SInData
+	{
+		float4 pos	    : POSITION;
+		float2 uv0	    : TEXCOORD0; 
+		float3 normal	: NORMAL; //TEXCOORD1;
+		float3 tangent  : COLOR0; 
+   	};
+
+#endif
+
+struct SOutData
+{
+    float4 hpos  : POSITION;
+    float2 uv0 : TEXCOORD0;
+    float3 pos  : TEXCOORD1;
+    float3 norm : TEXCOORD2;
+
+#ifdef USE_NORMALMAP
+    float3 tang : TEXCOORD3;
+    float3 binorm : TEXCOORD4;
+#endif
+
+#if defined(USE_ENV_CUBEMAP) || defined(USE_FOG_INTERACTION)
+	float3 to_eye	: TEXCOORD5;
+#endif
+
+};
+
+uniform float3	  camera_pos_ws;	//world space camera position
+uniform float4x4  inst_matrix;		//instancing matrix
+
+//======================================================================
+#ifdef SKINNED_MESH
+	#include "oe_skinning.cg"
+#endif
+
+SOutData main(SInData in_data)
+{
+	SOutData out_data;
+
+	float4	 pos  = 0;	//model space position
+	float3	 norm = 0;	//model space normal
+	float3	 tang = 0;	//model	space tangent
+
+#ifdef SKINNED_MESH
+
+
+	SSkinningResult sr =  skinning(in_data.pos, in_data.norm, in_data.tangent, in_data.bone_id, in_data.bone_w);
+
+	pos		= sr.pos;
+	norm	= sr.norm; 
+
+	#ifdef USE_NORMALMAP
+		tang = sr.tang;
+	#endif
+
+#else
+
+	pos		= in_data.pos;
+	norm	= in_data.normal; 
+
+	#ifdef USE_NORMALMAP
+		tang = expand(in_data.tangent);
+	#endif
+
+#endif
+
+	out_data.hpos	= mul(glstate.matrix.mvp, pos);
+    out_data.uv0	= in_data.uv0;
+
+#ifdef USE_UV_TRANSFORM
+	out_data.uv0	= mul(glstate.matrix.texture[0], float4(out_data.uv0, 1.0, 1.0));
+#endif
+
+    out_data.pos	= pos.xyz;				
+    out_data.norm	= norm;	
+
+#ifndef USE_PER_PIXEL_NORMALIZE		//use per vertex normalization
+	out_data.norm	= normalize(out_data.norm);
+#endif
+
+#ifdef USE_NORMALMAP
+	out_data.tang	= normalize(tang);	
+	out_data.binorm = cross(out_data.tang, out_data.norm);
+#endif
+
+#if defined(USE_ENV_CUBEMAP) || defined(USE_FOG_INTERACTION)
+	out_data.to_eye = mul(inst_matrix, pos);
+	out_data.to_eye = camera_pos_ws - out_data.to_eye;
+
+	//out_data.to_eye = float3(1.0, 0.0, 0.0);
+	//out_data.to_eye = mul(glstate.matrix.modelview[0], pos);
+	//out_data.to_eye = /*camera_pos_ws */ out_data.to_eye;
+
+#endif
+
+	return out_data;
+}

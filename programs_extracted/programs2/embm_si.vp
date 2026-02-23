@@ -1,0 +1,85 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// Environment Mapped Bump Mapping. 
+// Vertex Program for Self Illumination
+// Only one diffirence from vertex program for vertex lighted surfaces
+// is in scale outcoming color by 0.5 
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS		: POSITION;
+    float3 TEX0	    : TEXCOORD0; //environment cubemap
+    float2 TEX1	    : TEXCOORD1; //normalmap/diffuse texture UV mapping
+    float3 TANGENT  : TEXCOORD2;
+    float3 BINORMAL : TEXCOORD3;
+    float3 NORMAL   : NORMAL;
+    float4 COLOR	: COLOR0;
+    
+};
+
+
+struct outdata
+{
+     float4 HPOS : POSITION;
+     float3 TEX0 : TEXCOORD0; //environment cubemap
+     float2 TEX1 : TEXCOORD1; //normalmap/diffuse UV mapping
+     
+     
+     float3 TANGENT		: TEXCOORD2;
+     float3 BINORMAL	: TEXCOORD3;
+     float3 NORMAL		: TEXCOORD4;
+     
+     float4 COLOR: COLOR0;
+};
+
+
+uniform float3 EyePos;
+uniform float4x4 mdlToWorld; 
+
+outdata main(indata IN )
+{
+  outdata OUT;
+
+    
+  OUT.HPOS = mul(glstate.matrix.mvp, IN.POS);
+  OUT.TEX1 = IN.TEX1;
+  OUT.COLOR = IN.COLOR*0.5;
+
+
+
+  
+  float3x3  tr_norm_matr=(float3x3)mdlToWorld;
+  
+  //transform normals to world space 
+  OUT.TANGENT=normalize(mul(tr_norm_matr,IN.TANGENT));
+  OUT.BINORMAL=normalize(mul(tr_norm_matr,IN.BINORMAL));
+  OUT.NORMAL=normalize(mul(tr_norm_matr,IN.NORMAL));
+  
+  
+
+
+
+  float3 pos_w = mul(mdlToWorld,IN.POS).xyz;
+  OUT.TEX0=normalize(pos_w-EyePos);
+
+/*
+///////////////////////////////////////////////
+//CORRECT TRANSFORMATION OF LIGHT VECTOR TO TEXTURE SPACE!!
+//TESTED!!!  BY TANGENT SPACE!!  COOL!
+  float3 ldir=EyePos-IN.POS.xyz;
+  
+  ldir=normalize(ldir);
+ 
+ 
+ float3x3 rotation=float3x3(IN.TANGENT,
+							IN.BINORMAL,
+							IN.NORMAL);
+ OUT.TEX0=mul(rotation,ldir);
+ //////////////////////////////////////////////
+ */
+    
+return OUT;
+}
+

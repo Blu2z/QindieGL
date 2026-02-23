@@ -1,0 +1,241 @@
+#pragma once
+
+
+//==================================================================
+//scene illumination functions
+
+#define		MAX_LIGHTS		6
+
+uniform float3		 light_pos[MAX_LIGHTS];	
+uniform float3		 light_color[MAX_LIGHTS];
+uniform int			 light_type[MAX_LIGHTS];	//2 types: 0 - spot, 1 - directional
+												//if light are directional, light_pos, means light direction
+uniform int			 n_lights;					//number of lights
+uniform float3		 light_ambient;
+
+
+uniform float		 specular_power;
+
+
+//for the up / down lighting
+uniform float3		up_direction;
+
+uniform float3		up_light;		// = float3(0.3, 0.3, 0.3);
+uniform float3		down_light;		// = float3(0.1, 0.1, 0.1);
+
+//=================================================================================
+
+
+struct SIlluminationResult
+{
+	float3 diffuse;
+	float3 specular;
+};
+
+SIlluminationResult g_res;
+
+float3	gp_view_dir;
+
+void  illuminate_point(in float3 _light_color, in float3 _light_pos, in float3 _pos, in float3 _norm)
+{
+	
+	float3 l_dir = normalize(_light_pos - _pos);
+	float  light_i = max( dot( _norm, l_dir) , 0 );	//light intensivity
+	g_res.diffuse	+=  _light_color * light_i;
+
+#ifdef USE_SPECULAR
+	//perform specular term
+ 	float3 V = gp_view_dir;	//view vector
+	float3 H = normalize(l_dir + V);		//half - angle
+	float specular_i = pow(max(dot(H, _norm), 0), specular_power);
+
+	if (light_i <= 0) 
+		specular_i = 0;
+
+	g_res.specular	+=	_light_color * specular_i; 
+#endif
+
+}
+
+//----
+
+void  illuminate_directional(in float3 _light_color, in float3 _light_dir, in float3 _norm)
+{
+	float  light_i = max( dot( _norm, _light_dir) , 0 );	//light intensivity
+
+//perform specular term..
+/*
+ //	float3 V = normalize(cam_pos - _pos); //view vector
+//	float3 H = normalize(l_dir + V); //half - angle
+//	float specular_i = pow(max(dot(H, _norm), 0), shininess);
+//	if (light_i <= 0) 
+//	specular_i = 0;
+//	specular_color += _light_color * specular_i;
+*/
+	g_res.diffuse	+=  _light_color * light_i;
+
+}
+
+//--------------------------------------------------------------------------------
+//illumination position
+
+SIlluminationResult	illuminate(float3 _pos, float3 _norm, float _specular_intensivity_modulator)
+{
+#ifdef SELF_ILLUMINATION
+
+	SIlluminationResult sr;
+	sr.diffuse = float3(1.0, 1.0, 1.0);
+	sr.specular = float3(0.0, 0.0, 0.0);
+	return sr;
+
+#endif
+
+	float lerp_factor = (dot(_norm, up_direction) + 1) / 2;
+	g_res.diffuse = lerp(down_light, up_light, lerp_factor);//light_ambient;
+	g_res.specular = float3(0.0, 0.0, 0.0);
+
+#ifdef USE_SPECULAR
+	gp_view_dir = normalize(cam_pos - _pos);
+#endif
+
+
+	if(n_lights <= 0.1f)
+	{
+		g_res.specular = float3(0.0, 0.0, 0.0);
+	}
+	else if(n_lights <= 1.1f)
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+	}
+	else if(n_lights <= 2.01f)
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+
+		if(light_type[1] > 0.0f )
+			illuminate_point(light_color[1], light_pos[1], _pos, _norm); 
+		else
+			illuminate_directional(light_color[1], light_pos[1], _norm);
+	}
+	else if(n_lights <= 3.01f)
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+
+		if(light_type[1] > 0.0f )
+			illuminate_point(light_color[1], light_pos[1], _pos, _norm); 
+		else
+			illuminate_directional(light_color[1], light_pos[1], _norm);
+
+		if(light_type[2] > 0.0f )
+			illuminate_point(light_color[2], light_pos[2], _pos, _norm);
+		else
+			illuminate_directional(light_color[2], light_pos[2], _norm);
+	}
+	else 
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+
+		if(light_type[1] > 0.0f )
+			illuminate_point(light_color[1], light_pos[1], _pos, _norm); 
+		else
+			illuminate_directional(light_color[1], light_pos[1], _norm);
+
+		if(light_type[2] > 0.0f )
+			illuminate_point(light_color[2], light_pos[2], _pos, _norm); 
+		else
+			illuminate_directional(light_color[2], light_pos[2], _norm);
+
+		if(light_type[3] > 0.0f )
+			illuminate_point(light_color[3], light_pos[3], _pos, _norm); 
+		else
+			illuminate_directional(light_color[3], light_pos[3], _norm);
+	}
+
+
+	/*
+	if(n_lights >= 4.0f)
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+
+		if(light_type[1] > 0.0f )
+			illuminate_point(light_color[1], light_pos[1], _pos, _norm); 
+		else
+			illuminate_directional(light_color[1], light_pos[1], _norm);
+
+		if(light_type[2] > 0.0f )
+			illuminate_point(light_color[2], light_pos[2], _pos, _norm); 
+		else
+			illuminate_directional(light_color[2], light_pos[2], _norm);
+
+		if(light_type[3] > 0.0f )
+			illuminate_point(light_color[3], light_pos[3], _pos, _norm); 
+		else
+			illuminate_directional(light_color[3], light_pos[3], _norm);
+	}
+	else
+	if(n_lights >= 3.0f)
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+
+		if(light_type[1] > 0.0f )
+			illuminate_point(light_color[1], light_pos[1], _pos, _norm); 
+		else
+			illuminate_directional(light_color[1], light_pos[1], _norm);
+
+		if(light_type[2] > 0.0f )
+			illuminate_point(light_color[2], light_pos[2], _pos, _norm);
+		else
+			illuminate_directional(light_color[2], light_pos[2], _norm);
+	}
+	else
+	if(n_lights >= 2.0f)
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+
+		if(light_type[1] > 0.0f )
+			illuminate_point(light_color[1], light_pos[1], _pos, _norm); 
+		else
+			illuminate_directional(light_color[1], light_pos[1], _norm);
+	}
+	else
+	if(n_lights >= 1.0f)
+	{
+		if(light_type[0] > 0.0f )
+			illuminate_point(light_color[0], light_pos[0], _pos, _norm); 
+		else
+			illuminate_directional(light_color[0], light_pos[0], _norm);
+	}
+	else
+	{
+		g_res.specular = float3(0.0, 0.0, 0.0);
+	}
+	*/
+
+#ifdef USE_SPECULAR
+	g_res.specular *= _specular_intensivity_modulator;	
+#endif
+
+	return g_res;
+}
+
+//=================================================================================

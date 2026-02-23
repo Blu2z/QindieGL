@@ -1,0 +1,59 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// Environment Mapped Bump Mapping. 
+// Vertex Program for Vertex Static Light 
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS		: POSITION;
+    float3 TEX0	    : TEXCOORD0; //environment cubemap
+    float2 TEX1	    : TEXCOORD1; //normalmap/diffuse texture UV mapping
+    float3 TANGENT  : TEXCOORD2;
+    float3 BINORMAL : TEXCOORD3;
+    float3 NORMAL   : NORMAL;
+
+    float4 COLOR	: COLOR0;
+    
+};
+
+
+struct outdata
+{
+     float4 HPOS : POSITION;
+     float3 TEX0 : TEXCOORD0; //environment cubemap
+     float2 TEX1 : TEXCOORD1; //normalmap/diffuse UV mapping
+     
+     float3 TANGENT		: TEXCOORD2;
+     float3 BINORMAL	: TEXCOORD3;
+     float3 NORMAL		: TEXCOORD4;
+     
+     float4 COLOR: COLOR0;
+};
+
+
+ uniform float3 EyePos;
+
+outdata main(indata IN )
+{
+  outdata OUT;
+    
+  OUT.HPOS		= mul(glstate.matrix.mvp, IN.POS);
+  OUT.TEX1		= IN.TEX1;
+  OUT.COLOR		= IN.COLOR;
+  
+//matrix of transformation from tangent space to object space
+//this matrix are inverted tangent space matrix
+//NOTE: inversion of rotation matrix(3x3) are just transposed matrix!
+
+//save as transposed matrix
+  OUT.TANGENT	= float3(IN.TANGENT.x, IN.BINORMAL.x, IN.NORMAL.x);
+  OUT.BINORMAL	= float3(IN.TANGENT.y, IN.BINORMAL.y, IN.NORMAL.y);
+  OUT.NORMAL	= float3(IN.TANGENT.z, IN.BINORMAL.z, IN.NORMAL.z);
+
+  OUT.TEX0		=	IN.POS.xyz - EyePos; 
+
+  return OUT;
+}
+

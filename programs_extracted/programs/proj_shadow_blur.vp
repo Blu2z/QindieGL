@@ -1,0 +1,64 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// blured shadow output
+/////////////////////////////////////////////////
+
+struct indata
+{
+    float4 POS  : POSITION;
+    float4 COL0 : COLOR0;
+};
+
+
+struct outdata
+{
+	float4 POS  : POSITION;
+    float4 TEX0 : TEXCOORD0;
+    float4 TEX1 : TEXCOORD1;
+    float4 TEX2 : TEXCOORD2;
+    float4 TEX3 : TEXCOORD3;
+    float4 COL0 : COLOR0;
+};
+
+
+outdata main(indata IN)
+{
+	outdata OUT;
+    OUT.POS = mul(glstate.matrix.mvp, IN.POS);
+    OUT.COL0=IN.COL0;
+    
+    
+    //float4 tmp_pos=mul(glstate.matrix.inverse.modelview[0],IN.POS);
+    
+    
+    //OUT.TEX0=mul(glstate.matrix.texture[0],tmp_pos);//float4(0.5,0.5,0.0,1.0);
+    
+    //float4 tmp_pos=mul(glstate.matrix.inverse.modelview[0],IN.POS);
+    
+    
+
+    
+   float4 tmp_pos0=mul(glstate.matrix.texture[0],IN.POS);
+	
+    //OUT.TEX0=tmp_pos;//mul(glstate.matrix.inverse.modelview[0],tmp_pos);
+    
+    //float4 tmp_pos=mul(glstate.matrix.modelview[0],tmp_pos0);
+    
+    float4 tmp_pos=tmp_pos0;
+
+    
+    OUT.TEX0=tmp_pos+float4(0.007,0.0,0.0,0.00);
+    OUT.TEX1=tmp_pos-float4(0.007,0.0,0.0,0.00);
+    OUT.TEX2=tmp_pos+float4(0.0,0.007,0.0,0.00);
+    OUT.TEX3=tmp_pos-float4(0.0,0.007,0.0,0.00);
+    
+    
+    //tmp_pos=float4(0.5,0.5,0.5,1.0);
+    
+    //OUT.TEX0=tmp_pos;
+    //OUT.TEX1=tmp_pos;
+    //OUT.TEX2=tmp_pos;
+    //OUT.TEX3=tmp_pos;
+    	
+	return OUT;
+}
