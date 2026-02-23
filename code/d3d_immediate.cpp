@@ -23,6 +23,7 @@
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
 #include "d3d_immediate.hpp"
+#include "d3d_lists.hpp"
 
 //==================================================================================
 // OpenGL Immediate Mode
@@ -402,106 +403,199 @@ void D3DIMBuffer :: AddVertex( float x, float y, float z, float w )
 //=========================================
 template<typename T> inline void D3D_SetColor( T red, T green, T blue )
 {
-	D3DState.CurrentState.isSet.bits.color = 1;
-	D3DState.CurrentState.currentColor = D3DCOLOR_ARGB( 
+	DWORD color = D3DCOLOR_ARGB( 
 		0xFF,
 		QINDIEGL_CLAMP( ( red / std::numeric_limits<T>::max( ) ) * 255 ),
 		QINDIEGL_CLAMP( ( green / std::numeric_limits<T>::max( ) ) * 255 ),
 		QINDIEGL_CLAMP( ( blue / std::numeric_limits<T>::max( ) ) * 255 )
 	 );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [color]() {
+			D3DState.CurrentState.isSet.bits.color = 1;
+			D3DState.CurrentState.currentColor = color;
+		} );
+		if ( !gDLExecute ) return;
+	}
+	D3DState.CurrentState.isSet.bits.color = 1;
+	D3DState.CurrentState.currentColor = color;
 }
 template<typename T> inline void D3D_SetColor( T red, T green, T blue, T alpha )
 {
-	D3DState.CurrentState.isSet.bits.color = 1;
-	D3DState.CurrentState.currentColor = D3DCOLOR_ARGB( 
+	DWORD color = D3DCOLOR_ARGB( 
 		QINDIEGL_CLAMP( ( alpha / std::numeric_limits<T>::max( ) ) * 255 ),
 		QINDIEGL_CLAMP( ( red / std::numeric_limits<T>::max( ) ) * 255 ),
 		QINDIEGL_CLAMP( ( green / std::numeric_limits<T>::max( ) ) * 255 ),
 		QINDIEGL_CLAMP( ( blue / std::numeric_limits<T>::max( ) ) * 255 )
 	 );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [color]() {
+			D3DState.CurrentState.isSet.bits.color = 1;
+			D3DState.CurrentState.currentColor = color;
+		} );
+		if ( !gDLExecute ) return;
+	}
+	D3DState.CurrentState.isSet.bits.color = 1;
+	D3DState.CurrentState.currentColor = color;
 }
 inline void D3D_SetColor( GLbyte red, GLbyte green, GLbyte blue, GLbyte alpha )
 {
-	D3DState.CurrentState.isSet.bits.color = 1;
-	D3DState.CurrentState.currentColor = D3DCOLOR_ARGB( 
+	DWORD color = D3DCOLOR_ARGB( 
 		( BYTE )alpha,
 		( BYTE )red,
 		( BYTE )green,
 		( BYTE )blue
 	 );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [color]() {
+			D3DState.CurrentState.isSet.bits.color = 1;
+			D3DState.CurrentState.currentColor = color;
+		} );
+		if ( !gDLExecute ) return;
+	}
+	D3DState.CurrentState.isSet.bits.color = 1;
+	D3DState.CurrentState.currentColor = color;
 }
 inline void D3D_SetColor( GLubyte red, GLubyte green, GLubyte blue, GLubyte alpha )
 {
+	DWORD color = D3DCOLOR_ARGB( alpha, red, green, blue );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [color]() {
+			D3DState.CurrentState.isSet.bits.color = 1;
+			D3DState.CurrentState.currentColor = color;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.color = 1;
-	D3DState.CurrentState.currentColor = D3DCOLOR_ARGB( 
-		alpha,
-		red,
-		green,
-		blue
-	 );
+	D3DState.CurrentState.currentColor = color;
 }
 inline void D3D_SetColor( GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha )
 {
-	D3DState.CurrentState.isSet.bits.color = 1;
-	D3DState.CurrentState.currentColor = D3DCOLOR_ARGB( 
+	DWORD color = D3DCOLOR_ARGB( 
 		QINDIEGL_CLAMP( alpha * 255.0f ),
 		QINDIEGL_CLAMP( red * 255.0f ),
 		QINDIEGL_CLAMP( green * 255.0f ),
 		QINDIEGL_CLAMP( blue * 255.0f )
 	 );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [color]() {
+			D3DState.CurrentState.isSet.bits.color = 1;
+			D3DState.CurrentState.currentColor = color;
+		} );
+		if ( !gDLExecute ) return;
+	}
+	D3DState.CurrentState.isSet.bits.color = 1;
+	D3DState.CurrentState.currentColor = color;
 }
 inline void D3D_SetColor( GLdouble red, GLdouble green, GLdouble blue, GLdouble alpha )
 {
-	D3DState.CurrentState.isSet.bits.color = 1;
-	D3DState.CurrentState.currentColor = D3DCOLOR_ARGB( 
+	DWORD color = D3DCOLOR_ARGB( 
 		QINDIEGL_CLAMP( (FLOAT)alpha * 255.0f ),
 		QINDIEGL_CLAMP( (FLOAT)red * 255.0f ),
 		QINDIEGL_CLAMP( (FLOAT)green * 255.0f ),
 		QINDIEGL_CLAMP( (FLOAT)blue * 255.0f )
 	 );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [color]() {
+			D3DState.CurrentState.isSet.bits.color = 1;
+			D3DState.CurrentState.currentColor = color;
+		} );
+		if ( !gDLExecute ) return;
+	}
+	D3DState.CurrentState.isSet.bits.color = 1;
+	D3DState.CurrentState.currentColor = color;
 }
 template<typename T> inline void D3D_SetColor2( T red, T green, T blue )
 {
+	DWORD rgb = (QINDIEGL_CLAMP( ( red / std::numeric_limits<T>::max( ) ) * 255 ) << 16) |
+	            (QINDIEGL_CLAMP( ( green / std::numeric_limits<T>::max( ) ) * 255 ) << 8) |
+	            QINDIEGL_CLAMP( ( blue / std::numeric_limits<T>::max( ) ) * 255 );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [rgb]() {
+			D3DState.CurrentState.isSet.bits.color2 = 1;
+			D3DState.CurrentState.currentColor2 &= 0xFF000000;
+			D3DState.CurrentState.currentColor2 |= rgb;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.color2 = 1;
 	D3DState.CurrentState.currentColor2 &= 0xFF000000;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( ( red / std::numeric_limits<T>::max( ) ) * 255 ) << 16;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( ( green / std::numeric_limits<T>::max( ) ) * 255 ) << 8;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( ( blue / std::numeric_limits<T>::max( ) ) * 255 );
+	D3DState.CurrentState.currentColor2 |= rgb;
 }
 inline void D3D_SetColor2( GLbyte red, GLbyte green, GLbyte blue )
 {
+	DWORD rgb = ((DWORD)( BYTE )red << 16) | ((DWORD)( BYTE )green << 8) | (DWORD)( BYTE )blue;
+	if ( gDLRecording ) {
+		DL_RecordCommand( [rgb]() {
+			D3DState.CurrentState.isSet.bits.color2 = 1;
+			D3DState.CurrentState.currentColor2 &= 0xFF000000;
+			D3DState.CurrentState.currentColor2 |= rgb;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.color2 = 1;
 	D3DState.CurrentState.currentColor2 &= 0xFF000000;
-	D3DState.CurrentState.currentColor2 |= ( BYTE )red << 16;
-	D3DState.CurrentState.currentColor2 |= ( BYTE )green << 8;
-	D3DState.CurrentState.currentColor2 |= ( BYTE )blue;
+	D3DState.CurrentState.currentColor2 |= rgb;
 }
 inline void D3D_SetColor2( GLubyte red, GLubyte green, GLubyte blue )
 {
+	DWORD rgb = ((DWORD)red << 16) | ((DWORD)green << 8) | (DWORD)blue;
+	if ( gDLRecording ) {
+		DL_RecordCommand( [rgb]() {
+			D3DState.CurrentState.isSet.bits.color2 = 1;
+			D3DState.CurrentState.currentColor2 &= 0xFF000000;
+			D3DState.CurrentState.currentColor2 |= rgb;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.color2 = 1;
 	D3DState.CurrentState.currentColor2 &= 0xFF000000;
-	D3DState.CurrentState.currentColor2 |= red << 16;
-	D3DState.CurrentState.currentColor2 |= green << 8;
-	D3DState.CurrentState.currentColor2 |= blue;
+	D3DState.CurrentState.currentColor2 |= rgb;
 }
 inline void D3D_SetColor2( GLfloat red, GLfloat green, GLfloat blue )
 {
+	DWORD rgb = (QINDIEGL_CLAMP( red * 255.0f ) << 16) |
+	            (QINDIEGL_CLAMP( green * 255.0f ) << 8) |
+	            QINDIEGL_CLAMP( blue * 255.0f );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [rgb]() {
+			D3DState.CurrentState.isSet.bits.color2 = 1;
+			D3DState.CurrentState.currentColor2 &= 0xFF000000;
+			D3DState.CurrentState.currentColor2 |= rgb;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.color2 = 1;
 	D3DState.CurrentState.currentColor2 &= 0xFF000000;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( red * 255.0f ) << 16;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( green * 255.0f ) << 8;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( blue * 255.0f );
+	D3DState.CurrentState.currentColor2 |= rgb;
 }
 inline void D3D_SetColor2( GLdouble red, GLdouble green, GLdouble blue )
 {
+	DWORD rgb = (QINDIEGL_CLAMP( (FLOAT)red * 255.0f ) << 16) |
+	            (QINDIEGL_CLAMP( (FLOAT)green * 255.0f ) << 8) |
+	            QINDIEGL_CLAMP( (FLOAT)blue * 255.0f );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [rgb]() {
+			D3DState.CurrentState.isSet.bits.color2 = 1;
+			D3DState.CurrentState.currentColor2 &= 0xFF000000;
+			D3DState.CurrentState.currentColor2 |= rgb;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.color2 = 1;
 	D3DState.CurrentState.currentColor2 &= 0xFF000000;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( (FLOAT)red * 255.0f ) << 16;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( (FLOAT)green * 255.0f ) << 8;
-	D3DState.CurrentState.currentColor2 |= QINDIEGL_CLAMP( (FLOAT)blue * 255.0f );
+	D3DState.CurrentState.currentColor2 |= rgb;
 }
 inline void D3D_SetFogCoord( GLfloat value )
 {
+	if ( gDLRecording ) {
+		DL_RecordCommand( [value]() {
+			D3DState.CurrentState.isSet.bits.fog = 1;
+			GLubyte bv = 255 - static_cast<GLubyte>( QINDIEGL_CLAMP( value * 255.0f ) );
+			D3DState.CurrentState.currentColor2 &= ( bv << 24 );
+			D3DState.CurrentState.currentColor2 |= ( bv << 24 );
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.fog = 1;
 	GLubyte byteValue = 255 - static_cast<GLubyte>( QINDIEGL_CLAMP( value * 255.0f ) );
 	D3DState.CurrentState.currentColor2 &= ( byteValue << 24 );
@@ -509,13 +603,34 @@ inline void D3D_SetFogCoord( GLfloat value )
 }
 template<typename T> inline void D3D_SetNormal( T x, T y, T z )
 {
+	FLOAT nx = (FLOAT)x / std::numeric_limits<T>::max( );
+	FLOAT ny = (FLOAT)y / std::numeric_limits<T>::max( );
+	FLOAT nz = (FLOAT)z / std::numeric_limits<T>::max( );
+	if ( gDLRecording ) {
+		DL_RecordCommand( [nx, ny, nz]() {
+			D3DState.CurrentState.isSet.bits.norm = 1;
+			D3DState.CurrentState.currentNormal[0] = nx;
+			D3DState.CurrentState.currentNormal[1] = ny;
+			D3DState.CurrentState.currentNormal[2] = nz;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.norm = 1;
-	D3DState.CurrentState.currentNormal[0] = (FLOAT)x / std::numeric_limits<T>::max( );
-	D3DState.CurrentState.currentNormal[1] = (FLOAT)y / std::numeric_limits<T>::max( );
-	D3DState.CurrentState.currentNormal[2] = (FLOAT)z / std::numeric_limits<T>::max( );
+	D3DState.CurrentState.currentNormal[0] = nx;
+	D3DState.CurrentState.currentNormal[1] = ny;
+	D3DState.CurrentState.currentNormal[2] = nz;
 }
 inline void D3D_SetNormal( GLfloat x, GLfloat y, GLfloat z )
 {
+	if ( gDLRecording ) {
+		DL_RecordCommand( [x, y, z]() {
+			D3DState.CurrentState.isSet.bits.norm = 1;
+			D3DState.CurrentState.currentNormal[0] = x;
+			D3DState.CurrentState.currentNormal[1] = y;
+			D3DState.CurrentState.currentNormal[2] = z;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.norm = 1;
 	D3DState.CurrentState.currentNormal[0] = x;
 	D3DState.CurrentState.currentNormal[1] = y;
@@ -523,10 +638,20 @@ inline void D3D_SetNormal( GLfloat x, GLfloat y, GLfloat z )
 }
 inline void D3D_SetNormal( GLdouble x, GLdouble y, GLdouble z )
 {
+	FLOAT nx = (FLOAT)x, ny = (FLOAT)y, nz = (FLOAT)z;
+	if ( gDLRecording ) {
+		DL_RecordCommand( [nx, ny, nz]() {
+			D3DState.CurrentState.isSet.bits.norm = 1;
+			D3DState.CurrentState.currentNormal[0] = nx;
+			D3DState.CurrentState.currentNormal[1] = ny;
+			D3DState.CurrentState.currentNormal[2] = nz;
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState.CurrentState.isSet.bits.norm = 1;
-	D3DState.CurrentState.currentNormal[0] = (FLOAT)x;
-	D3DState.CurrentState.currentNormal[1] = (FLOAT)y;
-	D3DState.CurrentState.currentNormal[2] = (FLOAT)z;
+	D3DState.CurrentState.currentNormal[0] = nx;
+	D3DState.CurrentState.currentNormal[1] = ny;
+	D3DState.CurrentState.currentNormal[2] = nz;
 }
 template<typename T> inline void D3D_SetTexCoord( GLenum target, T s, T t, T r, T q, int num )
 {
@@ -539,17 +664,30 @@ template<typename T> inline void D3D_SetTexCoord( GLenum target, T s, T t, T r, 
 		return;
 	}
 
-	D3DState.CurrentState.isSet.bits.texcoord |= DWORD( num -1 ) << (stage * 2);
-
-	D3DState.CurrentState.currentTexCoord[stage][0] = (FLOAT)s;
-	D3DState.CurrentState.currentTexCoord[stage][1] = (FLOAT)t;
-	D3DState.CurrentState.currentTexCoord[stage][2] = (FLOAT)r;
-	D3DState.CurrentState.currentTexCoord[stage][3] = (FLOAT)q;
+	DWORD tcBits = DWORD( num - 1 ) << ( stage * 2 );
+	FLOAT fs = (FLOAT)s, ft = (FLOAT)t, fr = (FLOAT)r, fq = (FLOAT)q;
 
 	if ( D3DState.TransformState.texcoordFixEnabled ) {
-		D3DState.CurrentState.currentTexCoord[stage][0] += D3DState.TransformState.texcoordFix[0];
-		D3DState.CurrentState.currentTexCoord[stage][1] += D3DState.TransformState.texcoordFix[1];
+		fs += D3DState.TransformState.texcoordFix[0];
+		ft += D3DState.TransformState.texcoordFix[1];
 	}
+
+	if ( gDLRecording ) {
+		DL_RecordCommand( [stage, tcBits, fs, ft, fr, fq]() {
+			D3DState.CurrentState.isSet.bits.texcoord |= tcBits;
+			D3DState.CurrentState.currentTexCoord[stage][0] = fs;
+			D3DState.CurrentState.currentTexCoord[stage][1] = ft;
+			D3DState.CurrentState.currentTexCoord[stage][2] = fr;
+			D3DState.CurrentState.currentTexCoord[stage][3] = fq;
+		} );
+		if ( !gDLExecute ) return;
+	}
+
+	D3DState.CurrentState.isSet.bits.texcoord |= tcBits;
+	D3DState.CurrentState.currentTexCoord[stage][0] = fs;
+	D3DState.CurrentState.currentTexCoord[stage][1] = ft;
+	D3DState.CurrentState.currentTexCoord[stage][2] = fr;
+	D3DState.CurrentState.currentTexCoord[stage][3] = fq;
 
 	D3DGlobal.lastError = S_OK;
 }
@@ -1084,19 +1222,19 @@ OPENGL_API void WINAPI glMultiTexCoord3dv( GLenum target, const GLdouble *v )
 }
 OPENGL_API void WINAPI glMultiTexCoord4sv( GLenum target, const GLshort *v )
 {
-	D3D_SetTexCoord( target, v[0], v[1], v[3], v[4], 4 );
+	D3D_SetTexCoord( target, v[0], v[1], v[2], v[3], 4 );
 }
 OPENGL_API void WINAPI glMultiTexCoord4iv( GLenum target, const GLint *v )
 {
-	D3D_SetTexCoord( target, v[0], v[1], v[3], v[4], 4 );
+	D3D_SetTexCoord( target, v[0], v[1], v[2], v[3], 4 );
 }
 OPENGL_API void WINAPI glMultiTexCoord4fv( GLenum target, const GLfloat *v )
 {
-	D3D_SetTexCoord( target, v[0], v[1], v[3], v[4], 4 );
+	D3D_SetTexCoord( target, v[0], v[1], v[2], v[3], 4 );
 }
 OPENGL_API void WINAPI glMultiTexCoord4dv( GLenum target, const GLdouble *v )
 {
-	D3D_SetTexCoord( target, v[0], v[1], v[3], v[4], 4 );
+	D3D_SetTexCoord( target, v[0], v[1], v[2], v[3], 4 );
 }
 OPENGL_API void WINAPI glMTexCoord2f( GLenum target, GLfloat s, GLfloat t )
 {
@@ -1131,11 +1269,25 @@ OPENGL_API void WINAPI glFogCoordfv( GLfloat *coord )
 template<typename T> inline void D3D_AddVertex( T x, T y, T z, T w )
 {
 	assert( D3DGlobal.pIMBuffer != NULL );
+	if ( gDLRecording ) {
+		FLOAT fx = (FLOAT)x, fy = (FLOAT)y, fz = (FLOAT)z, fw = (FLOAT)w;
+		DL_RecordCommand( [fx, fy, fz, fw]() {
+			D3DGlobal.pIMBuffer->AddVertex( fx, fy, fz, fw );
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DGlobal.pIMBuffer->AddVertex( (FLOAT)x, (FLOAT)y, (FLOAT)z, (FLOAT)w );
 }
 template<typename T> inline void D3D_AddVertex( T x, T y, T z )
 {
 	assert( D3DGlobal.pIMBuffer != NULL );
+	if ( gDLRecording ) {
+		FLOAT fx = (FLOAT)x, fy = (FLOAT)y, fz = (FLOAT)z;
+		DL_RecordCommand( [fx, fy, fz]() {
+			D3DGlobal.pIMBuffer->AddVertex( fx, fy, fz );
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DGlobal.pIMBuffer->AddVertex( (FLOAT)x, (FLOAT)y, (FLOAT)z );
 }
 
@@ -1241,6 +1393,7 @@ OPENGL_API void WINAPI glVertex4sv( const GLshort *v )
 //=========================================
 OPENGL_API void WINAPI glBegin( GLenum mode )
 {
+	DL_RECORD_1( glBegin, mode );
 	D3DState_Check( );
 	D3DState_AssureBeginScene( );
 	assert( D3DGlobal.pIMBuffer != NULL );
@@ -1249,6 +1402,7 @@ OPENGL_API void WINAPI glBegin( GLenum mode )
 
 OPENGL_API void WINAPI glEnd( )
 {
+	DL_RECORD_0( glEnd );
 	assert( D3DGlobal.pIMBuffer != NULL );
 	D3DGlobal.pIMBuffer->End( );
 	D3DState.CurrentState.isSet.all = 0;
@@ -1259,6 +1413,13 @@ OPENGL_API void WINAPI glEnd( )
 //=========================================
 template<typename T> inline void D3D_Rect( T x1, T y1, T x2, T y2 )
 {
+	if ( gDLRecording ) {
+		FLOAT fx1 = (FLOAT)x1, fy1 = (FLOAT)y1, fx2 = (FLOAT)x2, fy2 = (FLOAT)y2;
+		DL_RecordCommand( [fx1, fy1, fx2, fy2]() {
+			glRectf( fx1, fy1, fx2, fy2 );
+		} );
+		if ( !gDLExecute ) return;
+	}
 	D3DState_Check( );
 	D3DState_AssureBeginScene( );
 	assert( D3DGlobal.pIMBuffer != NULL );

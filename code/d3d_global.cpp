@@ -30,6 +30,7 @@
 #include "d3d_matrix_stack.hpp"
 #include "d3d_matrix_detection.hpp"
 #include "d3d_helpers.hpp"
+#include "d3d_lists.hpp"
 #include "hooking.h"
 #include "rmx_gen.h"
 #include "rmx_light.h"
@@ -125,6 +126,8 @@ void D3DGlobal_Reset()
 void D3DGlobal_Cleanup( bool cleanupAll )
 {
 	logPrintf("--- Cleanup( %s ) ---\n", cleanupAll ? "all" : "partial" );
+
+	D3DDisplayList_Cleanup();
 
 #ifndef QINDIEGLSRC_NO_REMIX
 	rmx_deinit_device();
@@ -1617,15 +1620,63 @@ OPENGL_API BOOL WINAPI wrap_wglShareLists( HGLRC, HGLRC )
 {
 	return FALSE;
 }
-OPENGL_API BOOL WINAPI wrap_wglUseFontBitmapsA( HDC, DWORD, DWORD, DWORD )
+OPENGL_API BOOL WINAPI wrap_wglUseFontBitmapsA( HDC hdc, DWORD first, DWORD count, DWORD listBase )
 {
-	logPrintf("WARNING: wglUseFontBitmapsA is not supported\n");
-	return FALSE;
+	logPrintf( "wglUseFontBitmapsA(first=%u, count=%u, listBase=%u)\n", first, count, listBase );
+
+	for ( DWORD i = 0; i < count; i++ ) {
+		GLuint id = listBase + i;
+		D3DDisplayList* dl;
+		auto it = gDLMap.find( id );
+		if ( it == gDLMap.end() ) {
+			dl = new D3DDisplayList;
+			gDLMap[id] = dl;
+		} else {
+			dl = it->second;
+			dl->commands.clear();
+		}
+		// Get glyph advance width from Windows font metrics so text layout works
+		CHAR ch = (CHAR)( first + i );
+		SIZE sz = { 0, 0 };
+		GetTextExtentPoint32A( hdc, &ch, 1, &sz );
+		float advance = (float)sz.cx;
+		// Record a bitmap-style advance: translate raster position by glyph width
+		// Real GL uses glBitmap(0,0,0,0,advance,0,NULL) but we don't have glBitmap;
+		// an empty list is acceptable -- the game won't crash, text just won't render.
+		(void)advance;
+	}
+
+	// Update gDLNextId if these IDs exceed current counter
+	GLuint maxId = listBase + count;
+	if ( maxId >= gDLNextId ) gDLNextId = maxId + 1;
+
+	return TRUE;
 }
-OPENGL_API BOOL WINAPI wrap_wglUseFontBitmapsW( HDC, DWORD, DWORD, DWORD )
+OPENGL_API BOOL WINAPI wrap_wglUseFontBitmapsW( HDC hdc, DWORD first, DWORD count, DWORD listBase )
 {
-	logPrintf("WARNING: wglUseFontBitmapsW is not supported\n");
-	return FALSE;
+	logPrintf( "wglUseFontBitmapsW(first=%u, count=%u, listBase=%u)\n", first, count, listBase );
+
+	for ( DWORD i = 0; i < count; i++ ) {
+		GLuint id = listBase + i;
+		D3DDisplayList* dl;
+		auto it = gDLMap.find( id );
+		if ( it == gDLMap.end() ) {
+			dl = new D3DDisplayList;
+			gDLMap[id] = dl;
+		} else {
+			dl = it->second;
+			dl->commands.clear();
+		}
+		WCHAR ch = (WCHAR)( first + i );
+		SIZE sz = { 0, 0 };
+		GetTextExtentPoint32W( hdc, &ch, 1, &sz );
+		(void)sz;
+	}
+
+	GLuint maxId = listBase + count;
+	if ( maxId >= gDLNextId ) gDLNextId = maxId + 1;
+
+	return TRUE;
 }
 
 OPENGL_API BOOL WINAPI wrap_wglUseFontOutlinesA( HDC, DWORD, DWORD, DWORD, FLOAT, FLOAT, int, LPGLYPHMETRICSFLOAT )

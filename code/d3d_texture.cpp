@@ -25,6 +25,7 @@
 #include "d3d_object.hpp"
 #include "d3d_texture.hpp"
 #include "d3d_pixels.hpp"
+#include "d3d_lists.hpp"
 
 //==================================================================================
 // Texturing
@@ -1377,6 +1378,7 @@ OPENGL_API void WINAPI glPrioritizeTextures( GLsizei n, const GLuint *textures, 
 }
 OPENGL_API void WINAPI glBindTexture( GLenum target, GLuint texture )
 {
+	DL_RECORD_2( glBindTexture, target, texture );
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
 		D3DGlobal.lastError = E_INVALIDARG;
@@ -1932,6 +1934,7 @@ OPENGL_API void WINAPI glTexEnvfv( GLenum target, GLenum pname, const GLfloat *p
 
 OPENGL_API void WINAPI glTexEnvf( GLenum target, GLenum pname, GLfloat param )
 {
+	DL_RECORD_3( glTexEnvf, target, pname, param );
 	glTexEnvfv( target, pname, &param );
 }
 
@@ -1961,6 +1964,7 @@ OPENGL_API void WINAPI glTexEnviv( GLenum target, GLenum pname, const GLint *par
 
 OPENGL_API void WINAPI glTexEnvi( GLenum target, GLenum pname, GLint param )
 {
+	DL_RECORD_3( glTexEnvi, target, pname, param );
 	glTexEnviv( target, pname, &param );
 }
 
@@ -2120,6 +2124,7 @@ OPENGL_API void WINAPI glGetTexLevelParameteriv( GLenum target, GLint level, GLe
 
 OPENGL_API void WINAPI glActiveTexture( GLenum texture )
 {
+	DL_RECORD_1( glActiveTexture, texture );
 	int stageIndex = texture - GL_TEXTURE0_ARB;
 	if (stageIndex < 0 || stageIndex >= D3DGlobal.maxActiveTMU) {
 		logPrintf("WARNING: glActiveTexture - bad stage %i\n", stageIndex);

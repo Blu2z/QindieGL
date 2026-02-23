@@ -419,6 +419,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClInclude Include="..\code\d3d_global.hpp" />
     <ClInclude Include="..\code\d3d_helpers.hpp" />
     <ClInclude Include="..\code\d3d_immediate.hpp" />
+    <ClInclude Include="..\code\d3d_lists.hpp" />
     <ClInclude Include="..\code\d3d_matrix_detection.hpp" />
     <ClInclude Include="..\code\d3d_matrix_stack.hpp" />
     <ClInclude Include="..\code\d3d_object.hpp" />

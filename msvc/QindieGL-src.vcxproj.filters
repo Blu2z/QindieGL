@@ -183,6 +183,9 @@
     <ClInclude Include="..\code\d3d_immediate.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\code\d3d_lists.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\code\d3d_matrix_stack.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
