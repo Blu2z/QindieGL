@@ -22,6 +22,7 @@
 #include "d3d_global.hpp"
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
+#include "d3d_lists.hpp"
 
 //==================================================================================
 // Blending states
@@ -32,6 +33,7 @@
 
 OPENGL_API void WINAPI glAlphaFunc( GLenum func, GLclampf ref )
 {
+	DL_RECORD_2( glAlphaFunc, func, ref );
 	DWORD dfunc = UTIL_GLtoD3DCmpFunc(func);
 	if (dfunc != D3DState.ColorBufferState.alphaTestFunc) {
 		D3DState.ColorBufferState.alphaTestFunc = dfunc;
@@ -47,6 +49,7 @@ OPENGL_API void WINAPI glAlphaFunc( GLenum func, GLclampf ref )
 
 OPENGL_API void WINAPI glBlendFunc( GLenum sfactor, GLenum dfactor )
 {
+	DL_RECORD_2( glBlendFunc, sfactor, dfactor );
 	if (D3DState.ColorBufferState.glBlendSrc != sfactor) {
 		D3DState.ColorBufferState.glBlendSrc = sfactor;
 		DWORD sfunc = UTIL_GLtoD3DBlendFunc(sfactor);

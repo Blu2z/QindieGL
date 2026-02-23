@@ -23,6 +23,7 @@
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
 #include "d3d_matrix_stack.hpp"
+#include "d3d_lists.hpp"
 
 //==================================================================================
 // Misc functions
@@ -30,6 +31,7 @@
 
 OPENGL_API void WINAPI glClear( GLbitfield mask )
 {
+	DL_RECORD_1( glClear, mask );
 	if (!D3DGlobal.initialized) {
 		D3DGlobal.lastError = E_FAIL;
 		return;
@@ -44,6 +46,7 @@ OPENGL_API void WINAPI glClear( GLbitfield mask )
 }
 OPENGL_API void WINAPI glClearColor( GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha )
 {
+	DL_RECORD_4( glClearColor, red, green, blue, alpha );
 	DWORD da = (DWORD)(alpha * 255);
 	DWORD dr = (DWORD)(red * 255);
 	DWORD dg = (DWORD)(green * 255);
@@ -52,10 +55,12 @@ OPENGL_API void WINAPI glClearColor( GLclampf red, GLclampf green, GLclampf blue
 }
 OPENGL_API void WINAPI glClearDepth( GLclampd depth )
 {
+	DL_RECORD_1( glClearDepth, depth );
 	D3DState.DepthBufferState.clearDepth = (float)depth;
 }
 OPENGL_API void WINAPI glClearStencil( GLint s )
 {
+	DL_RECORD_1( glClearStencil, s );
 	D3DState.StencilBufferState.clearStencil = s;
 }
 OPENGL_API void WINAPI glClearIndex( GLfloat )
@@ -69,6 +74,7 @@ OPENGL_API void WINAPI glClearAccum( GLfloat, GLfloat, GLfloat, GLfloat )
 }
 OPENGL_API void WINAPI glColorMask( GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha )
 {
+	DL_RECORD_4( glColorMask, red, green, blue, alpha );
 	DWORD mask = 0;
 	if (red) mask |= D3DCOLORWRITEENABLE_RED;
 	if (green) mask |= D3DCOLORWRITEENABLE_GREEN;
@@ -81,6 +87,7 @@ OPENGL_API void WINAPI glColorMask( GLboolean red, GLboolean green, GLboolean bl
 }
 OPENGL_API void WINAPI glCullFace( GLenum mode )
 {
+	DL_RECORD_1( glCullFace, mode );
 	if (D3DState.PolygonState.cullMode != mode) {
 		D3DState.PolygonState.cullMode = mode;
 		D3DState_SetCullMode();
@@ -88,6 +95,7 @@ OPENGL_API void WINAPI glCullFace( GLenum mode )
 }
 OPENGL_API void WINAPI glFrontFace( GLenum mode )
 {
+	DL_RECORD_1( glFrontFace, mode );
 	if (D3DState.PolygonState.frontFace != mode) {
 		D3DState.PolygonState.frontFace = mode;
 		D3DState_SetCullMode();
@@ -95,6 +103,7 @@ OPENGL_API void WINAPI glFrontFace( GLenum mode )
 }
 OPENGL_API void WINAPI glDepthFunc( GLenum func )
 {
+	DL_RECORD_1( glDepthFunc, func );
 	DWORD dfunc = UTIL_GLtoD3DCmpFunc(func);
 	if (dfunc != D3DState.DepthBufferState.depthTestFunc) {
 		D3DState.DepthBufferState.depthTestFunc = dfunc;
@@ -103,6 +112,7 @@ OPENGL_API void WINAPI glDepthFunc( GLenum func )
 }
 OPENGL_API void WINAPI glDepthMask( GLboolean flag )
 {
+	DL_RECORD_1( glDepthMask, flag );
 	if (D3DState.DepthBufferState.depthWriteMask != flag) {
 		D3DState.DepthBufferState.depthWriteMask = flag;
 		D3DState_SetRenderState( D3DRS_ZWRITEENABLE, flag );
@@ -110,6 +120,7 @@ OPENGL_API void WINAPI glDepthMask( GLboolean flag )
 }
 OPENGL_API void WINAPI glDepthRange( GLclampd zNear, GLclampd zFar )
 {
+	DL_RECORD_2( glDepthRange, zNear, zFar );
 	D3DState.viewport.MinZ = (float)zNear;
 	D3DState.viewport.MaxZ = (float)zFar;
 	if (!D3DGlobal.initialized) {
@@ -135,6 +146,7 @@ OPENGL_API void WINAPI glReadBuffer( GLenum )
 }
 OPENGL_API void WINAPI glPolygonMode( GLenum face, GLenum mode )
 {
+	DL_RECORD_2( glPolygonMode, face, mode );
 	if (face != GL_FRONT_AND_BACK) {
 		logPrintf("WARNING: glPolygonMode: only GL_FRONT_AND_BACK is supported\n");
 	}
@@ -148,6 +160,7 @@ OPENGL_API void WINAPI glPolygonMode( GLenum face, GLenum mode )
 }
 OPENGL_API void WINAPI glPolygonOffset( GLfloat factor, GLfloat units )
 {
+	DL_RECORD_2( glPolygonOffset, factor, units );
 	//WG: not sure about these values, but it solved the decals looking wrong from a distance in Wolf
 	D3DState.PolygonState.depthBiasFactor = factor; //-factor * 0.0025f;
 	D3DState.PolygonState.depthBiasUnits = units / 250000.0f; //units * 0.000125f;
@@ -187,6 +200,7 @@ OPENGL_API void WINAPI glLineWidth( GLfloat )
 }
 OPENGL_API void WINAPI glShadeModel( GLenum mode )
 {
+	DL_RECORD_1( glShadeModel, mode );
 	const DWORD dmode = (mode == GL_FLAT) ? D3DSHADE_FLAT : D3DSHADE_GOURAUD;
 
 	if (dmode != D3DState.LightingState.shadeMode) {
@@ -196,6 +210,7 @@ OPENGL_API void WINAPI glShadeModel( GLenum mode )
 }
 OPENGL_API void WINAPI glPointSize( GLfloat size )
 {
+	DL_RECORD_1( glPointSize, size );
 	size = QINDIEGL_MAX( QINDIEGL_MIN( size, D3DGlobal.hD3DCaps.MaxPointSize ), 1.0f );
 	if (D3DState.PointState.pointSize != size) {
 		D3DState.PointState.pointSize = size;
@@ -217,6 +232,7 @@ OPENGL_API void WINAPI glFinish()
 }
 OPENGL_API void WINAPI glViewport( GLint x, GLint y, GLsizei width, GLsizei height )
 {
+	DL_RECORD_4( glViewport, x, y, width, height );
 	// translate from OpenGL bottom-left to D3D top-left
 	y = D3DGlobal.hCurrentMode.Height - (height + y);
 
@@ -275,6 +291,7 @@ OPENGL_API void WINAPI glViewport( GLint x, GLint y, GLsizei width, GLsizei heig
 }
 OPENGL_API void WINAPI glScissor( GLint x, GLint y, GLsizei width, GLsizei height )
 {
+	DL_RECORD_4( glScissor, x, y, width, height );
 	// translate from OpenGL bottom-left to D3D top-left
 	y = D3DGlobal.hCurrentMode.Height - (height + y);
 

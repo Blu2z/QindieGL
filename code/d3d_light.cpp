@@ -23,6 +23,7 @@
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
 #include "d3d_matrix_stack.hpp"
+#include "d3d_lists.hpp"
 
 //==================================================================================
 // Light operations
@@ -146,6 +147,7 @@ OPENGL_API void WINAPI glLightModeliv( GLenum pname, const GLint *params )
 }
 OPENGL_API void WINAPI glLightf( GLenum light, GLenum pname, GLfloat param )
 {
+	DL_RECORD_3( glLightf, light, pname, param );
 	int lightIndex = light - GL_LIGHT0;
 	if( lightIndex < 0 || lightIndex >= IMPL_MAX_LIGHTS ) {
 		logPrintf( "WARNING: glLightf - bad light index %i\n", lightIndex );

@@ -26,6 +26,7 @@
 #include "d3d_matrix_stack.hpp"
 #include "d3d_combiners.hpp"
 #include "d3d_matrix_detection.hpp"
+#include "d3d_lists.hpp"
 #include <map>
 
 D3DState_t D3DState;
@@ -1384,11 +1385,13 @@ static void D3DState_EnableDisableClientState( GLenum cap, DWORD value )
 
 OPENGL_API void WINAPI glEnable( GLenum cap )
 {
+	DL_RECORD_1( glEnable, cap );
 	D3DState_EnableDisableState( cap, TRUE );
 }
 
 OPENGL_API void WINAPI glDisable( GLenum cap )
 {
+	DL_RECORD_1( glDisable, cap );
 	D3DState_EnableDisableState( cap, FALSE );
 }
 
@@ -1409,6 +1412,7 @@ OPENGL_API void WINAPI glDisableClientState( GLenum cap )
 
 OPENGL_API void WINAPI glHint(GLenum target,  GLenum mode)
 {
+	DL_RECORD_2( glHint, target, mode );
 	switch( target )
 	{ 
 	case GL_PERSPECTIVE_CORRECTION_HINT:

@@ -22,6 +22,7 @@
 #include "d3d_global.hpp"
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
+#include "d3d_lists.hpp"
 
 //==================================================================================
 // Materials
