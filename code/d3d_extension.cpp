@@ -102,7 +102,7 @@ OPENGL_API void WINAPI glProgramStringARB( GLenum target, GLenum format, GLsizei
 			target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", bound, len);
 
 		// Compile ARB program to D3D9 shader
-		if ( D3DGlobal.pDevice && !D3DGlobal.settings.game.enableARBProgramsStub ) {
+		if ( D3DGlobal.pDevice && !D3DGlobal.settings.enableARBProgramsStub ) {
 			std::string errorStr;
 			if ( !ARB_CompileProgram( bound, target, static_cast<const char*>(string), len, errorStr ) ) {
 				logPrintf("WARNING: ARB program %u compilation failed: %s\n", bound, errorStr.c_str());

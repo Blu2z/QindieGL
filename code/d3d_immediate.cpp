@@ -1411,6 +1411,8 @@ OPENGL_API void WINAPI glEnd( )
 //=========================================
 // Rect specification
 //=========================================
+OPENGL_API void WINAPI glRectf( GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2 );
+
 template<typename T> inline void D3D_Rect( T x1, T y1, T x2, T y2 )
 {
 	if ( gDLRecording ) {
