@@ -31,6 +31,7 @@
 #include "d3d_matrix_detection.hpp"
 #include "d3d_helpers.hpp"
 #include "d3d_lists.hpp"
+#include "d3d_arb_program.hpp"
 #include "hooking.h"
 #include "rmx_gen.h"
 #include "rmx_light.h"
@@ -128,6 +129,7 @@ void D3DGlobal_Cleanup( bool cleanupAll )
 	logPrintf("--- Cleanup( %s ) ---\n", cleanupAll ? "all" : "partial" );
 
 	D3DDisplayList_Cleanup();
+	ARB_Cleanup();
 
 #ifndef QINDIEGLSRC_NO_REMIX
 	rmx_deinit_device();

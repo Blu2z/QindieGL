@@ -88,6 +88,9 @@
     <ClCompile Include="..\code\d3d_lists.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\code\d3d_arb_program.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\code\d3d_material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -184,6 +187,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\code\d3d_lists.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\code\d3d_arb_program.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\code\d3d_matrix_stack.hpp">

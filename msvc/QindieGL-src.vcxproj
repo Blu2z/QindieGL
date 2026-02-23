@@ -386,6 +386,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClCompile Include="..\code\d3d_immediate.cpp" />
     <ClCompile Include="..\code\d3d_light.cpp" />
     <ClCompile Include="..\code\d3d_lists.cpp" />
+    <ClCompile Include="..\code\d3d_arb_program.cpp" />
     <ClCompile Include="..\code\d3d_material.cpp" />
     <ClCompile Include="..\code\d3d_matrix.cpp" />
     <ClCompile Include="..\code\d3d_matrix_detection.cpp" />
@@ -420,6 +421,7 @@ copy $(TargetDir)$(ProjectName).ini $(ProjectDir)..\bin\$(Configuration).$(Platf
     <ClInclude Include="..\code\d3d_helpers.hpp" />
     <ClInclude Include="..\code\d3d_immediate.hpp" />
     <ClInclude Include="..\code\d3d_lists.hpp" />
+    <ClInclude Include="..\code\d3d_arb_program.hpp" />
     <ClInclude Include="..\code\d3d_matrix_detection.hpp" />
     <ClInclude Include="..\code\d3d_matrix_stack.hpp" />
     <ClInclude Include="..\code\d3d_object.hpp" />

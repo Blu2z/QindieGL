@@ -27,6 +27,7 @@
 #include "d3d_combiners.hpp"
 #include "d3d_matrix_detection.hpp"
 #include "d3d_lists.hpp"
+#include "d3d_arb_program.hpp"
 #include <map>
 
 D3DState_t D3DState;
@@ -249,22 +250,24 @@ static void D3DState_SetTransform()
 
 		if ( D3DGlobal.settings.game.orthovertexshader)
 		{
-			if ( D3DGlobal_IsOrthoProjection() )
+			// Don't override ARB vertex program with ortho shader
+			if ( !D3DState.EnableState.vertexProgramEnabled )
 			{
-				D3DGlobal.pDevice->SetVertexShader( D3DGlobal.orthoShaders.vs );
-				//D3DGlobal.pDevice->SetPixelShader( D3DGlobal.orthoShaders.ps );
+				if ( D3DGlobal_IsOrthoProjection() )
+				{
+					D3DGlobal.pDevice->SetVertexShader( D3DGlobal.orthoShaders.vs );
 
-				D3DGlobal.orthoShaders.constants->SetMatrix(D3DGlobal.pDevice, "projectionMatrix", D3DGlobal.projectionMatrixStack->top());
-				D3DGlobal.orthoShaders.constants->SetMatrix(D3DGlobal.pDevice, "worldMatrix", D3DGlobal.modelMatrixStack->top());
-				D3DGlobal.orthoShaders.constants->SetMatrix(D3DGlobal.pDevice, "viewMatrix", D3DGlobal.viewMatrixStack->top());
+					D3DGlobal.orthoShaders.constants->SetMatrix(D3DGlobal.pDevice, "projectionMatrix", D3DGlobal.projectionMatrixStack->top());
+					D3DGlobal.orthoShaders.constants->SetMatrix(D3DGlobal.pDevice, "worldMatrix", D3DGlobal.modelMatrixStack->top());
+					D3DGlobal.orthoShaders.constants->SetMatrix(D3DGlobal.pDevice, "viewMatrix", D3DGlobal.viewMatrixStack->top());
 
-				float texelOffset[4] = { -1.0f/D3DState.viewport.Width, 1.0f/D3DState.viewport.Height, 0.0f, 0.0f };
-				D3DGlobal.pDevice->SetVertexShaderConstantF(0, texelOffset, 1);
-			}
-			else
-			{
-				D3DGlobal.pDevice->SetVertexShader( NULL );
-				//D3DGlobal.pDevice->SetPixelShader( NULL );
+					float texelOffset[4] = { -1.0f/D3DState.viewport.Width, 1.0f/D3DState.viewport.Height, 0.0f, 0.0f };
+					D3DGlobal.pDevice->SetVertexShaderConstantF(0, texelOffset, 1);
+				}
+				else
+				{
+					D3DGlobal.pDevice->SetVertexShader( NULL );
+				}
 			}
 		}
 	}
@@ -601,6 +604,13 @@ void D3DState_Check()
 	D3DState_SetTransform();
 	D3DState_SetLight();
 	D3DState_SetTexture();
+
+	// ARB program shader management: activate or deactivate as needed
+	if ( D3DState.EnableState.vertexProgramEnabled || D3DState.EnableState.fragmentProgramEnabled ) {
+		ARB_ActivateShaders();
+	} else {
+		ARB_DeactivateShaders();
+	}
 }
 
 void D3DState_Apply( GLbitfield mask )
