@@ -1,0 +1,50 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// projector program
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS  : POSITION;
+    float3 NORM : NORMAL;
+    float4 COL0 : COLOR0;
+};
+
+struct outdata
+{
+	float4 POS  : POSITION;
+    float4 TEX0 : TEXCOORD0;
+    float4 TEX1 : TEXCOORD1;
+	float4 COL0 : COLOR0;
+};
+
+////////////////////////////////////////////////////
+
+uniform float3 proj_pos;
+
+outdata main(indata IN)
+{
+	outdata OUT;
+	
+	
+    OUT.POS = mul(glstate.matrix.mvp, IN.POS);
+    
+    OUT.TEX0= mul(glstate.matrix.texture[0],IN.POS);
+    
+    OUT.TEX1= mul(glstate.matrix.texture[1],IN.POS);
+    
+    
+    
+    float3 vdir=normalize(proj_pos-IN.POS);
+    
+    
+    float dot_prod=dot(IN.NORM,vdir);
+        
+    OUT.COL0 = IN.COL0;
+    OUT.COL0.a = dot_prod < 0.0 ? 0.0 : 1.0;
+    
+    //OUT.COL0=max(dot(IN.NORM,vdir),0);
+    
+	return OUT;
+}

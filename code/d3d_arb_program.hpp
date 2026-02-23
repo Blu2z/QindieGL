@@ -125,6 +125,8 @@ struct ARBParsedProgram {
 	bool			outputsColor2;		// writes result.color.secondary
 	bool			outputsFog;			// writes result.fogcoord
 	bool			outputsPointSize;	// writes result.pointsize
+	bool			outputsDepth;		// writes result.depth (FP)
+	bool			usesFragmentPosition;	// reads fragment.position (FP)
 
 	// State matrix usage
 	struct MatrixRef {
@@ -143,10 +145,14 @@ struct ARBParsedProgram {
 	bool			usesLightModelAmbient;
 	bool			usesFogParams;
 
+	// Per-unit texture target: 0=2D, 1=3D, 2=CUBE, 3=RECT
+	std::map<int, std::string>	texTargetPerUnit;
+
 	ARBParsedProgram() : target( 0 ), positionInvariant( false ), fogOption( false ),
 		usesColor( false ), usesColor2( false ), usesNormal( false ),
 		usesFogCoord( false ), usesPosition( false ),
 		outputsColor( false ), outputsColor2( false ), outputsFog( false ), outputsPointSize( false ),
+		outputsDepth( false ), usesFragmentPosition( false ),
 		usesMaterial( false ), usesLights( false ), usesLightModelAmbient( false ), usesFogParams( false )
 	{}
 };

@@ -1,0 +1,29 @@
+#pragma once
+
+//-------------------------------------------------------------
+
+float3 expand(float3 v) { return (v - 0.5) * 2;		}
+float3 pack(float3 v)	{ return (v * 0.5) + 0.5;	}
+
+//-------------------------------------------------------------
+
+float2 expand(float2 v) { return (v - 0.5) * 2;		}
+float2 pack(float2 v)	{ return (v * 0.5) + 0.5;	}
+
+//-------------------------------------------------------------
+
+float expand(float v)	{ return (v - 0.5) * 2;		}
+float pack(float v)		{ return (v * 0.5) + 0.5;	}
+
+
+//-------------------------------------------------------------
+
+float3 expand_bytenorm(in float2 _v)
+{
+	float3 res;
+	//res.x = expand(_v.x);
+	//res.y = expand(_v.y);
+	res.xy = expand(_v);
+	res.z = sqrt(1.0f - dot(res.xy, res.xy));
+	return res;
+}

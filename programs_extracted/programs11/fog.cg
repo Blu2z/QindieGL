@@ -1,0 +1,24 @@
+//-----------------------------------------
+//fog support
+
+uniform float3 	_fog_color;
+uniform float 	_fog_start;
+uniform float	_fog_end;
+
+
+
+//-----------------------------------------
+
+
+float4 apply_fog(float4 _color, float3 _eye_dir)
+{
+	float4 result;
+
+	//applying fog interaction
+
+	float d = length(_eye_dir);
+	float fog_i = saturate((d - _fog_start)/(_fog_end - _fog_start));
+   	result =  lerp(_color, float4(_fog_color, 1.0), fog_i); 	
+
+	return result;
+}

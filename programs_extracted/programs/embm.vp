@@ -1,0 +1,65 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// Environment Mapped Bump Mapping
+// for static Lightmapped
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS		: POSITION;
+    float3 TEX0	    : TEXCOORD0; //environment cubemap
+    float2 TEX1	    : TEXCOORD1; //normalmap/diffuse texture UV mapping
+    float2 TEX2		: TEXCOORD2; //none
+    float2 TEX3		: TEXCOORD3; //lightmap UV mapping
+    float3 TANGENT  : TEXCOORD4;
+    float3 BINORMAL : TEXCOORD5;
+    float3 NORMAL   : NORMAL;
+    
+    
+};
+
+
+struct outdata
+{
+     float4 HPOS		: POSITION;
+     float3 TEX0		: TEXCOORD0; //environment cubemap
+     float2 TEX1		: TEXCOORD1; //normalmap/diffuse UV mapping
+     float2 TEX2		: TEXCOORD2; //lightmap UV mapping
+     
+     float3 TANGENT		: TEXCOORD3;
+     float3 BINORMAL	: TEXCOORD4;
+     float3 NORMAL		: TEXCOORD5;
+     
+};
+
+
+ uniform float3 EyePos;
+ uniform float4x4 mdlToWorld; 
+
+outdata main(indata IN )
+{
+  outdata OUT;
+
+    
+  OUT.HPOS = mul(glstate.matrix.mvp, IN.POS);
+  OUT.TEX1 = IN.TEX1;
+  OUT.TEX2 = IN.TEX3; 
+
+
+   float3x3  tr_norm_matr=(float3x3)mdlToWorld;
+  
+  //transform normals to world space 
+  OUT.TANGENT=normalize(mul(tr_norm_matr,IN.TANGENT));
+  OUT.BINORMAL=normalize(mul(tr_norm_matr,IN.BINORMAL));
+  OUT.NORMAL=normalize(mul(tr_norm_matr,IN.NORMAL));
+
+
+  float3 pos_w = mul(mdlToWorld,IN.POS).xyz;
+  OUT.TEX0=normalize(pos_w-EyePos); 
+
+
+
+  return OUT;
+}
+

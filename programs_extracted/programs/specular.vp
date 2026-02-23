@@ -1,0 +1,94 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS		: POSITION;
+    float3 NORMAL	: NORMAL;
+    float2 TEX0	    : TEXCOORD0; 
+    float3 TANGENT	: TEXCOORD1;
+    float2 TEX2		: TEXCOORD2;
+    float4 COL		: COLOR0;
+ };
+
+
+struct outdata
+{
+     float4 HPOS : POSITION;
+     float2 TEX0 : TEXCOORD0; //diffuse
+     float3 TEX1 : TEXCOORD1; //light direction
+     float3 TEX2 : TEXCOORD2; //half angle vector
+     float2 TEX3 : TEXCOORD3; //half angle vector
+     float4 COL	 : COLOR0;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////
+
+
+uniform float3 eye_pos;
+
+
+outdata main(indata IN )
+{
+  float3 light_color;
+  
+  light_color.x=1.0;
+  light_color.y=1.0;
+  light_color.z=1.0;
+  
+  float3 light_pos;
+  light_pos.x=-920.0;//10000;
+  light_pos.y=1182.0;//10000;
+  light_pos.z=10.0;//10000;
+
+  
+
+  outdata OUT;
+  
+  OUT.HPOS = mul(glstate.matrix.mvp, IN.POS);
+  OUT.TEX0 = IN.TEX0;
+  OUT.TEX3 = IN.TEX2;
+  OUT.COL.rgb  = light_color;
+
+  
+  
+
+
+  float3 vpos = mul(glstate.matrix.modelview[0],IN.POS).xyz;
+ 
+  
+  float3 light_dir = normalize(light_pos-vpos);
+  
+  
+  IN.NORMAL=normalize(IN.NORMAL);
+  IN.TANGENT=normalize(IN.TANGENT);
+  float3  BINORMAL=normalize(cross(IN.NORMAL,IN.TANGENT));
+  
+
+///////////////////////////////////////////////
+//CORRECT TRANSFORMATION OF LIGHT VECTOR TO TEXTURE SPACE!!
+//TESTED!!!  BY TANGENT SPACE!!  COOL!
+ 
+ 
+ float3x3 to_tangent=float3x3(IN.TANGENT,
+							  BINORMAL,
+							  IN.NORMAL);
+							
+ float3 tmp1=mul(to_tangent,light_dir);
+ 
+ OUT.TEX1=normalize(tmp1); //light dir tangent space vector
+ //////////////////////////////////////////////
+  
+
+//specular!!!
+
+float3 eye_dir=normalize(eye_pos-vpos);
+
+float3 half_angle=normalize(eye_dir+light_dir);
+
+ OUT.TEX2 = mul(to_tangent,half_angle);
+  
+ return OUT;
+}

@@ -1,0 +1,51 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// Cubemap reflection
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS		: POSITION;
+    float3 NORM		: NORMAL;
+    float3 TEX0	    : TEXCOORD0; //cubemap
+    float2 TEX1	    : TEXCOORD1; //diffuse
+    float4 COL		: COLOR0;
+   
+};
+
+
+struct outdata
+{
+     float4 HPOS : POSITION;
+     float3 TEX0 : TEXCOORD0; //cubemap
+     float2 TEX1 : TEXCOORD1; //diffuse
+     float4 COL	 : COLOR0;
+     
+};
+
+////////////////////////////////////////////////////////////////////////////////////////
+
+uniform float3 EyePos;
+uniform float4x4 mdlToWorld; 
+
+outdata main(indata IN )
+{
+  outdata OUT;
+  
+  OUT.HPOS = mul(glstate.matrix.mvp, IN.POS);
+  OUT.COL=IN.COL;
+   
+  float3 pos_w = mul(mdlToWorld,IN.POS).xyz;
+  
+  float3x3  tr_norm_matr=(float3x3)mdlToWorld;
+
+  //transform normal to world space 
+  float3 tr_normal=normalize(mul(tr_norm_matr,IN.NORM));
+	
+  float3 eye_to_vert=normalize(pos_w-EyePos);
+  OUT.TEX0 = reflect(eye_to_vert,tr_normal);
+  OUT.TEX1 = IN.TEX1;
+  
+ return OUT;
+}

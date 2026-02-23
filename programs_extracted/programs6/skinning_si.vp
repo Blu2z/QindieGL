@@ -1,0 +1,221 @@
+#include "oe_common.cg"
+
+/////////////////////////////////////////////////
+//Hardware skinning
+/////////////////////////////////////////////////
+
+struct SInData
+{
+    float4 pos	    : POSITION;
+    float3 norm	    : NORMAL;
+#ifdef SKINNED_MESH
+    float2 tex0	    : TEXCOORD0; 
+    float4 bone_id  : TEXCOORD1; 
+    float4 bone_w   : TEXCOORD2; 
+    float3 tangent  : TEXCOORD3; 
+#else
+    float2 tex0	    : TEXCOORD1; 
+#endif
+    
+};
+
+struct SOutData
+{
+    float4 hpos  : POSITION;
+    float2 tex0 : TEXCOORD0;
+    float3 pos  : TEXCOORD1;
+    float3 norm : TEXCOORD2;
+    float3 tang : TEXCOORD3;
+    float3 binorm : TEXCOORD4;
+};
+
+
+uniform float4x4  inst_matrix;		//instancing matrix
+
+//======================================================================
+//skinning function
+
+uniform float4    bone_matrix[201];  
+
+
+struct SSkinningResult
+{
+		float3 pos;
+		float3 normal;
+		float3 tangent;
+};
+
+#define NUM_BONES_PER_VERTEX 2
+
+SSkinningResult	skinning(float3 _src_pos, 
+						float3 _src_norm, 
+						float3 _src_tangent, 
+						float4 _bone_indices,  
+						float4 _bone_weights)
+
+{
+	float3	 res_pos  = 0;
+	float3	 res_norm = 0;
+	float3	 res_tang = 0;
+
+	//!! Can be optimized via accumulating multiply matrices together with weighting
+
+
+	for( int i = 0; i < NUM_BONES_PER_VERTEX; i++ )
+	{
+		float idx =  _bone_indices[ i ] * 3.0;
+
+		//get transformation matrix of  bone
+		float3x4 tm_bone = float3x4(bone_matrix[ idx + 0 ],
+				   					bone_matrix[ idx + 1 ],
+									bone_matrix[ idx + 2 ]);
+
+		//get transformation matrix of bone with just rotation ( no translation )
+		//need for normal transformations 
+		float3x3 tm_bone_rot = float3x3(tm_bone[ 0 ].xyz,
+										tm_bone[ 1 ].xyz,
+										tm_bone[ 2 ].xyz);
+
+		//transforming position
+		float3 t_pos	= mul( tm_bone,		float4(_src_pos, 1.0) );
+		res_pos		+= ( _bone_weights[ i ] * t_pos );
+			
+		float3 t_norm	= mul( tm_bone_rot,	_src_norm );
+		res_norm	+= ( _bone_weights[ i ] * t_norm );
+
+		float3 t_tang	= mul( tm_bone_rot, _src_tangent );
+		res_tang	+= ( _bone_weights[ i ] * t_tang );
+	}
+
+	res_norm = normalize( res_norm );
+	res_tang = normalize( res_tang );
+
+	SSkinningResult sr;
+
+	sr.pos		= res_pos;
+	sr.normal	= res_norm;
+	sr.tangent	= res_tang;
+
+	return sr;
+}
+
+
+//======================================================================
+
+SOutData main(SInData in_data)
+{
+	SOutData out_data;
+
+	float3	 pos  = 0;
+	float3	 norm = 0;
+	float3	 tang = 0;
+ 
+	//transform into world space normal TM
+
+	float3x3 tm_normal_rot = float3x3(inst_matrix[ 0 ].xyz,
+									 inst_matrix[ 1 ].xyz,
+									 inst_matrix[ 2 ].xyz);
+
+
+#ifdef SKINNED_MESH
+
+	SSkinningResult sr =  skinning(in_data.pos, in_data.norm, in_data.tangent, in_data.bone_id, in_data.bone_w);
+
+	pos		= mul( inst_matrix, float4(sr.pos, 1.0 )  ).xyz; //into global space
+	norm	= mul( tm_normal_rot, sr.normal ); 
+	tang	= mul( tm_normal_rot, sr.tangent ); 
+	out_data.hpos	= mul(glstate.matrix.mvp, float4(pos, 1.0) );
+
+
+#else
+
+	pos		= mul( inst_matrix, in_data.pos ).xyz; 
+	norm	= mul( tm_normal_rot, in_data.norm ); 
+	tang	= float3(0.0, 0.0, 0.0);
+	
+#endif
+
+	norm = normalize(norm);
+
+	out_data.hpos	= mul(glstate.matrix.mvp, float4(pos, 1.0) );
+    out_data.tex0	= in_data.tex0;
+    out_data.pos	= pos;        //position into world space
+    out_data.norm	= pack(norm);
+
+
+	//out_data.tang	= float3(0.0, 0.0, 0.0);
+	//out_data.binorm = float3(0.0, 0.0, 0.0);
+	/*
+	float3	 res_pos  = 0;
+	float3	 res_norm = 0;
+	float3	 res_tang = 0;
+	
+	for( int i = 0; i < 4; i++ )
+	{
+		float idx =  in_data.bone_id[ i ] * 3.0;
+	
+	
+		//transforming position
+	
+		float3x4 bone_tm = float3x4( bone_matrix[ idx + 0 ],
+				   	     bone_matrix[ idx + 1 ],
+					     bone_matrix[ idx + 2 ]);
+									 
+		float3 t_pos = mul( bone_tm, in_data.pos );
+		res_pos += ( in_data.bone_w[ i ] * t_pos );
+		//res_pos = t_pos;
+		
+		//transforming normal
+		float3x3 bone_rot_tm = float3x3( bone_tm[ 0 ].xyz,
+						 bone_tm[ 1 ].xyz,
+						 bone_tm[ 2 ].xyz);
+			
+		float3 t_norm = mul( bone_rot_tm, in_data.norm );
+		res_norm += ( in_data.bone_w[ i ] * t_norm );
+		//res_norm = t_norm;
+
+		//skinning tangent ....
+
+		float3 t_tang = mul( bone_rot_tm, in_data.tangent );
+		res_tang += ( in_data.bone_w[ i ] * t_tang );
+		///res_tang = t_tang;
+
+	} 
+ 
+
+	res_norm = normalize( res_norm );
+	res_tang = normalize( res_tang );
+
+	res_pos  = mul( inst_matrix, float4(res_pos, 1.0 )  ).xyz; //into global space
+
+	res_norm = mul( float3x3(inst_matrix[0].xyz, 	       //normal into global space
+				 inst_matrix[1].xyz,
+				 inst_matrix[2].xyz), res_norm);
+
+	res_tang = mul( float3x3(inst_matrix[0].xyz, 	       //normal into global space
+				 inst_matrix[1].xyz,
+				 inst_matrix[2].xyz), res_tang);
+	
+	float3   res_binorm = cross(res_tang, res_norm );
+
+	//res_norm = normalize( res_norm );
+	//res_binorm = normalize( res_binorm );
+	//res_tang = normalize( res_tang );
+
+
+       out_data.hpos = mul(glstate.matrix.mvp, float4(res_pos, 1.0) );
+       out_data.tex0 = in_data.tex0;
+       out_data.pos = res_pos;        //position into world space
+       out_data.norm = pack(res_norm);
+       out_data.tang = pack(res_tang);
+       out_data.binorm = pack(res_binorm);
+	
+      //out_data.pos  = mul(glstate.matrix.mvp, float4( res_pos , 1.0) );
+      //out_data.col0 = float4(light_c, light_c, light_c, 1.0);
+      //float3 light_dir = float3(0.333, 0.333, 0.333);
+      //float light_c = max( dot( res_norm, light_dir) , 0 );
+	  */
+
+	return out_data;
+
+}

@@ -1,0 +1,47 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// FUR 
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS  : POSITION;
+    float2 TEX0 : TEXCOORD0;
+    float2 TEX1 : TEXCOORD1;
+    float2 TEX2 : TEXCOORD2;
+	float4 NORM	: NORMAL;
+	float3 COL0 : COLOR0;
+};
+
+struct outdata
+{
+	float4 POS  : POSITION;
+    float2 TEX0 : TEXCOORD0;
+    float2 TEX1 : TEXCOORD1;
+    float2 TEX2 : TEXCOORD2;
+    float3 COL0 : COLOR0;
+};
+
+////////////////////////////////////////////////////
+
+uniform float offset; //offset of geometry
+
+outdata main(indata IN)
+{
+	outdata OUT;
+	   
+
+    float4 tr_pos=IN.POS;
+    
+    tr_pos.xyz=IN.POS.xyz+IN.NORM.xyz*offset;
+	
+    OUT.POS = mul(glstate.matrix.mvp, tr_pos);
+    OUT.TEX0 = IN.TEX0;
+    OUT.TEX1 = IN.TEX1*2.0;
+    OUT.TEX2 = IN.TEX2;
+    
+    OUT.COL0 = IN.COL0;
+	
+	return OUT;
+}

@@ -1,0 +1,127 @@
+//
+// Car Paint Shader
+// Copyright (c) NVIDIA Corporation. All rights reserved.
+//
+// NOTE:
+// This shader is based on the Time Machine temporal rust shader.
+// Car paint data was measured by Cornell University from samples 
+// provided by the Ford Motor Company.
+/////////////////////////////////////////////////////////////////////////////////
+
+
+struct a2v {
+  float4 OPosition : POSITION;
+  float3 ONormal   : NORMAL;
+  float2 uv        : TEXCOORD0;
+  float3 Tangent   : TEXCOORD2;
+  
+  //float3 Binormal  : TEXCOORD2;
+  //float3 Normal    : TEXCOORD3;
+};
+
+
+struct VS_OUTPUT {
+  float4 HPosition : POSITION;  // coord position in window
+  float2 uv        : TEXCOORD0; // wavy or fleck map texture coordinates
+  float3 light     : TEXCOORD1; // position of light relative to point
+  float4 halfangle : TEXCOORD2; // Blinn halfangle
+  float3 reflection: TEXCOORD3; // Reflection vector (per-vertex)
+  float4 view      : TEXCOORD4; // position of viewer relative to point
+  float3 tangent   : TEXCOORD5; // view-tangent matrix
+  float3 binormal  : TEXCOORD6; // ...
+  float3 normal    : TEXCOORD7; // ...
+  float  fresn     : COLOR0;
+};
+
+
+
+// VERTEX SHADER
+VS_OUTPUT main( a2v vert,
+                uniform float3   light_pos,           // Object space LIGHT vector
+                uniform float4x4 mdlToWorld, 
+                uniform float3   eye_pos )          // Object space EYE position
+{
+  VS_OUTPUT O;
+
+   // TRANSFORMATIONS
+  float4x4 ModelView=glstate.matrix.modelview[0];
+  float4x4 ModelViewIT=glstate.matrix.modelview[0];
+  float4x4 ModelViewProj=glstate.matrix.mvp;
+  
+
+ mdlToWorld=transpose(mdlToWorld);
+ float3 vpos = mul(mdlToWorld,vert.OPosition).xyz;
+ 
+  
+  float3 light_dir = normalize(light_pos-vpos);
+  float3 LightVector=light_dir;//normalize(light_pos-0);
+  
+   float3 Binormal=cross(vert.ONormal,vert.Tangent);
+  
+  
+  // Generate homogeneous POSITION
+  O.HPosition = mul(ModelViewProj, vert.OPosition);
+
+
+   
+
+  // Generate BASIS matrix
+  float3x3 ModelTangent = { normalize(vert.Tangent), 
+                            normalize(Binormal), 
+                            normalize(vert.ONormal) };
+
+
+  // FRESNEL           = { OFFSET, SCALE, POWER, UNUSED };
+  float4 Fresnel       = { 0.1f, 4.2f, 4.4f, 0.0f };
+  // NEWPAINTSPEC      = { MIP LOD BIAS, SPEC POWER, FRESNEL GLOSSINESS, FLECK SPEC POWER }
+  float4 NewPaintSpec  = { 0.8f, 64.0f, 3.0f, 8.0f };
+  float3 ClearCoat     = { 0.299f,0.587f, 0.114f };
+  float3 FleckColor    = { 0.9, 1.05, 1.0 };
+  float3 TangentNormal = { 0.0f, 0.0f, 1.0f };
+  float3 WavyScale     = { 0.4, -0.4, 1.0 };
+
+
+  float3x3 ViewTangent   = mul(ModelTangent, (float3x3)ModelViewIT);
+
+
+  // Generate VIEW SPACE vectors
+  float3 viewN   = normalize(mul((float3x3)ModelView, vert.ONormal));
+  float4 viewP   = mul(ModelView, vert.OPosition);
+  viewP.w = 1-saturate(sqrt(dot(viewP.xyz, viewP.xyz))*0.01);
+  float3 viewV   = -viewP.xyz;
+
+  // Generate OBJECT SPACE vectors
+  float3 objV   = normalize(eye_pos - vert.OPosition.xyz);
+  float3 objL   = normalize(LightVector);   // Light is directional
+  float3 objH   = normalize(objL + objV);
+
+
+  // Generate TANGENT SPACE vectors
+  float3 tanL = mul(ModelTangent, objL);
+  float3 tanV = mul(ModelTangent, objV);
+  float3 tanH = mul(ModelTangent, objH);
+
+
+  // Generate REFLECTION vector for per-vertex reflection look-up
+  float3 reflection = reflect(-viewV, viewN);
+
+
+  // Generate FRESNEL term
+  float ndv  = saturate(dot(viewN, viewV));
+  float FresnelApprox = (pow((1-ndv), Fresnel.z)*Fresnel.y + Fresnel.x);
+
+  // Fill OUTPUT parameters
+  O.uv.xy      = vert.uv;                   // TEXCOORD0.xy
+  O.light      = tanL;                      // Tangent space LIGHT
+  O.halfangle  = float4(tanH.x, tanH.y, tanH.z, 1-exp(-viewP.w));  // Tangent space HALF-ANGLE
+  O.reflection = reflection;                // View space REFLECTION
+  O.view       = float4(tanV.x, tanV.y, tanV.z, viewP.w); // Tangent space VIEW + distance attenuation
+  O.tangent    = normalize(ViewTangent[0]); // VIEWTANGENT column 0
+  O.binormal   = normalize(ViewTangent[1]); // VIEWTANGENT column 1
+  O.normal     = normalize(ViewTangent[2]); // VIEWTANGENT column 2
+  O.fresn      = FresnelApprox;             // FRESNEL approximation
+
+  return O;
+}
+
+

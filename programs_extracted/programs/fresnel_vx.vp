@@ -1,0 +1,94 @@
+/////////////////////////////////////////////////
+// DS2 Engine shader (C) 2004 Dmitry Sytnik
+// Fresnel. Version for vertex colors static light
+/////////////////////////////////////////////////
+
+
+struct indata
+{
+    float4 POS		: POSITION;
+    float3 NORM		: NORMAL;
+    float3 TEX0	    : TEXCOORD0; //cubemap
+    float2 TEX1	    : TEXCOORD1; //diffuse texture
+    float3 COL		: COLOR0;
+   
+};
+
+
+struct outdata
+{
+     float4 HPOS  : POSITION;
+     
+     float2 TEX0 : TEXCOORD0; //diffuse texture
+     float3 TEX1 : TEXCOORD1; //Reflection
+     float3 TEX2 : TEXCOORD2; //Refractiom
+     float3 TEX3 : TEXCOORD3; //vertex colors
+     float3 COL	 : COLOR0; //frensel
+};
+
+////////////////////////////////////////////////////////////////////////////////////////
+
+uniform float3 EyePos;
+uniform float4x4 mdlToWorld; 
+
+uniform float etaRatio;
+
+uniform float fresnel_bias;
+uniform float fresnel_scale;
+uniform float fresnel_power;
+
+
+////////////////////////////////////////////////////////////
+// fresnel approximation
+
+fixed fast_fresnel(float3 I, float3 N, float3 fresnelValues)
+{
+    fixed power = fresnelValues.x;
+    fixed scale = fresnelValues.y;
+    fixed bias = fresnelValues.z;
+
+    return bias + pow(1.0 - dot(I, N), power) * scale;
+}
+
+////////////////////////////////////////////////////////////
+
+outdata main(indata IN )
+{
+  outdata OUT;
+  
+  OUT.HPOS = mul(glstate.matrix.mvp, IN.POS);
+  OUT.TEX0 = IN.TEX1; //diffuse
+  OUT.TEX3 = IN.COL;  //color
+
+  float3 pos_w = mul(mdlToWorld,IN.POS).xyz;
+  
+  
+  //transformation normal from object space to world space
+  float3x3  tr_norm_matr=(float3x3)mdlToWorld;
+  
+//////////// REMOVE! /////////////
+// tr_norm_matr=transpose(tr_norm_matr); //inversion of rotation matrix 3x3 are just transpose of this matrix
+////////////////////////////////
+
+  float3 norm_w = normalize( mul(tr_norm_matr,IN.NORM));
+  
+
+  //I - eye to vert
+  float3 I = pos_w - EyePos;
+  I = normalize(I);
+
+    // calculate reflection
+    OUT.TEX1.xyz = reflect(I, norm_w);
+
+    // calculate refraction
+    OUT.TEX2.xyz = refract(I, norm_w, etaRatio);
+
+
+    // calculate fresnel term
+    OUT.COL = fast_fresnel(-I, norm_w, float3(fresnel_power, fresnel_scale, fresnel_bias));
+
+    return OUT;  
+  
+}
+////////////////////////////////////////////////////////////
+
