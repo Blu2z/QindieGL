@@ -166,6 +166,7 @@ extern OPENGL_API void WINAPI glVertexAttrib4NubvARB( GLuint index, const GLubyt
 extern OPENGL_API void WINAPI glVertexAttribPointerARB( GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid *pointer );
 extern OPENGL_API void WINAPI glEnableVertexAttribArrayARB( GLuint index );
 extern OPENGL_API void WINAPI glDisableVertexAttribArrayARB( GLuint index );
+extern OPENGL_API void WINAPI glGetVertexAttribdvARB( GLuint index, GLenum pname, GLdouble *params );
 extern OPENGL_API void WINAPI glGetVertexAttribfvARB( GLuint index, GLenum pname, GLfloat *params );
 extern OPENGL_API void WINAPI glGetVertexAttribivARB( GLuint index, GLenum pname, GLint *params );
 extern OPENGL_API void WINAPI glGetVertexAttribPointervARB( GLuint index, GLenum pname, GLvoid **pointer );
