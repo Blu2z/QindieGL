@@ -219,7 +219,7 @@ void D3DVABuffer :: SetMinimumVertexBufferSize( int numVerts )
 				 									    0, D3DPOOL_DEFAULT, &m_pVertexBuffer[m_swapFrame], nullptr );
 
 	if (FAILED(hr))
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 }
 
 int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices )
@@ -244,7 +244,7 @@ int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices )
 				 									   D3DPOOL_DEFAULT, &m_pIndexBuffer[currentIndexBuffer][m_swapFrame], nullptr );
 
 	if (FAILED(hr))
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 
 	return currentIndexBuffer;
 }
@@ -286,11 +286,11 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	float normalData[3];
 
 	if (first < 0 || last < first) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	if (m_lockCount > 0) {
-		D3DGlobal.lastError = E_FAIL;
+		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 
@@ -358,7 +358,7 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	HRESULT hr = m_pVertexBuffer[m_swapFrame]->Lock( 0, count * m_vertexSize * sizeof(GLfloat), 
 													 (void**)&pLockedVertices, D3DLOCK_DISCARD );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		return;
 	}
 
@@ -646,14 +646,14 @@ FAST_PATH_CHECK_ABORT:
 	//Set stream source
 	hr = D3DGlobal.pDevice->SetStreamSource( 0, m_pVertexBuffer[m_swapFrame], 0, m_vertexSize * sizeof(GLfloat) );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		return;
 	}
 
 	//Set current FVF
 	hr = D3DGlobal.pDevice->SetFVF( fvf );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		return;
 	}
 
@@ -665,7 +665,7 @@ FAST_PATH_CHECK_ABORT:
 void D3DVABuffer :: Unlock()
 {
 	if (m_lockCount <= 0) {
-		D3DGlobal.lastError = E_FAIL;
+		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 
@@ -704,7 +704,7 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 	GLvoid *pLockedIndices = nullptr;
 	HRESULT hr = m_pIndexBuffer[currentIndexBuffer][m_swapFrame]->Lock( 0, m_primitiveIndexCount * m_indexSize, (void**)&pLockedIndices, D3DLOCK_DISCARD );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		return;
 	}
 
@@ -777,7 +777,7 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 	//Set indices
 	hr = D3DGlobal.pDevice->SetIndices( m_pIndexBuffer[currentIndexBuffer][m_swapFrame] );
 	if (FAILED(hr))
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 }
 
 void D3DVABuffer :: DrawPrimitive()
@@ -826,8 +826,10 @@ void D3DVABuffer :: DrawPrimitive()
 		break;
 	}
 
-	if (FAILED(hr))
-		D3DGlobal.lastError = hr;
+	if (FAILED(hr)) {
+		QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::DrawIndexedPrimitive", hr);
+		QGL_SET_ERROR(hr);
+	}
 }
 
 //------------------------------------------------------------------------------------------------------
@@ -1228,8 +1230,10 @@ OPENGL_API void WINAPI glArrayElement( GLint i )
 		D3DGlobal.pIMBuffer->AddVertex( vertex[0], vertex[1], vertex[2] );
 }
 
-static void internal_DrawArrays( GLenum mode, GLint first, GLsizei count )
+static void internal_DrawArrays( const char *api, GLenum mode, GLint first, GLsizei count )
 {
+	if (!QGL_DiagnosticsBeginDraw(api, mode, count, first, 0, nullptr))
+		return;
 #if defined(VA_USE_IMMEDIATE_MODE)
 	assert( D3DGlobal.pIMBuffer != nullptr );
 	D3DGlobal.pIMBuffer->Begin( mode );
@@ -1237,7 +1241,7 @@ static void internal_DrawArrays( GLenum mode, GLint first, GLsizei count )
 	for (int i = 0; i < count; ++i)
 		glArrayElement( first + i );
 
-	D3DGlobal.pIMBuffer->End();
+	D3DGlobal.pIMBuffer->End(false);
 #else
 	if ( mode == GL_POINTS ) {
 		//points are not supported within DIP, so use immediate mode
@@ -1246,7 +1250,7 @@ static void internal_DrawArrays( GLenum mode, GLint first, GLsizei count )
 		for (int i = 0; i < count; ++i) {
 			glArrayElement( first + i );
 		}
-		D3DGlobal.pIMBuffer->End();
+		D3DGlobal.pIMBuffer->End(false);
 	} else {
 		//skip drawcall if untextured ortho
 		if ( D3DGlobal.settings.game.orthoskipuntextureddraws && !D3DState.TextureState.currentSamplerCount )
@@ -1264,8 +1268,11 @@ static void internal_DrawArrays( GLenum mode, GLint first, GLsizei count )
 //	if (D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT)
 //		D3DState.CurrentState.currentColor = 0xFFFFFFFF;
 }
-static void internal_DrawElements( GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,  const GLvoid *indices )
+static void internal_DrawElements( const char *api, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,  const GLvoid *indices )
 {
+	if (!QGL_DiagnosticsBeginDraw(api, mode, count,
+		start == ~0u ? -1 : static_cast<int>(start), type, indices))
+		return;
 #if defined(VA_USE_IMMEDIATE_MODE)
 	assert( D3DGlobal.pIMBuffer != nullptr );
 	D3DGlobal.pIMBuffer->Begin( mode );
@@ -1297,7 +1304,7 @@ static void internal_DrawElements( GLenum mode, GLuint start, GLuint end, GLsize
 		break;
 	}
 
-	D3DGlobal.pIMBuffer->End();
+	D3DGlobal.pIMBuffer->End(false);
 #else
 	if ( mode == GL_POINTS ) {
 		//points are not supported within DIP, so use immediate mode
@@ -1331,7 +1338,7 @@ static void internal_DrawElements( GLenum mode, GLuint start, GLuint end, GLsize
 			break;
 		}
 
-		D3DGlobal.pIMBuffer->End();
+		D3DGlobal.pIMBuffer->End(false);
 	} else {
 		//skip drawcall if untextured ortho
 		if ( D3DGlobal.settings.game.orthoskipuntextureddraws && !D3DState.TextureState.currentSamplerCount )
@@ -1369,20 +1376,20 @@ OPENGL_API void WINAPI glDrawArrays( GLenum mode, GLint first, GLsizei count )
 {
 	D3DState_Check();
 	D3DState_AssureBeginScene();
-	internal_DrawArrays( mode, first, count );
+	internal_DrawArrays( "glDrawArrays", mode, first, count );
 }
 OPENGL_API void WINAPI glDrawElements( GLenum mode, GLsizei count, GLenum type, const GLvoid *indices )
 {
 	D3DState_Check();
 	D3DState_AssureBeginScene();
-	internal_DrawElements( mode, ~0u, 0, count, type, indices );
+	internal_DrawElements( "glDrawElements", mode, ~0u, 0, count, type, indices );
 }
 
 OPENGL_API void WINAPI glDrawRangeElements( GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices )
 {
 	D3DState_Check();
 	D3DState_AssureBeginScene();
-	internal_DrawElements( mode, start, end, count, type, indices );
+	internal_DrawElements( "glDrawRangeElements", mode, start, end, count, type, indices );
 }
 
 OPENGL_API void WINAPI glMultiDrawArrays( GLenum mode, const GLint *first, const GLsizei *count, GLsizei primcount )
@@ -1390,7 +1397,7 @@ OPENGL_API void WINAPI glMultiDrawArrays( GLenum mode, const GLint *first, const
 	D3DState_Check();
 	D3DState_AssureBeginScene();
 	for (int i = 0; i < primcount; ++i)
-		if (count[i] > 0) internal_DrawArrays( mode, first[i], count[i] );
+		if (count[i] > 0) internal_DrawArrays( "glMultiDrawArrays", mode, first[i], count[i] );
 }
 
 OPENGL_API void WINAPI glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const GLvoid **indices, GLsizei primcount )
@@ -1398,7 +1405,7 @@ OPENGL_API void WINAPI glMultiDrawElements( GLenum mode, GLsizei *count, GLenum 
 	D3DState_Check();
 	D3DState_AssureBeginScene();
 	for (int i = 0; i < primcount; ++i)
-		if (count[i] > 0) internal_DrawElements( mode, ~0u, 0, count[i], type, indices[i] );
+		if (count[i] > 0) internal_DrawElements( "glMultiDrawElements", mode, ~0u, 0, count[i], type, indices[i] );
 }
 
 template<typename T>
@@ -1455,7 +1462,7 @@ OPENGL_API void WINAPI glLockArrays( GLint first, GLsizei count )
 				elemCount = 3;
 	
 			if (!CheckCompiledArraySize<GLfloat>( ppdata, &D3DGlobal.compiledVertexArray.compiledVertexDataSize, count * elemCount )) {
-				D3DGlobal.lastError = E_OUTOFMEMORY;
+				QGL_SET_ERROR(E_OUTOFMEMORY);
 				return;
 			}
 
@@ -1478,7 +1485,7 @@ OPENGL_API void WINAPI glLockArrays( GLint first, GLsizei count )
 			GLfloat **ppdata = &D3DGlobal.compiledVertexArray.compiledNormalData;
 		
 			if (!CheckCompiledArraySize<GLfloat>( ppdata, &D3DGlobal.compiledVertexArray.compiledNormalDataSize, count * 3 )) {
-				D3DGlobal.lastError = E_OUTOFMEMORY;
+				QGL_SET_ERROR(E_OUTOFMEMORY);
 				return;
 			}
 
@@ -1499,7 +1506,7 @@ OPENGL_API void WINAPI glLockArrays( GLint first, GLsizei count )
 			DWORD **ppdata = &D3DGlobal.compiledVertexArray.compiledColorData;
 		
 			if (!CheckCompiledArraySize<DWORD>( ppdata, &D3DGlobal.compiledVertexArray.compiledColorDataSize, count )) {
-				D3DGlobal.lastError = E_OUTOFMEMORY;
+				QGL_SET_ERROR(E_OUTOFMEMORY);
 				return;
 			}
 
@@ -1524,7 +1531,7 @@ OPENGL_API void WINAPI glLockArrays( GLint first, GLsizei count )
 				GLfloat **ppdata = &D3DGlobal.compiledVertexArray.compiledTexCoordData[j];
 		
 				if (!CheckCompiledArraySize<GLfloat>( ppdata, &D3DGlobal.compiledVertexArray.compiledTexCoordDataSize[j], count * 4 )) {
-					D3DGlobal.lastError = E_OUTOFMEMORY;
+					QGL_SET_ERROR(E_OUTOFMEMORY);
 					return;
 				}
 

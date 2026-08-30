@@ -37,7 +37,7 @@ public:
 	D3DIMBuffer();
 	~D3DIMBuffer();
 	void Begin( GLenum primType );
-	void End();
+	void End( bool recordDraw = true );
 	void AddVertex( float x, float y, float z );
 	void AddVertex( float x, float y, float z, float w );
 

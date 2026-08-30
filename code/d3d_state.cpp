@@ -142,7 +142,7 @@ void D3DState_SetCullMode()
 		else
 			hr = D3DGlobal.pDevice->SetRenderState(D3DRS_CULLMODE, (D3DState.PolygonState.cullMode == GL_BACK) ? D3DCULL_CCW : D3DCULL_CW );
 	}
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 
 void D3DState_SetDepthBias()
@@ -158,7 +158,7 @@ void D3DState_SetDepthBias()
 		if (SUCCEEDED(hr)) hr = D3DGlobal.pDevice->SetRenderState(D3DRS_DEPTHBIAS, UTIL_FloatToDword(D3DState.PolygonState.depthBiasUnits));
 	}
 	
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 
 bool D3DState_SetMatrixMode()
@@ -186,7 +186,8 @@ void D3DState_AssureBeginScene()
 	if (!D3DGlobal.sceneBegan) {
 		HRESULT hr = D3DGlobal.pDevice->BeginScene();
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::BeginScene", hr);
+			QGL_SET_ERROR(hr);
 		} else {
 			D3DGlobal.sceneBegan = true;
 		}
@@ -206,7 +207,7 @@ static void D3DState_SetTransform()
 		{
 			hr = D3DGlobal.pDevice->SetTransform( D3DTS_WORLD, D3DGlobal.modelviewMatrixStack->top() );
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return;
 			}
 
@@ -217,7 +218,7 @@ static void D3DState_SetTransform()
 				D3DXMatrixIdentity(&mat);
 				hr = D3DGlobal.pDevice->SetTransform(D3DTS_VIEW, &mat);
 				if (FAILED(hr)) {
-					D3DGlobal.lastError = hr;
+					QGL_SET_ERROR(hr);
 					return;
 				}
 
@@ -228,12 +229,12 @@ static void D3DState_SetTransform()
 		{
 			hr = D3DGlobal.pDevice->SetTransform(D3DTS_WORLD, D3DGlobal.modelMatrixStack->top());
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return;
 			}
 			hr = D3DGlobal.pDevice->SetTransform(D3DTS_VIEW, D3DGlobal.viewMatrixStack->top());
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return;
 			}
 
@@ -244,7 +245,7 @@ static void D3DState_SetTransform()
 		D3DState.projectionMatrixModified = false;
 		hr = D3DGlobal.pDevice->SetTransform( D3DTS_PROJECTION, D3DGlobal.projectionMatrixStack->top() );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 
@@ -280,7 +281,7 @@ static void D3DState_SetTransform()
 				D3DState.TransformState.clipPlaneModified[i] = FALSE;
 				hr = D3DGlobal.pDevice->SetClipPlane( i, D3DState.TransformState.clipPlane[i] );
 				if (FAILED(hr)) {
-					D3DGlobal.lastError = hr;
+					QGL_SET_ERROR(hr);
 					return;
 				}
 			}
@@ -487,7 +488,7 @@ void D3DState_SetTexture()
 				}
 				hr = D3DGlobal.pDevice->SetTransform( (D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + currentSampler), mat );
 				if (FAILED(hr)) {
-					D3DGlobal.lastError = hr;
+					QGL_SET_ERROR(hr);
 					break;
 				}
 			}
@@ -537,7 +538,7 @@ void D3DState_SetTexture()
 
 		hr = D3DGlobal.pDevice->SetTexture( currentSampler, bestTexture ? bestTexture->GetD3DTexture() : nullptr );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			break;
 		}
 
@@ -583,7 +584,7 @@ void D3DState_SetTexture()
 		for (DWORD i = currentSampler; i < D3DState.TextureState.currentSamplerCount; ++i) {
 			hr = D3DGlobal.pDevice->SetTexture( i, nullptr );
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				break;
 			}
 			if ( i >= D3DState.TextureState.currentCombinerCount ) {
@@ -949,7 +950,7 @@ OPENGL_API void WINAPI glPushClientAttrib( GLbitfield mask )
 OPENGL_API void WINAPI glPopAttrib()
 {
 	if (!D3DStateCopyMask) {
-		D3DGlobal.lastError = E_STACK_UNDERFLOW;
+		QGL_SET_ERROR(E_STACK_UNDERFLOW);
 		return;
 	}
 
@@ -975,7 +976,7 @@ OPENGL_API void WINAPI glPopAttrib()
 OPENGL_API void WINAPI glPopClientAttrib()
 {
 	if (!D3DStateClientCopyMask) {
-		D3DGlobal.lastError = E_STACK_UNDERFLOW;
+		QGL_SET_ERROR(E_STACK_UNDERFLOW);
 		return;
 	}
 
@@ -1096,7 +1097,7 @@ static DWORD D3DState_IsEnabledState( GLenum cap )
 
 	default:
 		logPrintf("WARNING: glIsEnabled( 0x%x ) unimplemented\n", cap);
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		return 0;
 	}
 }
@@ -1349,7 +1350,7 @@ static void D3DState_EnableDisableState( GLenum cap, DWORD value )
 			warn_shown[cap] = true;
 			logPrintf( "WARNING: glEnable/glDisable( 0x%x ) unimplemented\n", cap );
 		}
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		break; }
 	}
 }
@@ -1388,7 +1389,7 @@ static void D3DState_EnableDisableClientState( GLenum cap, DWORD value )
 		break;
 	default:
 		logPrintf("WARNING: glEnableClientState/glDisableClientState( 0x%x ) unimplemented\n", cap);
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		break;
 	}
 }

@@ -25,6 +25,8 @@
 
 #include <string>
 #include <tchar.h>
+#include <cctype>
+#include <cstring>
 
 //==================================================================================
 // Wrapper Log
@@ -36,6 +38,32 @@ static FILE *g_fpLog = nullptr;
 static const char s_szLogFileName[] = WRAPPER_GL_SHORT_NAME_STRING ".log";
 static char *log_string = nullptr;
 static const size_t c_LogStringSize = 8192; //8 kbytes
+static int g_logLevel = QGL_LOG_INFO;
+
+static QGLLogLevel logInferLevel( const char *fmt )
+{
+	if (!fmt)
+		return QGL_LOG_INFO;
+
+	if (!_strnicmp(fmt, "ERROR", 5) || !_strnicmp(fmt, "Error", 5)
+		|| !_strnicmp(fmt, "FATAL", 5))
+		return QGL_LOG_ERROR;
+	if (!_strnicmp(fmt, "WARNING", 7) || !_strnicmp(fmt, "Warn", 4))
+		return QGL_LOG_WARN;
+	return QGL_LOG_INFO;
+}
+
+static const char *logLevelName( QGLLogLevel level )
+{
+	switch (level) {
+	case QGL_LOG_ERROR: return "ERROR";
+	case QGL_LOG_WARN: return "WARN";
+	case QGL_LOG_INFO: return "INFO";
+	case QGL_LOG_DEBUG: return "DEBUG";
+	case QGL_LOG_TRACE: return "TRACE";
+	default: return "LOG";
+	}
+}
 
 static void logInit()
 {
@@ -94,7 +122,7 @@ void logShutdown()
 
 void logPrintf( const char *fmt, ... )
 {
-	if (!g_fpLog)
+	if (!g_fpLog || !logIsEnabled(logInferLevel(fmt)))
 		return;
 
 	va_list argptr;
@@ -103,6 +131,45 @@ void logPrintf( const char *fmt, ... )
 	va_end(argptr);
 
 	fprintf(g_fpLog, "%s", log_string);
+	fflush(g_fpLog);
+}
+
+void logSetLevel( int level )
+{
+	if (level < QGL_LOG_ERROR) level = QGL_LOG_ERROR;
+	if (level > QGL_LOG_TRACE) level = QGL_LOG_TRACE;
+	g_logLevel = level;
+}
+
+int logGetLevel()
+{
+	return g_logLevel;
+}
+
+bool logIsEnabled( QGLLogLevel level )
+{
+	return static_cast<int>(level) <= g_logLevel;
+}
+
+void logPrintfLevel( QGLLogLevel level, const char *category, const char *fmt, ... )
+{
+	if (!g_fpLog || !fmt || !logIsEnabled(level))
+		return;
+
+	char message[c_LogStringSize];
+	va_list argptr;
+	va_start(argptr, fmt);
+	_vsnprintf_s(message, sizeof(message), _TRUNCATE, fmt, argptr);
+	va_end(argptr);
+
+	fprintf(g_fpLog, "[%s][F:%08llu D:%06llu][%s] %s",
+		logLevelName(level),
+		static_cast<unsigned long long>(QGL_DiagnosticsGetFrameId()),
+		static_cast<unsigned long long>(QGL_DiagnosticsGetDrawId()),
+		category ? category : "GENERAL",
+		message);
+	if (!*message || message[strlen(message) - 1] != '\n')
+		fputc('\n', g_fpLog);
 	fflush(g_fpLog);
 }
 
@@ -141,6 +208,7 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID )
 			DisableThreadLibraryCalls(hModule);
 			hook_on_process_attach();
 			logInit();
+			QGL_DiagnosticsInitialize();
 			//logPrintf("DllMain( DLL_PROCESS_ATTACH )\n");
 			//detect executable name
 			{
@@ -170,6 +238,7 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID )
 			//logPrintf("DllMain( DLL_PROCESS_DETACH )\n");
 			D3DGlobal_Cleanup( true );
 			hook_do_deinit();
+			QGL_DiagnosticsShutdown();
 			logShutdown();
 			break;
 		default:

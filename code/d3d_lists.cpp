@@ -67,12 +67,12 @@ OPENGL_API void WINAPI glListBase( GLuint base )
 OPENGL_API void WINAPI glNewList( GLuint list, GLenum mode )
 {
 	if ( gDLRecording ) {
-		D3DGlobal.lastError = E_INVALID_OPERATION;
+		QGL_SET_ERROR(E_INVALID_OPERATION);
 		logPrintf( "WARNING: glNewList called while already recording\n" );
 		return;
 	}
 	if ( list == 0 ) {
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		logPrintf( "WARNING: glNewList called with list 0\n" );
 		return;
 	}
@@ -96,7 +96,7 @@ OPENGL_API void WINAPI glNewList( GLuint list, GLenum mode )
 OPENGL_API void WINAPI glEndList()
 {
 	if ( !gDLRecording ) {
-		D3DGlobal.lastError = E_INVALID_OPERATION;
+		QGL_SET_ERROR(E_INVALID_OPERATION);
 		logPrintf( "WARNING: glEndList called without glNewList\n" );
 		return;
 	}

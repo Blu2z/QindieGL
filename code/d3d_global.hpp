@@ -162,6 +162,11 @@ typedef struct D3DGlobal_s
 		DWORD				drawcallFastPath;
 		DWORD				useSSE;
 		DWORD				enableARBProgramsStub;
+		DWORD				logLevel;
+		DWORD				crashDiagnostics;
+		LONG				debugMaxDrawCall;
+		LONG				debugDumpFrame;
+		LONG				debugDumpDraw;
 		struct {
 			DWORD               remixapi;
 			DWORD               orthovertexshader;

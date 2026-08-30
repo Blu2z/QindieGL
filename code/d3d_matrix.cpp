@@ -353,7 +353,7 @@ OPENGL_API void WINAPI glPopMatrix( void )
 	DL_RECORD_0( glPopMatrix );
 	if( !D3DState.currentMatrixStack ) return;
 	HRESULT hr = D3DState.currentMatrixStack->pop( );
-	if( FAILED( hr ) ) D3DGlobal.lastError = hr;
+	if( FAILED( hr ) ) QGL_SET_ERROR(hr);
 	*D3DState.currentMatrixModified = true;
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
@@ -367,7 +367,7 @@ OPENGL_API void WINAPI glPushMatrix( void )
 	DL_RECORD_0( glPushMatrix );
 	if( !D3DState.currentMatrixStack ) return;
 	HRESULT hr = D3DState.currentMatrixStack->push( );
-	if( FAILED( hr ) ) D3DGlobal.lastError = hr;
+	if( FAILED( hr ) ) QGL_SET_ERROR(hr);
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{

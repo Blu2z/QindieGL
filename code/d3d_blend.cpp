@@ -207,7 +207,7 @@ OPENGL_API void WINAPI glFogfv( GLenum pname, const GLfloat *params )
 
 	default:
 		logPrintf("WARNING: glFogf - bad pname 0x%x\n", pname);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 }

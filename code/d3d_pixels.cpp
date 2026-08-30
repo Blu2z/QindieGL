@@ -1108,7 +1108,7 @@ HRESULT D3DPixels_Pack( int width, int height, int depth, int hpitch, int vpitch
 OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid *pixels )
 {
 	if(!D3DGlobal.pDevice) {
-		D3DGlobal.lastError = E_FAIL;
+		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 
@@ -1148,7 +1148,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 					break;
 				default:
 					logPrintf("WARNING: Texture data type 0x%x is not supported\n", type);
-					D3DGlobal.lastError = E_INVALIDARG;
+					QGL_SET_ERROR(E_INVALIDARG);
 					break;
 				}
 			}
@@ -1160,13 +1160,13 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 
 		hr = D3DGlobal.pDevice->GetDepthStencilSurface( &lpRenderTarget );
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: GetDepthStencilSurface failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		} 
 		hr = lpRenderTarget->GetDesc(&desc);
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: GetDesc failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		}
@@ -1178,14 +1178,14 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 														0, FALSE, 
 														&lpDS, nullptr );
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: CreateDepthStencilSurface failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		}
 
 		hr = D3DGlobal.pDevice->StretchRect( lpRenderTarget, nullptr, lpDS, nullptr, D3DTEXF_NONE );
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: StretchRect failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		}
@@ -1199,14 +1199,14 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 															 D3DPOOL_SYSTEMMEM, 
 															 &lpDS2, nullptr );
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: CreateOffscreenPlainSurface failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		}
 
 		hr = D3DGlobal.pDevice->GetRenderTargetData( lpDS, lpDS2 );
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: GetRenderTargetData failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		}
@@ -1221,7 +1221,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 
 		hr = D3DGlobal.pDevice->GetRenderTarget( 0, &lpRenderTarget );
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: GetRenderTarget failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		} 
@@ -1232,7 +1232,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 			// this will also handle translation between different backbuffer formats
 			hr = lpRenderTarget->GetDesc(&desc);
 			if(FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				logPrintf("WARNING: glReadPixels: GetDesc failed with error '%s'\n", DXGetErrorString(hr));
 				return;
 			}
@@ -1244,7 +1244,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 																 D3DPOOL_SYSTEMMEM, 
 																 &D3DGlobal.pSystemMemRT, nullptr );
 			if(FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				logPrintf("WARNING: glReadPixels: CreateOffscreenPlainSurface failed with error '%s'\n", DXGetErrorString(hr));
 				return;
 			}
@@ -1258,7 +1258,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 																0, FALSE, 
 																&D3DGlobal.pSystemMemFB, nullptr );
 					if(FAILED(hr)) {
-						D3DGlobal.lastError = hr;
+						QGL_SET_ERROR(hr);
 						logPrintf("WARNING: glReadPixels: CreateRenderTarget failed with error '%s'\n", DXGetErrorString(hr));
 						return;
 					}
@@ -1269,7 +1269,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 		if(D3DGlobal.pSystemMemFB) {
 			hr = D3DGlobal.pDevice->StretchRect( lpRenderTarget, nullptr, D3DGlobal.pSystemMemFB, nullptr, D3DTEXF_NONE );
 			if(FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				logPrintf("WARNING: glReadPixels: StretchRect failed with error '%s'\n", DXGetErrorString(hr));
 				return;
 			}
@@ -1279,7 +1279,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 
 		hr = D3DGlobal.pDevice->GetRenderTargetData( lpRenderTarget, D3DGlobal.pSystemMemRT );
 		if(FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: glReadPixels: GetRenderTargetData failed with error '%s'\n", DXGetErrorString(hr));
 			return;
 		}
@@ -1299,7 +1299,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 
 	hr = D3DGlobal.pSystemMemRT->LockRect( &lockrect, &srcrect, D3DLOCK_NOSYSLOCK|D3DLOCK_READONLY );
 	if(FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		logPrintf("WARNING: glReadPixels: LockRect failed with error '%s'\n", DXGetErrorString(hr));
 		return;
 	}
@@ -1308,7 +1308,7 @@ OPENGL_API void WINAPI glReadPixels( GLint x, GLint y, GLsizei width, GLsizei he
 	const GLubyte *srcdata =(GLubyte*)lockrect.pBits;
 	hr = D3DPixels_Pack( srcrect.right - srcrect.left, srcrect.bottom - srcrect.top, 1, lockrect.Pitch, 0, srcdata, 4, D3D_TEXTYPE_GENERIC, true, format, type, pixels );
 	if(FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 	}
 
 	if( format == GL_DEPTH_COMPONENT )
@@ -1358,7 +1358,7 @@ OPENGL_API void WINAPI glGetPixelMapfv( GLenum map, GLfloat *values )
 		break;
 	default:
 		logPrintf("WARNING: glGetPixelMapfv supports only RGBA maps(bad map 0x%x)\n", map);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1389,7 +1389,7 @@ OPENGL_API void WINAPI glGetPixelMapuiv( GLenum map, GLuint *values )
 		break;
 	default:
 		logPrintf("WARNING: glGetPixelMapuiv supports only RGBA maps(bad map 0x%x)\n", map);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1420,7 +1420,7 @@ OPENGL_API void WINAPI glGetPixelMapusv( GLenum map, GLushort *values )
 		break;
 	default:
 		logPrintf("WARNING: glGetPixelMapusv supports only RGBA maps(bad map 0x%x)\n", map);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1452,7 +1452,7 @@ OPENGL_API void WINAPI glPixelMapfv( GLenum map, GLsizei mapsize, const GLfloat 
 		break;
 	default:
 		logPrintf("WARNING: glPixelMapfv supports only RGBA maps(bad map 0x%x)\n", map);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1489,7 +1489,7 @@ OPENGL_API void WINAPI glPixelMapuiv( GLenum map, GLsizei mapsize, const GLuint 
 		break;
 	default:
 		logPrintf("WARNING: glPixelMapuiv supports only RGBA maps(bad map 0x%x)\n", map);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1527,7 +1527,7 @@ OPENGL_API void WINAPI glPixelMapusv( GLenum map, GLsizei mapsize, const GLushor
 		break;
 	default:
 		logPrintf("WARNING: glPixelMapusv supports only RGBA maps(bad map 0x%x)\n", map);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1604,7 +1604,7 @@ OPENGL_API void WINAPI glPixelStorei( GLenum pname, GLint param )
 
 	default:
 		logPrintf("WARNING: glPixelStore - invalid pname 0x%x\n", pname);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		break;
 	}
 }
@@ -1654,7 +1654,7 @@ OPENGL_API void WINAPI glPixelTransferi( GLenum pname, GLint param )
 
 	default:
 		logPrintf("WARNING: glPixelTransferi - invalid pname 0x%x\n", pname);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		break;
 	}
 }
@@ -1699,7 +1699,7 @@ OPENGL_API void WINAPI glPixelTransferf( GLenum pname, GLfloat param )
 
 	default:
 		logPrintf("WARNING: glPixelTransferf - invalid pname 0x%x\n", pname);
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		break;
 	}
 }

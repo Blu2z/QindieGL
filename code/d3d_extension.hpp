@@ -23,6 +23,11 @@
 
 extern void D3DExtension_BuildExtensionsString();
 extern void D3DExtension_DumpMissingProcs();
+extern void D3DExtension_DumpProcSummary();
+extern void D3DExtension_RecordStubInvocation( const char *name );
+
+extern GLuint ARB_GetBoundVertexProgram();
+extern GLuint ARB_GetBoundFragmentProgram();
 
 extern OPENGL_API void WINAPI glBindBuffer(GLenum target, GLuint buffer);
 extern OPENGL_API void WINAPI glBindBufferARB(GLenum target, GLuint buffer);

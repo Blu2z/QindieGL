@@ -76,7 +76,7 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 			0, D3DPOOL_DEFAULT, &m_pVertexBuffer[m_swapFrame], nullptr );
 		if ( FAILED( hr ) )
 		{
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return 0;
 		}
 	}
@@ -85,7 +85,7 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 		(void**)&dst, D3DLOCK_DISCARD );
 	if (FAILED(hr))
 	{
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		return 0;
 	}
 
@@ -139,10 +139,17 @@ void D3DIMBuffer :: Begin( GLenum primType )
 	m_bXYZW = false;
 }
 
-void D3DIMBuffer :: End( )
+void D3DIMBuffer :: End( bool recordDraw )
 {
 	if ( !m_vertexCount || !m_bBegan ) 
 		return;
+
+	if (recordDraw && !QGL_DiagnosticsBeginDraw("glBegin/glEnd", m_primitiveType,
+		m_passedVertexCount, 0, 0, nullptr)) {
+		m_bBegan = false;
+		m_vertexCount = 0;
+		return;
+	}
 
 	if ( D3DGlobal.settings.game.orthoskipuntextureddraws && !D3DState.TextureState.currentSamplerCount )
 	{
@@ -227,7 +234,8 @@ void D3DIMBuffer :: End( )
 
 	HRESULT hr = D3DGlobal.pDevice->SetFVF( iFVF );
 	if ( FAILED( hr ) ) {
-		D3DGlobal.lastError = hr;
+		QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::SetFVF", hr);
+		QGL_SET_ERROR(hr);
 		m_vertexCount = 0;
 		return;
 	}
@@ -237,7 +245,8 @@ void D3DIMBuffer :: End( )
 	{
 		hr = D3DGlobal.pDevice->SetStreamSource( 0, m_pVertexBuffer[m_swapFrame], 0, sizeFVF );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::SetStreamSource", hr);
+			QGL_SET_ERROR(hr);
 		}
 
 		switch ( m_primitiveType )
@@ -286,6 +295,11 @@ void D3DIMBuffer :: End( )
 			// unsupported mode
 			logPrintf( "WARNING: glBegin - unsupported mode 0x%x\n", m_primitiveType );
 			break;
+		}
+
+		if (FAILED(hr)) {
+			QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::DrawPrimitive", hr);
+			QGL_SET_ERROR(hr);
 		}
 	}
 
@@ -660,7 +674,7 @@ template<typename T> inline void D3D_SetTexCoord( GLenum target, T s, T t, T r, 
 	int stage = target;
 	if ( stage >= GL_TEXTURE0_ARB ) stage -= GL_TEXTURE0_ARB;
 	if ( stage < 0 || stage >= D3DGlobal.maxActiveTMU ) {
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		return;
 	}
 
@@ -689,7 +703,7 @@ template<typename T> inline void D3D_SetTexCoord( GLenum target, T s, T t, T r, 
 	D3DState.CurrentState.currentTexCoord[stage][2] = fr;
 	D3DState.CurrentState.currentTexCoord[stage][3] = fq;
 
-	D3DGlobal.lastError = S_OK;
+	QGL_SET_ERROR(S_OK);
 }
 
 OPENGL_API void WINAPI glColor3b( GLbyte red, GLbyte green, GLbyte blue )

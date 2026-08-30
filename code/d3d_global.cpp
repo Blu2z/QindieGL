@@ -67,7 +67,7 @@ void D3DGlobal_Init( bool clearGlobals )
 		D3DGlobal.sceneBegan = false;
 		D3DGlobal.deviceLost = false;
 		D3DGlobal.skipCopyImage = 5;
-		D3DGlobal.lastError = S_OK;
+		QGL_SET_ERROR(S_OK);
 	}
 
 	if (!D3DGlobal.pIMBuffer)
@@ -91,6 +91,16 @@ void D3DGlobal_Init( bool clearGlobals )
 	{
 		g_iniavailable = false;
 	}
+
+	D3DGlobal.settings.logLevel = D3DGlobal_GetRegistryValue( "LogLevel", "Settings", QGL_LOG_INFO );
+	D3DGlobal.settings.crashDiagnostics = D3DGlobal_GetRegistryValue( "CrashDiagnostics", "Settings", 1 );
+	D3DGlobal.settings.debugMaxDrawCall = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugMaxDrawCall", "Settings", static_cast<DWORD>(-1) ));
+	D3DGlobal.settings.debugDumpFrame = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugDumpFrame", "Settings", static_cast<DWORD>(-1) ));
+	D3DGlobal.settings.debugDumpDraw = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugDumpDraw", "Settings", static_cast<DWORD>(-1) ));
+	logSetLevel( static_cast<int>(D3DGlobal.settings.logLevel) );
+	QGL_DiagnosticsConfigure( D3DGlobal.settings.crashDiagnostics != 0,
+		D3DGlobal.settings.debugMaxDrawCall, D3DGlobal.settings.debugDumpFrame,
+		D3DGlobal.settings.debugDumpDraw );
 
 	if (!clearGlobals)
 		matrix_detect_configuration_reset();
@@ -120,8 +130,12 @@ void D3DGlobal_Reset()
 	PBuffer_ReleaseResources();
 
 	Sleep( 20 );
-	D3DGlobal.pDevice->Reset(&D3DGlobal.hPresentParams);
+	HRESULT resetResult = D3DGlobal.pDevice->Reset(&D3DGlobal.hPresentParams);
+	QGL_DiagnosticsRecordDeviceReset(resetResult);
 	Sleep( 20 );
+	if (FAILED(resetResult)) {
+		QGL_SET_ERROR(resetResult);
+	}
 
 	PBuffer_RecreateResources();
 
@@ -132,6 +146,8 @@ void D3DGlobal_Reset()
 void D3DGlobal_Cleanup( bool cleanupAll )
 {
 	logPrintf("--- Cleanup( %s ) ---\n", cleanupAll ? "all" : "partial" );
+	if (cleanupAll)
+		QGL_DiagnosticsDumpSessionSummary();
 
 	D3DDisplayList_Cleanup();
 	ARB_Cleanup();
@@ -140,10 +156,6 @@ void D3DGlobal_Cleanup( bool cleanupAll )
 #ifndef QINDIEGLSRC_NO_REMIX
 	rmx_deinit_device();
 #endif
-
-	if (cleanupAll) {
-		D3DExtension_DumpMissingProcs();
-	}
 
 	if ( D3DGlobal.settings.game.orthovertexshader )
 	{
@@ -1066,14 +1078,14 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 	}
 
 	if (FAILED(hr = D3DGlobal.pD3D->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, &D3DGlobal.hD3DCaps))) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		logPrintf("wglCreateContext: GetDeviceCaps failed with error '%s'\n", DXGetErrorString(hr));
 		return 0;
 	}
 
 	// get the format for the desktop mode
 	if (FAILED(hr = D3DGlobal.pD3D->GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &D3DGlobal.hDesktopMode))) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		logPrintf("wglCreateContext: GetAdapterDisplayMode failed with error '%s'\n", DXGetErrorString(hr));
 		return 0;
 	}
@@ -1084,11 +1096,11 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 			//try to start windowed
 			isWindowed = 1;
 			if (!D3DGlobal_SetupPresentParams(clientrect.right, clientrect.bottom, D3DGlobal.iBPP, isWindowed)) {
-				D3DGlobal.lastError = E_INVALIDARG;
+				QGL_SET_ERROR(E_INVALIDARG);
 				return 0;
 			}
 		} else {
-			D3DGlobal.lastError = E_INVALIDARG;
+			QGL_SET_ERROR(E_INVALIDARG);
 			return 0;
 		}
 	}
@@ -1286,6 +1298,8 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 		}
 	}
 
+	QGL_DiagnosticsDumpCapabilityReport();
+
 	return D3DGlobal.hGLRC;
 }
 
@@ -1356,12 +1370,17 @@ OPENGL_API BOOL WINAPI wrap_wglMakeCurrent(HDC hdc, HGLRC hglrc)
 			}
 			PBuffer_SaveMainRenderTarget();
 			if ( pb->colorSurface ) {
-				D3DGlobal.pDevice->SetRenderTarget( 0, pb->colorSurface );
+				HRESULT hr = D3DGlobal.pDevice->SetRenderTarget( 0, pb->colorSurface );
+				if (FAILED(hr)) QGL_DiagnosticsRecordD3DFailure("PBuffer::SetRenderTarget", hr);
 			}
 			if ( pb->depthStencil ) {
-				D3DGlobal.pDevice->SetDepthStencilSurface( pb->depthStencil );
+				HRESULT hr = D3DGlobal.pDevice->SetDepthStencilSurface( pb->depthStencil );
+				if (FAILED(hr)) QGL_DiagnosticsRecordD3DFailure("PBuffer::SetDepthStencilSurface", hr);
 			}
 			pb->isActive = true;
+			char renderTargetName[64];
+			sprintf_s(renderTargetName, "PBUFFER@%p", static_cast<void *>(pb));
+			QGL_DiagnosticsSetRenderTarget(renderTargetName);
 
 			// Set viewport to PBuffer size
 			D3DVIEWPORT9 vp;
@@ -1398,7 +1417,11 @@ OPENGL_API BOOL WINAPI wrap_wglMakeCurrent(HDC hdc, HGLRC hglrc)
 				return FALSE;
 			}
 
-			D3DGlobal.pDevice->Reset(&D3DGlobal.hPresentParams);
+			HRESULT resetResult = D3DGlobal.pDevice->Reset(&D3DGlobal.hPresentParams);
+			QGL_DiagnosticsRecordDeviceReset(resetResult);
+			if (FAILED(resetResult)) {
+				QGL_SET_ERROR(resetResult);
+			}
 
 			if (D3DGlobal.pSystemMemRT) {
 				D3DGlobal.pSystemMemRT->Release();
@@ -1494,12 +1517,16 @@ OPENGL_API BOOL WINAPI wrap_wglSwapBuffers( HDC )
 			D3DState.viewport.Height = D3DGlobal.hCurrentMode.Height;
 			HRESULT hr = D3DGlobal.pDevice->SetViewport(&D3DState.viewport);
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return TRUE;
 			}
 		}
 
-		D3DGlobal.pDevice->EndScene();
+		HRESULT endSceneResult = D3DGlobal.pDevice->EndScene();
+		if (FAILED(endSceneResult)) {
+			QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::EndScene", endSceneResult);
+			QGL_SET_ERROR(endSceneResult);
+		}
 		D3DGlobal.sceneBegan = false;
 
 #ifndef QINDIEGLSRC_NO_REMIX
@@ -1522,9 +1549,11 @@ OPENGL_API BOOL WINAPI wrap_wglSwapBuffers( HDC )
 			}
 			else if (FAILED (hr)) {
 				// something else bad happened
-				D3DGlobal.lastError = hr;
+				QGL_DiagnosticsRecordD3DFailure("Present", hr);
+				QGL_SET_ERROR(hr);
 			}
 		}
+		QGL_DiagnosticsEndFrame(hr);
 
 		matrix_detect_frame_ended();
 #ifndef QINDIEGLSRC_NO_REMIX
@@ -1656,6 +1685,29 @@ OPENGL_API BOOL WINAPI wrap_wglSwapLayerBuffers( HDC, UINT )
 	return FALSE;
 }
 
+// GLIntercept resolves the complete Windows OpenGL 1.1 export set before it
+// initializes, even when the application never calls this entry point. Keep a
+// minimal standards-shaped implementation so a diagnostic proxy can chain to
+// QindieGL. YAE itself presents through wglSwapBuffers.
+OPENGL_API DWORD WINAPI wrap_wglSwapMultipleBuffers( UINT count, CONST WGLSWAP *swaps )
+{
+	if (count > WGL_SWAPMULTIPLE_MAX || (count && !swaps)) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
+	}
+
+	DWORD completed = 0;
+	for (UINT i = 0; i < count; ++i) {
+		const BOOL success = (swaps[i].uiFlags & WGL_SWAP_MAIN_PLANE)
+			? wrap_wglSwapBuffers(swaps[i].hdc)
+			: wrap_wglSwapLayerBuffers(swaps[i].hdc, swaps[i].uiFlags);
+		if (!success)
+			break;
+		++completed;
+	}
+	return completed;
+}
+
 OPENGL_API BOOL WINAPI wrap_wglShareLists( HGLRC, HGLRC )
 {
 	return FALSE;
@@ -1742,9 +1794,11 @@ OPENGL_API int WINAPI wglGetSwapInterval()
 
 OPENGL_API void WINAPI glPNTrianglesiATI( GLenum pname, GLint param )
 {
+	D3DExtension_RecordStubInvocation("glPNTrianglesiATI");
 	_CRT_UNUSED( pname ); _CRT_UNUSED( param );
 }
 OPENGL_API void WINAPI glPNTrianglesfATI( GLenum pname, GLfloat param )
 {
+	D3DExtension_RecordStubInvocation("glPNTrianglesfATI");
 	_CRT_UNUSED( pname ); _CRT_UNUSED( param );
 }

@@ -361,6 +361,7 @@ EXPORTS
 	wglShareLists = wrap_wglShareLists
 	wglSwapBuffers = wrap_wglSwapBuffers
 	wglSwapLayerBuffers = wrap_wglSwapLayerBuffers
+	wglSwapMultipleBuffers = wrap_wglSwapMultipleBuffers
 	wglUseFontBitmapsA = wrap_wglUseFontBitmapsA
 	wglUseFontBitmapsW = wrap_wglUseFontBitmapsW
 	wglUseFontOutlinesA = wrap_wglUseFontOutlinesA

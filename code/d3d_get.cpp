@@ -89,7 +89,7 @@ OPENGL_API GLenum WINAPI glGetError()
 		break;
 	}
 
-	D3DGlobal.lastError = S_OK;
+	QGL_SET_ERROR(S_OK);
 	return oglErrorCode;
 }
 
@@ -575,6 +575,23 @@ template<typename T> static void glGet( GLenum pname, T *params )
 OPENGL_API void WINAPI glGetIntegerv( GLenum pname, GLint *params )
 {
 	glGet( pname, params );
+	if (!params)
+		return;
+
+	const char *capabilityName = nullptr;
+	switch (pname) {
+	case GL_MAX_TEXTURE_UNITS_ARB: capabilityName = "GL_MAX_TEXTURE_UNITS"; break;
+	case GL_MAX_TEXTURE_COORDS_ARB: capabilityName = "GL_MAX_TEXTURE_COORDS"; break;
+	case GL_MAX_TEXTURE_IMAGE_UNITS_ARB: capabilityName = "GL_MAX_TEXTURE_IMAGE_UNITS"; break;
+	case GL_MAX_VERTEX_ATTRIBS_ARB: capabilityName = "GL_MAX_VERTEX_ATTRIBS_ARB"; break;
+	default: break;
+	}
+	if (capabilityName) {
+		QGL_DiagnosticsRecordEvent(false, "GL_CAP_QUERY", "%s(0x%X)=%d",
+			capabilityName, pname, params[0]);
+		logPrintfLevel(QGL_LOG_INFO, "GL_CAP_QUERY", "%s(0x%X)=%d",
+			capabilityName, pname, params[0]);
+	}
 }
 
 OPENGL_API void WINAPI glGetBooleanv( GLenum pname, GLboolean *params )

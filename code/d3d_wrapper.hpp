@@ -39,6 +39,8 @@
 #include "gl_headers/gl.h"
 #include "gl_headers/glext.h"
 
+#include "d3d_diagnostics.hpp"
+
 #define OPENGL_API
 
 #define WRAPPER_GL_VENDOR_STRING			"Crystice Softworks (Microsoft Direct3D 9.0c)"
