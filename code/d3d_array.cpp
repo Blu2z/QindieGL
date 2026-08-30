@@ -24,6 +24,7 @@
 #include "d3d_utils.hpp"
 #include "d3d_immediate.hpp"
 #include "d3d_array.hpp"
+#include "d3d_buffer.hpp"
 #include "d3d_matrix_stack.hpp"
 #include "d3d_helpers.hpp"
 
@@ -36,12 +37,41 @@ static void on_glVertexPointer( GLint size, GLenum type, GLsizei stride, const G
 // Vertex arrays
 //==================================================================================
 
+static size_t D3DVA_ElementSize( GLenum type )
+{
+	switch (type) {
+	case GL_BYTE:
+	case GL_UNSIGNED_BYTE: return 1;
+	case GL_SHORT:
+	case GL_UNSIGNED_SHORT: return 2;
+	case GL_INT:
+	case GL_UNSIGNED_INT:
+	case GL_FLOAT: return 4;
+	case GL_DOUBLE: return 8;
+	default: return 0;
+	}
+}
+
+static const GLubyte *D3DVA_ResolveData( const D3DVAInfo *pVAInfo, int lastIndex = -1 )
+{
+	size_t requiredBytes = 0;
+	if (lastIndex >= 0) {
+		const size_t elementSize = D3DVA_ElementSize(pVAInfo->elementType);
+		const size_t packedSize = elementSize * static_cast<size_t>(pVAInfo->elementCount);
+		const size_t stride = pVAInfo->stride > 0 ? static_cast<size_t>(pVAInfo->stride) : packedSize;
+		requiredBytes = static_cast<size_t>(lastIndex) * stride + packedSize;
+	}
+	return D3DBuffer_ResolvePointer(pVAInfo->bufferBinding, pVAInfo->data, requiredBytes);
+}
+
 template<typename T> 
 static void D3DVA_CopyArrayToFloatsInternal( const D3DVAInfo *pVAInfo, int index, GLfloat *out )
 {
 	GLsizei stride = pVAInfo->stride;
 	if (!stride) stride = sizeof(T) * pVAInfo->elementCount;
-	const T *data = reinterpret_cast<const T*>(pVAInfo->data + index * stride);
+	const GLubyte *base = D3DVA_ResolveData(pVAInfo, index);
+	if (!base) { memset(out, 0, sizeof(GLfloat) * pVAInfo->elementCount); return; }
+	const T *data = reinterpret_cast<const T*>(base + index * stride);
 	for (int i = 0; i < pVAInfo->elementCount; ++i)
 		out[i] = (GLfloat)data[i] / std::numeric_limits<T>::max();
 }
@@ -49,14 +79,18 @@ static void D3DVA_CopyArrayToFloatsInternalFloat( const D3DVAInfo *pVAInfo, int 
 {
 	GLsizei stride = pVAInfo->stride;
 	if (!stride) stride = sizeof(GLfloat) * pVAInfo->elementCount;
-	const GLfloat *data = reinterpret_cast<const GLfloat*>(pVAInfo->data + index * stride);
+	const GLubyte *base = D3DVA_ResolveData(pVAInfo, index);
+	if (!base) { memset(out, 0, sizeof(GLfloat) * pVAInfo->elementCount); return; }
+	const GLfloat *data = reinterpret_cast<const GLfloat*>(base + index * stride);
 	memcpy( out, data, pVAInfo->elementCount * sizeof(GLfloat) );
 }
 static void D3DVA_CopyArrayToFloatsInternalDouble( const D3DVAInfo *pVAInfo, int index, GLfloat *out )
 {
 	GLsizei stride = pVAInfo->stride;
 	if (!stride) stride = sizeof(GLdouble) * pVAInfo->elementCount;
-	const GLdouble *data = reinterpret_cast<const GLdouble*>(pVAInfo->data + index * stride);
+	const GLubyte *base = D3DVA_ResolveData(pVAInfo, index);
+	if (!base) { memset(out, 0, sizeof(GLfloat) * pVAInfo->elementCount); return; }
+	const GLdouble *data = reinterpret_cast<const GLdouble*>(base + index * stride);
 	for (int i = 0; i < pVAInfo->elementCount; ++i)
 		out[i] = static_cast<GLfloat>( data[i] );
 }
@@ -98,7 +132,9 @@ static void D3DVA_CopyArrayToUBytesInternal( const D3DVAInfo *pVAInfo, int index
 {
 	GLsizei stride = pVAInfo->stride;
 	if (!stride) stride = sizeof(T) * pVAInfo->elementCount;
-	const T *data = reinterpret_cast<const T*>(pVAInfo->data + index * stride);
+	const GLubyte *base = D3DVA_ResolveData(pVAInfo, index);
+	if (!base) { memset(out, 0, sizeof(GLubyte) * pVAInfo->elementCount); return; }
+	const T *data = reinterpret_cast<const T*>(base + index * stride);
 	for (int i = 0; i < pVAInfo->elementCount; ++i)
 		out[i] = static_cast<GLubyte>(QINDIEGL_CLAMP((GLfloat)data[i] * 255 / std::numeric_limits<T>::max()));
 }
@@ -107,7 +143,9 @@ static void D3DVA_CopyArrayToUBytesInternalFloat( const D3DVAInfo *pVAInfo, int 
 {
 	GLsizei stride = pVAInfo->stride;
 	if (!stride) stride = sizeof(T) * pVAInfo->elementCount;
-	const T *data = reinterpret_cast<const T*>(pVAInfo->data + index * stride);
+	const GLubyte *base = D3DVA_ResolveData(pVAInfo, index);
+	if (!base) { memset(out, 0, sizeof(GLubyte) * pVAInfo->elementCount); return; }
+	const T *data = reinterpret_cast<const T*>(base + index * stride);
 	for (int i = 0; i < pVAInfo->elementCount; ++i)
 		out[i] = static_cast<GLubyte>(QINDIEGL_CLAMP((GLfloat)data[i] * 255));
 }
@@ -115,7 +153,9 @@ static void D3DVA_CopyArrayToUBytesInternalUByte( const D3DVAInfo *pVAInfo, int 
 {
 	GLsizei stride = pVAInfo->stride;
 	if (!stride) stride = pVAInfo->elementCount;
-	const GLubyte *data = reinterpret_cast<const GLubyte*>(pVAInfo->data + index * stride);
+	const GLubyte *base = D3DVA_ResolveData(pVAInfo, index);
+	if (!base) { memset(out, 0, sizeof(GLubyte) * pVAInfo->elementCount); return; }
+	const GLubyte *data = base + index * stride;
 	memcpy( out, data, pVAInfo->elementCount * sizeof(GLubyte) );
 }
 
@@ -448,21 +488,28 @@ FAST_PATH_CHECK_ABORT:
 	{
 		//Fast path
 		float* dest = pLockedVertices;
+		const int lastVertex = first + count - 1;
 
 		pVAInfo = &D3DState.ClientVertexArrayState.vertexInfo;
-		const float* verts = (const float*)pVAInfo->data;
+		const float* verts = reinterpret_cast<const float*>(D3DVA_ResolveData(pVAInfo, lastVertex));
+		if (!verts) qualify_for_fast_path = false;
 		const int verts_inc = pVAInfo->stride ? pVAInfo->stride / sizeof(float) : pVAInfo->elementCount;
-		verts += first * verts_inc;
+		if (verts) verts += first * verts_inc;
 		
 		pVAInfo = &D3DState.ClientVertexArrayState.normalInfo;
-		const float* norms = (const float*)pVAInfo->data;
+		const float* norms = (fvf & D3DFVF_NORMAL)
+			? reinterpret_cast<const float*>(D3DVA_ResolveData(pVAInfo, lastVertex)) : nullptr;
+		if ((fvf & D3DFVF_NORMAL) && !norms) qualify_for_fast_path = false;
 		const int norms_inc = pVAInfo->stride ? pVAInfo->stride / sizeof(float) : pVAInfo->elementCount;
-		norms += first * norms_inc;
+		if (norms) norms += first * norms_inc;
 
 		pVAInfo = &D3DState.ClientVertexArrayState.colorInfo;
-		const unsigned char* cols = (const byte*)pVAInfo->data;
+		const unsigned char* cols = (D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT)
+			? D3DVA_ResolveData(pVAInfo, lastVertex) : nullptr;
+		if ((D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT) && !cols)
+			qualify_for_fast_path = false;
 		const int cols_inc = pVAInfo->stride ? pVAInfo->stride : pVAInfo->elementCount;
-		cols += first * cols_inc;
+		if (cols) cols += first * cols_inc;
 
 		const DWORD color = D3DState.CurrentState.currentColor;
 		const float* texp[FAST_PATH_SAMPLERS] = { 0 };
@@ -472,12 +519,13 @@ FAST_PATH_CHECK_ABORT:
 			if ( tex[j] == -1 )
 				continue;
 			pVAInfo = &D3DState.ClientVertexArrayState.texCoordInfo[tex[j]];
-			texp[j] = (const float*)pVAInfo->data;
+			texp[j] = reinterpret_cast<const float*>(D3DVA_ResolveData(pVAInfo, lastVertex));
+			if (!texp[j]) qualify_for_fast_path = false;
 			tex_inc[j] = pVAInfo->stride ? pVAInfo->stride / sizeof(float) : pVAInfo->elementCount;
-			texp[j] += first * tex_inc[j];
+			if (texp[j]) texp[j] += first * tex_inc[j];
 		}
 
-		for (int i = 0; i < count; ++i)
+		for (int i = 0; qualify_for_fast_path && i < count; ++i)
 		{
 			//copy vertices
 			dest[0] = verts[0]; dest[1] = verts[1]; dest[2] = verts[2];
@@ -840,6 +888,7 @@ OPENGL_API void WINAPI glColorPointer( GLint size, GLenum type, GLsizei stride, 
 	D3DState.ClientVertexArrayState.colorInfo.elementType = type;
 	D3DState.ClientVertexArrayState.colorInfo.stride = stride;
 	D3DState.ClientVertexArrayState.colorInfo.data = reinterpret_cast<const GLubyte*>(pointer);
+	D3DState.ClientVertexArrayState.colorInfo.bufferBinding = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
 	D3DState.ClientVertexArrayState.colorInfo._internal.compiledFirst = 0;
 	D3DState.ClientVertexArrayState.colorInfo._internal.compiledLast = -1;
 }
@@ -849,6 +898,7 @@ OPENGL_API void WINAPI glSecondaryColorPointer( GLint size, GLenum type, GLsizei
 	D3DState.ClientVertexArrayState.color2Info.elementType = type;
 	D3DState.ClientVertexArrayState.color2Info.stride = stride;
 	D3DState.ClientVertexArrayState.color2Info.data = reinterpret_cast<const GLubyte*>(pointer);
+	D3DState.ClientVertexArrayState.color2Info.bufferBinding = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
 }
 OPENGL_API void WINAPI glFogCoordPointer( GLenum type, GLsizei stride, const GLvoid *pointer )
 {
@@ -856,6 +906,7 @@ OPENGL_API void WINAPI glFogCoordPointer( GLenum type, GLsizei stride, const GLv
 	D3DState.ClientVertexArrayState.fogInfo.elementType = type;
 	D3DState.ClientVertexArrayState.fogInfo.stride = stride;
 	D3DState.ClientVertexArrayState.fogInfo.data = reinterpret_cast<const GLubyte*>(pointer);
+	D3DState.ClientVertexArrayState.fogInfo.bufferBinding = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
 }
 OPENGL_API void WINAPI glNormalPointer( GLenum type, GLsizei stride, const GLvoid *pointer )
 {
@@ -863,6 +914,7 @@ OPENGL_API void WINAPI glNormalPointer( GLenum type, GLsizei stride, const GLvoi
 	D3DState.ClientVertexArrayState.normalInfo.elementType = type;
 	D3DState.ClientVertexArrayState.normalInfo.stride = stride;
 	D3DState.ClientVertexArrayState.normalInfo.data = reinterpret_cast<const GLubyte*>(pointer);
+	D3DState.ClientVertexArrayState.normalInfo.bufferBinding = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
 	D3DState.ClientVertexArrayState.normalInfo._internal.compiledFirst = 0;
 	D3DState.ClientVertexArrayState.normalInfo._internal.compiledLast = -1;
 }
@@ -872,6 +924,7 @@ OPENGL_API void WINAPI glTexCoordPointer( GLint size, GLenum type, GLsizei strid
 	D3DState.ClientVertexArrayState.texCoordInfo[D3DState.ClientTextureState.currentClientTMU].elementType = type;
 	D3DState.ClientVertexArrayState.texCoordInfo[D3DState.ClientTextureState.currentClientTMU].stride = stride;
 	D3DState.ClientVertexArrayState.texCoordInfo[D3DState.ClientTextureState.currentClientTMU].data = reinterpret_cast<const GLubyte*>(pointer);
+	D3DState.ClientVertexArrayState.texCoordInfo[D3DState.ClientTextureState.currentClientTMU].bufferBinding = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
 	D3DState.ClientVertexArrayState.texCoordInfo[D3DState.ClientTextureState.currentClientTMU]._internal.compiledFirst = 0;
 	D3DState.ClientVertexArrayState.texCoordInfo[D3DState.ClientTextureState.currentClientTMU]._internal.compiledLast = -1;
 }
@@ -881,6 +934,7 @@ OPENGL_API void WINAPI glVertexPointer( GLint size, GLenum type, GLsizei stride,
 	D3DState.ClientVertexArrayState.vertexInfo.elementType = type;
 	D3DState.ClientVertexArrayState.vertexInfo.stride = stride;
 	D3DState.ClientVertexArrayState.vertexInfo.data = reinterpret_cast<const GLubyte*>(pointer);
+	D3DState.ClientVertexArrayState.vertexInfo.bufferBinding = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
 	D3DState.ClientVertexArrayState.vertexInfo._internal.compiledFirst = 0;
 	D3DState.ClientVertexArrayState.vertexInfo._internal.compiledLast = -1;
 
@@ -1179,6 +1233,12 @@ OPENGL_API void WINAPI glInterleavedArrays( GLenum format, GLsizei stride, const
 		logPrintf("WARNING: glInterleavedArrays: unsupported format 0x%x\n", format);
 		break;
 	}
+
+	const GLuint arrayBuffer = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
+	D3DState.ClientVertexArrayState.vertexInfo.bufferBinding = arrayBuffer;
+	D3DState.ClientVertexArrayState.normalInfo.bufferBinding = arrayBuffer;
+	D3DState.ClientVertexArrayState.colorInfo.bufferBinding = arrayBuffer;
+	D3DState.ClientVertexArrayState.texCoordInfo[0].bufferBinding = arrayBuffer;
 }
 
 OPENGL_API void WINAPI glArrayElement( GLint i )
@@ -1273,6 +1333,21 @@ static void internal_DrawElements( const char *api, GLenum mode, GLuint start, G
 	if (!QGL_DiagnosticsBeginDraw(api, mode, count,
 		start == ~0u ? -1 : static_cast<int>(start), type, indices))
 		return;
+
+	const GLuint elementBuffer = D3DBuffer_GetBinding(GL_ELEMENT_ARRAY_BUFFER_ARB);
+	if (elementBuffer) {
+		size_t indexSize = 0;
+		switch (type) {
+		case GL_UNSIGNED_BYTE: indexSize = sizeof(GLubyte); break;
+		case GL_UNSIGNED_SHORT: indexSize = sizeof(GLushort); break;
+		case GL_UNSIGNED_INT: indexSize = sizeof(GLuint); break;
+		default: break;
+		}
+		indices = D3DBuffer_ResolvePointer(elementBuffer, indices,
+			indexSize * static_cast<size_t>(count > 0 ? count : 0));
+		if (!indices)
+			return;
+	}
 #if defined(VA_USE_IMMEDIATE_MODE)
 	assert( D3DGlobal.pIMBuffer != nullptr );
 	D3DGlobal.pIMBuffer->Begin( mode );

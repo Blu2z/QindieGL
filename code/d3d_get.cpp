@@ -22,6 +22,7 @@
 #include "d3d_global.hpp"
 #include "d3d_state.hpp"
 #include "d3d_array.hpp"
+#include "d3d_extension.hpp"
 #include "d3d_matrix_stack.hpp"
 #include "d3d_texture.hpp"
 #include "d3d_matrix_detection.hpp"
@@ -574,6 +575,13 @@ template<typename T> static void glGet( GLenum pname, T *params )
 
 OPENGL_API void WINAPI glGetIntegerv( GLenum pname, GLint *params )
 {
+	if (pname == GL_PROGRAM_ERROR_POSITION_ARB) {
+		if (params) *params = -1;
+		QGL_SET_ERROR(S_OK);
+		D3DExtension_RecordStubInvocation("glGetIntegerv(GL_PROGRAM_ERROR_POSITION_ARB)");
+		return;
+	}
+
 	glGet( pname, params );
 	if (!params)
 		return;

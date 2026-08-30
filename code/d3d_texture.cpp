@@ -146,6 +146,10 @@ static bool D3DTex_ValidateRectangleTarget(GLenum target)
 	if (!D3DTex_IsRectangleTarget(target)) {
 		return true;
 	}
+	if (D3DGlobal.settings.game.yaeFallbackCompatibility) {
+		PRINT_ONCE("YAE_COMPAT: GL_TEXTURE_RECTANGLE storage is mapped to a D3D9 2D texture.\n");
+		return true;
+	}
 
 	logPrintf("ERROR: GL_TEXTURE_RECTANGLE is not supported (requires non-normalized texture coordinates).\n");
 	QGL_SET_ERROR(E_INVALID_OPERATION);
