@@ -33,7 +33,7 @@ OPENGL_API void WINAPI glClear( GLbitfield mask )
 {
 	DL_RECORD_1( glClear, mask );
 	if (!D3DGlobal.initialized) {
-		D3DGlobal.lastError = E_FAIL;
+		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 	DWORD clearMask = 0;
@@ -42,7 +42,7 @@ OPENGL_API void WINAPI glClear( GLbitfield mask )
 	if (mask & GL_STENCIL_BUFFER_BIT) clearMask |= D3DCLEAR_STENCIL;
 
 	HRESULT hr = D3DGlobal.pDevice->Clear( 0, nullptr, clearMask & ~(D3DGlobal.ignoreClearMask), D3DState.ColorBufferState.clearColor, D3DState.DepthBufferState.clearDepth, D3DState.StencilBufferState.clearStencil );
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 OPENGL_API void WINAPI glClearColor( GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha )
 {
@@ -124,11 +124,11 @@ OPENGL_API void WINAPI glDepthRange( GLclampd zNear, GLclampd zFar )
 	D3DState.viewport.MinZ = (float)zNear;
 	D3DState.viewport.MaxZ = (float)zFar;
 	if (!D3DGlobal.initialized) {
-		D3DGlobal.lastError = E_FAIL;
+		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 	HRESULT hr = D3DGlobal.pDevice->SetViewport(&D3DState.viewport);
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 OPENGL_API void WINAPI glIndexMask( GLuint )
 {
@@ -242,11 +242,11 @@ OPENGL_API void WINAPI glViewport( GLint x, GLint y, GLsizei width, GLsizei heig
 	D3DState.viewport.Width = width;
 	D3DState.viewport.Height = height;
 	if (!D3DGlobal.initialized) {
-		D3DGlobal.lastError = E_FAIL;
+		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 	HRESULT hr = D3DGlobal.pDevice->SetViewport(&D3DState.viewport);
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 
 	if (x < 0 || y < 0)
 	{
@@ -302,11 +302,11 @@ OPENGL_API void WINAPI glScissor( GLint x, GLint y, GLsizei width, GLsizei heigh
 	D3DState.ScissorState.scissorRect.top = newy;
 	D3DState.ScissorState.scissorRect.bottom = newy + height;
 	if (!D3DGlobal.initialized) {
-		D3DGlobal.lastError = E_FAIL;
+		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 	HRESULT hr = D3DGlobal.pDevice->SetScissorRect(&D3DState.ScissorState.scissorRect);
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 OPENGL_API void WINAPI glDebugEntry( DWORD, DWORD )
 {

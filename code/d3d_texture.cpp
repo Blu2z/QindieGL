@@ -148,7 +148,7 @@ static bool D3DTex_ValidateRectangleTarget(GLenum target)
 	}
 
 	logPrintf("ERROR: GL_TEXTURE_RECTANGLE is not supported (requires non-normalized texture coordinates).\n");
-	D3DGlobal.lastError = E_INVALID_OPERATION;
+	QGL_SET_ERROR(E_INVALID_OPERATION);
 	return false;
 }
 
@@ -619,7 +619,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 
 	hr = D3DGlobal.pDevice->GetRenderTarget( 0, &lpRenderTarget );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		logPrintf("WARNING: CopyTextureSubLevel: GetRenderTarget failed with error '%s'\n", DXGetErrorString(hr));
 		return hr;
 	} 
@@ -632,7 +632,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 		// this will also handle translation between different backbuffer formats
 		hr = lpRenderTarget->GetDesc(&desc);
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: CopyTextureSubLevel: GetDesc failed with error '%s'\n", DXGetErrorString(hr));
 			lpRenderTarget->Release();
 			return hr;
@@ -645,7 +645,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 															 D3DPOOL_SYSTEMMEM, 
 															 &D3DGlobal.pSystemMemRT, NULL );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: CopyTextureSubLevel: CreateOffscreenPlainSurface failed with error '%s'\n", DXGetErrorString(hr));
 			lpRenderTarget->Release();
 			return hr;
@@ -660,7 +660,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 															0, FALSE, 
 															&D3DGlobal.pSystemMemFB, NULL );
 				if (FAILED(hr)) {
-					D3DGlobal.lastError = hr;
+					QGL_SET_ERROR(hr);
 					logPrintf("WARNING: CopyTextureSubLevel: CreateRenderTarget failed with error '%s'\n", DXGetErrorString(hr));
 					lpRenderTarget->Release();
 					return hr;
@@ -672,7 +672,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 	if (D3DGlobal.pSystemMemFB) {
 		hr = D3DGlobal.pDevice->StretchRect( lpRenderTarget, NULL, D3DGlobal.pSystemMemFB, NULL, D3DTEXF_NONE );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: CopyTextureSubLevel: StretchRect failed with error '%s'\n", DXGetErrorString(hr));
 			lpRenderTarget->Release();
 			return hr;
@@ -683,7 +683,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 
 	hr = D3DGlobal.pDevice->GetRenderTargetData( lpRenderTarget, D3DGlobal.pSystemMemRT );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		logPrintf("WARNING: CopyTextureSubLevel: GetRenderTargetData failed with error '%s'\n", DXGetErrorString(hr));
 		if (lpRenderTarget != D3DGlobal.pSystemMemFB)
 			lpRenderTarget->Release();
@@ -707,7 +707,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 
 	hr = D3DGlobal.pSystemMemRT->LockRect( &srclockrect, &srcrect, D3DLOCK_NOSYSLOCK|D3DLOCK_READONLY );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		logPrintf("WARNING: CopyTextureSubLevel: LockRect #1 failed with error '%s'\n", DXGetErrorString(hr));
 		if (lpRenderTarget != D3DGlobal.pSystemMemFB)
 			lpRenderTarget->Release();
@@ -717,7 +717,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 	if (m_target == GL_TEXTURE_CUBE_MAP_ARB) {
 		hr = m_pD3DCubeTexture->LockRect( (D3DCUBEMAP_FACES)cubeface, level, &dstlockrect, &dstrect, D3DLOCK_DISCARD );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: CopyTextureSubLevel: LockRect #2 failed with error '%s'\n", DXGetErrorString(hr));
 			if (lpRenderTarget != D3DGlobal.pSystemMemFB)
 				lpRenderTarget->Release();
@@ -726,7 +726,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 	} else {
 		hr = m_pD3DTexture->LockRect( level, &dstlockrect, &dstrect, D3DLOCK_DISCARD );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: CopyTextureSubLevel: LockRect #2 failed with error '%s'\n", DXGetErrorString(hr));
 			if (lpRenderTarget != D3DGlobal.pSystemMemFB)
 				lpRenderTarget->Release();
@@ -1006,12 +1006,12 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 	}
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	if (D3DTex_IsDepthInternalFormat(internalformat) && level > 0) {
 		logPrintf("WARNING: Depth texture mipmaps are not supported for internal format 0x%x\n", internalformat);
-		D3DGlobal.lastError = E_INVALID_OPERATION;
+		QGL_SET_ERROR(E_INVALID_OPERATION);
 		return;
 	}
 	int cubeFace = 0;
@@ -1032,20 +1032,20 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 #endif
 				) {
 				logPrintf("WARNING: Depth texture format 0x%x is not supported for internal format 0x%x\n", format, internalformat);
-				D3DGlobal.lastError = E_INVALID_OPERATION;
+				QGL_SET_ERROR(E_INVALID_OPERATION);
 				return;
 			}
 
 			if (targetIndex == D3D_TEXTARGET_3D || targetIndex == D3D_TEXTARGET_CUBE) {
 				logPrintf("WARNING: Depth textures are not supported for target 0x%x\n", target);
-				D3DGlobal.lastError = E_INVALID_OPERATION;
+				QGL_SET_ERROR(E_INVALID_OPERATION);
 				return;
 			}
 
 			d3dFormat = D3DTex_SelectDepthFormat(internalformat);
 			if (d3dFormat == D3DFMT_UNKNOWN) {
 				logPrintf("WARNING: Depth texture internal format 0x%x is not supported by D3D9\n", internalformat);
-				D3DGlobal.lastError = E_INVALID_OPERATION;
+				QGL_SET_ERROR(E_INVALID_OPERATION);
 				return;
 			}
 
@@ -1100,7 +1100,7 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 			break;
 		default:
 			logPrintf("WARNING: Texture internal format 0x%x is not supported\n", internalformat);
-			D3DGlobal.lastError = E_INVALIDARG;
+			QGL_SET_ERROR(E_INVALIDARG);
 			return;
 		}
 		}
@@ -1110,14 +1110,14 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 			D3DState.TextureState.currentTexture[currentTMU][targetIndex]->FreeD3DTexture();
 			HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CreateD3DTexture( target, width, height, depth, !!border, d3dFormat, false );
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return;
 			}
 		}
 
 		HRESULT hr = pTexture->FillTextureLevel( cubeFace, 0, internalformat, width, height, depth, format, type, pixels );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 		if (pixels) pTexture->CheckMipmapAutogen();
@@ -1128,13 +1128,13 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 		{
 			HRESULT hr = pTexture->RecreateD3DTexture( true );
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return;
 			}
 		}
 		HRESULT hr = pTexture->FillTextureLevel( cubeFace, 1, internalformat, width, height, depth, format, type, pixels );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 	}
@@ -1142,7 +1142,7 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 	{
 		HRESULT hr = pTexture->FillTextureLevel( cubeFace, level, internalformat, width, height, depth, format, type, pixels );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 	}
@@ -1155,7 +1155,7 @@ static void D3DTex_LoadSubImage(GLenum target, GLint level, GLint xoffset, GLint
 	}
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	int cubeFace = 0;
@@ -1170,7 +1170,7 @@ static void D3DTex_LoadSubImage(GLenum target, GLint level, GLint xoffset, GLint
 	{
 		HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->FillTextureSubLevel( cubeFace, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 		if (level == 0) {
@@ -1189,13 +1189,13 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 		return;
 	}
 	if ((width % 4) || (height % 4)) {
-		D3DGlobal.lastError = E_INVALID_OPERATION;
+		QGL_SET_ERROR(E_INVALID_OPERATION);
 		return;
 	}
 
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	int cubeFace = 0;
@@ -1222,7 +1222,7 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 			break;
 		default:
 			logPrintf("WARNING: Compressed texture internal format 0x%x is not supported\n", internalformat);
-			D3DGlobal.lastError = E_INVALIDARG;
+			QGL_SET_ERROR(E_INVALIDARG);
 			return;
 		}
 
@@ -1231,14 +1231,14 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 			D3DState.TextureState.currentTexture[currentTMU][targetIndex]->FreeD3DTexture();
 			HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CreateD3DTexture( target, width, height, depth, !!border, d3dFormat, false );
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return;
 			}
 		}
 
 		HRESULT hr = pTexture->FillCompressedTextureLevel( cubeFace, 0, internalformat, width, height, depth, imageSize, pixels );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 		if (pixels) pTexture->CheckMipmapAutogen();
@@ -1249,13 +1249,13 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 		{
 			HRESULT hr = pTexture->RecreateD3DTexture( true );
 			if (FAILED(hr)) {
-				D3DGlobal.lastError = hr;
+				QGL_SET_ERROR(hr);
 				return;
 			}
 		}
 		HRESULT hr = pTexture->FillCompressedTextureLevel( cubeFace, 1, internalformat, width, height, depth, imageSize, pixels );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 	}
@@ -1263,7 +1263,7 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 	{
 		HRESULT hr = pTexture->FillCompressedTextureLevel( cubeFace, level, internalformat, width, height, depth, imageSize, pixels );
 		if (FAILED(hr)) {
-			D3DGlobal.lastError = hr;
+			QGL_SET_ERROR(hr);
 			return;
 		}
 	}
@@ -1279,7 +1279,7 @@ static void D3DTex_LoadCompressedSubImage( GLenum target, GLint /*level*/, GLint
 		return;
 	}
 	if ((width % 4) || (height % 4) || (xoffset % 4) || (yoffset % 4)) {
-		D3DGlobal.lastError = E_INVALID_OPERATION;
+		QGL_SET_ERROR(E_INVALID_OPERATION);
 		return;
 	}
 
@@ -1299,7 +1299,7 @@ static void D3DTex_CopySubImage( GLenum target, GLint level, GLint xoffset, GLin
 
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	int cubeFace = 0;
@@ -1312,7 +1312,7 @@ static void D3DTex_CopySubImage( GLenum target, GLint level, GLint xoffset, GLin
 
 	HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CopyTextureSubLevel( cubeFace, level, xoffset, yoffset, x, y, width, height );
 	if (FAILED(hr)) {
-		D3DGlobal.lastError = hr;
+		QGL_SET_ERROR(hr);
 		return;
 	}
 	if (level == 0) {
@@ -1325,13 +1325,13 @@ OPENGL_API void WINAPI glDeleteTextures( GLsizei n, const GLuint *textures )
 {
 	assert(D3DGlobal.pObjectBuffer != nullptr);
 	HRESULT hr = D3DGlobal.pObjectBuffer->DeleteObjects( D3D_OBJECT_TYPE_TEXTURE, n, textures );
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 OPENGL_API void WINAPI glGenTextures( GLsizei n, GLuint *textures )
 {
 	assert(D3DGlobal.pObjectBuffer != nullptr);
 	HRESULT hr = D3DGlobal.pObjectBuffer->GenObjects( D3D_OBJECT_TYPE_TEXTURE, n, textures );
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 OPENGL_API GLboolean WINAPI glIsTexture( GLuint texture )
 {
@@ -1341,7 +1341,7 @@ OPENGL_API GLboolean WINAPI glIsTexture( GLuint texture )
 OPENGL_API GLboolean WINAPI glAreTexturesResident( GLsizei n, const GLuint *textures, GLboolean *residences )
 {
 	if (n <= 0) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return GL_FALSE;
 	}
 
@@ -1361,7 +1361,7 @@ OPENGL_API GLboolean WINAPI glAreTexturesResident( GLsizei n, const GLuint *text
 OPENGL_API void WINAPI glPrioritizeTextures( GLsizei n, const GLuint *textures, const GLclampf *priorities )
 {
 	if (n < 0) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1381,7 +1381,7 @@ OPENGL_API void WINAPI glBindTexture( GLenum target, GLuint texture )
 	DL_RECORD_2( glBindTexture, target, texture );
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1394,7 +1394,7 @@ OPENGL_API void WINAPI glBindTexture( GLenum target, GLuint texture )
 			D3DState.TextureState.textureStateChanged[currentTMU] = TRUE;
 			D3DState.TextureState.textureSamplerStateChanged = TRUE;
 		}
-		D3DGlobal.lastError = S_OK;
+		QGL_SET_ERROR(S_OK);
 		return;
 	}
 	
@@ -1402,12 +1402,12 @@ OPENGL_API void WINAPI glBindTexture( GLenum target, GLuint texture )
 	D3DTextureObject *pTexture = (D3DTextureObject*)D3DGlobal.pObjectBuffer->GetObjectData( D3D_OBJECT_TYPE_TEXTURE, texture );
 	if (!pTexture) {
 		D3DState.TextureState.currentTexture[currentTMU][targetIndex] = D3DGlobal.defaultTexture[targetIndex];
-		D3DGlobal.lastError = E_OUTOFMEMORY;
+		QGL_SET_ERROR(E_OUTOFMEMORY);
 		return;
 	}
 	if ((pTexture->GetD3DTexture() != nullptr) && (pTexture->GetTarget() != target)) {
 		D3DState.TextureState.currentTexture[currentTMU][targetIndex] = D3DGlobal.defaultTexture[targetIndex];
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	if (D3DState.TextureState.currentTexture[currentTMU][targetIndex] != pTexture) {
@@ -1499,7 +1499,7 @@ OPENGL_API void WINAPI glGetTexImage( GLenum target, GLint level, GLenum format,
 {
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	int cubeFace = 0;
@@ -1514,14 +1514,14 @@ OPENGL_API void WINAPI glGetTexImage( GLenum target, GLint level, GLenum format,
 	}
 
 	HRESULT hr = pTexture->GetTexImage( cubeFace, level, format, type, pixels );
-	if (FAILED(hr)) D3DGlobal.lastError = hr;
+	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 
 OPENGL_API void WINAPI glGetCompressedTexImage( GLenum target, GLint level, GLvoid * /*img*/ )
 {
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 	int cubeFace = 0;
@@ -1547,7 +1547,7 @@ OPENGL_API void WINAPI glTexParameterfv( GLenum target, GLenum pname, const GLfl
 {
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1618,7 +1618,7 @@ OPENGL_API void WINAPI glGetTexParameterfv( GLenum target, GLenum pname, GLfloat
 {
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1674,7 +1674,7 @@ OPENGL_API void WINAPI glGetTexParameteriv( GLenum target, GLenum pname, GLint *
 {
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -1709,7 +1709,7 @@ OPENGL_API void WINAPI glTexEnvfv( GLenum target, GLenum pname, const GLfloat *p
 	default:
 		{
 			logPrintf("WARNING: glTexEnvfv - unknown target 0x%x\n", target);
-			D3DGlobal.lastError = E_INVALID_ENUM;
+			QGL_SET_ERROR(E_INVALID_ENUM);
 			return;
 		}
 	case GL_TEXTURE_ENV:
@@ -1975,7 +1975,7 @@ OPENGL_API void WINAPI glGetTexEnvfv( GLenum target, GLenum pname, GLfloat *para
 	default:
 		{
 			logPrintf("WARNING: glGetTexEnvfv - unknown target 0x%x\n", target);
-			D3DGlobal.lastError = E_INVALID_ENUM;
+			QGL_SET_ERROR(E_INVALID_ENUM);
 			return;
 		}
 	case GL_TEXTURE_ENV:
@@ -2063,7 +2063,7 @@ OPENGL_API void WINAPI glGetTexEnviv( GLenum target, GLenum pname, GLint *params
 {
 	if (target != GL_TEXTURE_ENV) {
 		logPrintf("WARNING: glGetTexEnviv - unknown target 0x%x\n", target);
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		return;
 	}
 
@@ -2092,7 +2092,7 @@ OPENGL_API void WINAPI glGetTexLevelParameterfv( GLenum target, GLint level, GLe
 
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -2128,7 +2128,7 @@ OPENGL_API void WINAPI glActiveTexture( GLenum texture )
 	int stageIndex = texture - GL_TEXTURE0_ARB;
 	if (stageIndex < 0 || stageIndex >= D3DGlobal.maxActiveTMU) {
 		logPrintf("WARNING: glActiveTexture - bad stage %i\n", stageIndex);
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		return;
 	}
 	D3DState.TextureState.currentTMU = stageIndex;
@@ -2140,7 +2140,7 @@ OPENGL_API void WINAPI glClientActiveTexture( GLenum texture )
 	int stageIndex = texture - GL_TEXTURE0_ARB;
 	if (stageIndex < 0 || stageIndex >= D3DGlobal.maxActiveTMU) {
 		logPrintf("WARNING: glClientActiveTexture - bad stage %i\n", stageIndex);
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		return;
 	}
 	D3DState.ClientTextureState.currentClientTMU = stageIndex;
@@ -2150,7 +2150,7 @@ OPENGL_API void WINAPI glSelectTexture( GLenum texture )
 	int stageIndex = texture - GL_TEXTURE0_SGIS;
 	if (stageIndex < 0 || stageIndex >= D3DGlobal.maxActiveTMU) {
 		logPrintf("WARNING: glSelectTextureSGIS - bad stage %i\n", stageIndex);
-		D3DGlobal.lastError = E_INVALID_ENUM;
+		QGL_SET_ERROR(E_INVALID_ENUM);
 		return;
 	}
 	D3DState.TextureState.currentTMU = stageIndex;

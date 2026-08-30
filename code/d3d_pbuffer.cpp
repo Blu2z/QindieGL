@@ -87,6 +87,7 @@ static bool PBuffer_CreateD3DResources( PBufferContext* pb )
 		nullptr
 	);
 	if ( FAILED( hr ) ) {
+		QGL_DiagnosticsRecordD3DFailure("PBuffer::CreateTexture", hr);
 		logPrintf( "PBuffer: CreateTexture(%dx%d) failed: 0x%08X\n", pb->width, pb->height, hr );
 		return false;
 	}
@@ -94,6 +95,7 @@ static bool PBuffer_CreateD3DResources( PBufferContext* pb )
 	// Get surface level 0
 	hr = pb->colorTexture->GetSurfaceLevel( 0, &pb->colorSurface );
 	if ( FAILED( hr ) ) {
+		QGL_DiagnosticsRecordD3DFailure("PBuffer::GetSurfaceLevel", hr);
 		logPrintf( "PBuffer: GetSurfaceLevel failed: 0x%08X\n", hr );
 		pb->colorTexture->Release();
 		pb->colorTexture = nullptr;
@@ -115,6 +117,7 @@ static bool PBuffer_CreateD3DResources( PBufferContext* pb )
 		nullptr
 	);
 	if ( FAILED( hr ) ) {
+		QGL_DiagnosticsRecordD3DFailure("PBuffer::CreateDepthStencilSurface", hr);
 		logPrintf( "PBuffer: CreateDepthStencilSurface(%dx%d) failed: 0x%08X\n", pb->width, pb->height, hr );
 		// Non-fatal: rendering without depth is possible for some use cases
 		pb->depthStencil = nullptr;
@@ -190,8 +193,10 @@ void PBuffer_SaveMainRenderTarget()
 	if ( gMainRTSaved ) return;
 	if ( !D3DGlobal.pDevice ) return;
 
-	D3DGlobal.pDevice->GetRenderTarget( 0, &gSavedMainRT );
-	D3DGlobal.pDevice->GetDepthStencilSurface( &gSavedMainDS );
+	HRESULT hr = D3DGlobal.pDevice->GetRenderTarget( 0, &gSavedMainRT );
+	if (FAILED(hr)) QGL_DiagnosticsRecordD3DFailure("PBuffer::GetRenderTarget", hr);
+	hr = D3DGlobal.pDevice->GetDepthStencilSurface( &gSavedMainDS );
+	if (FAILED(hr)) QGL_DiagnosticsRecordD3DFailure("PBuffer::GetDepthStencilSurface", hr);
 	gMainRTSaved = true;
 }
 
@@ -201,16 +206,19 @@ void PBuffer_RestoreMainRenderTarget()
 	if ( !D3DGlobal.pDevice ) return;
 
 	if ( gSavedMainRT ) {
-		D3DGlobal.pDevice->SetRenderTarget( 0, gSavedMainRT );
+		HRESULT hr = D3DGlobal.pDevice->SetRenderTarget( 0, gSavedMainRT );
+		if (FAILED(hr)) QGL_DiagnosticsRecordD3DFailure("PBuffer::SetRenderTarget(main)", hr);
 		gSavedMainRT->Release();
 		gSavedMainRT = nullptr;
 	}
 	if ( gSavedMainDS ) {
-		D3DGlobal.pDevice->SetDepthStencilSurface( gSavedMainDS );
+		HRESULT hr = D3DGlobal.pDevice->SetDepthStencilSurface( gSavedMainDS );
+		if (FAILED(hr)) QGL_DiagnosticsRecordD3DFailure("PBuffer::SetDepthStencilSurface(main)", hr);
 		gSavedMainDS->Release();
 		gSavedMainDS = nullptr;
 	}
 	gMainRTSaved = false;
+	QGL_DiagnosticsSetRenderTarget("MAIN");
 }
 
 //==================================================================================
@@ -276,6 +284,7 @@ OPENGL_API HPBUFFERARB WINAPI wglCreatePbufferARB( HDC hDC, int iPixelFormat, in
 
 	HPBUFFERARB handle = (HPBUFFERARB)pb;
 	gPBuffers[handle] = pb;
+	QGL_DiagnosticsRecordPBufferCreated();
 
 	logPrintf( "wglCreatePbufferARB: created %dx%d PBuffer (handle=0x%p, texFmt=0x%X)\n",
 		iWidth, iHeight, handle, pb->textureFormat );

@@ -34,7 +34,7 @@ OPENGL_API void WINAPI glGetLightfv( GLenum light, GLenum pname, GLfloat *params
 	int lightIndex = light - GL_LIGHT0;
 	if( lightIndex < 0 || lightIndex >= IMPL_MAX_LIGHTS ) {
 		logPrintf( "WARNING: glGetLightfv - bad light index %i\n", lightIndex );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -85,7 +85,7 @@ OPENGL_API void WINAPI glGetLightfv( GLenum light, GLenum pname, GLfloat *params
 		break;
 	default:
 		logPrintf( "WARNING: glGetLightfv - bad pname 0x%x\n", pname );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 }
@@ -112,7 +112,7 @@ OPENGL_API void WINAPI glLightModelf( GLenum pname, GLfloat param )
 		break;
 	default:
 		logPrintf( "WARNING: glLightModelf - bad pname 0x%x\n", pname );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 }
@@ -128,7 +128,7 @@ OPENGL_API void WINAPI glLightModelfv( GLenum pname, const GLfloat *params )
 		break;
 	default:
 		logPrintf( "WARNING: glLightModelfv - bad pname 0x%x\n", pname );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 }
@@ -151,7 +151,7 @@ OPENGL_API void WINAPI glLightf( GLenum light, GLenum pname, GLfloat param )
 	int lightIndex = light - GL_LIGHT0;
 	if( lightIndex < 0 || lightIndex >= IMPL_MAX_LIGHTS ) {
 		logPrintf( "WARNING: glLightf - bad light index %i\n", lightIndex );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -173,7 +173,7 @@ OPENGL_API void WINAPI glLightf( GLenum light, GLenum pname, GLfloat param )
 		break;
 	default:
 		logPrintf( "WARNING: glLightf - bad pname 0x%x\n", pname );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 }
@@ -182,7 +182,7 @@ OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *par
 	int lightIndex = light - GL_LIGHT0;
 	if( lightIndex < 0 || lightIndex >= IMPL_MAX_LIGHTS ) {
 		logPrintf( "WARNING: glLightfv - bad light index %i\n", lightIndex );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
@@ -260,7 +260,7 @@ OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *par
 
 	default:
 		logPrintf( "WARNING: glLightfv - bad pname 0x%x\n", pname );
-		D3DGlobal.lastError = E_INVALIDARG;
+		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 }

@@ -28,7 +28,6 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
-#include <vector>
 #include <map>
 #include <set>
 
@@ -48,9 +47,9 @@ OPENGL_API const char* WINAPI wglGetExtensionsStringARB( HDC )
 //=========================================
 // ARB_vertex_program / ARB_fragment_program
 //-----------------------------------------
-// Silently accept all calls; programs are
-// not compiled to D3D shaders yet, so
-// rendering falls back to fixed-function.
+// The explicit compatibility-stub mode stores API state but deliberately
+// leaves D3D rendering on the fixed-function path. Outside that mode,
+// glProgramStringARB routes source through the existing ARB compiler.
 //=========================================
 
 namespace {
@@ -91,8 +90,12 @@ GLfloat (*ARB_LocalParams( GLenum target ))[4] { return ARB_LocalParams_Internal
 GLuint ARB_GetBoundVertexProgram() { return gARBBoundVertexProgram; }
 GLuint ARB_GetBoundFragmentProgram() { return gARBBoundFragmentProgram; }
 
+#define RECORD_ARB_PROGRAM_STUB() \
+	do { if (D3DGlobal.settings.enableARBProgramsStub) D3DExtension_RecordStubInvocation(__FUNCTION__); } while (0)
+
 OPENGL_API void WINAPI glProgramStringARB( GLenum target, GLenum format, GLsizei len, const GLvoid *string )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	GLuint bound = (target == GL_VERTEX_PROGRAM_ARB) ? gARBBoundVertexProgram : gARBBoundFragmentProgram;
 	if (bound && string && len > 0 && format == GL_PROGRAM_FORMAT_ASCII_ARB) {
 		ARBProgramData &pd = gARBProgramStore[bound];
@@ -102,17 +105,24 @@ OPENGL_API void WINAPI glProgramStringARB( GLenum target, GLenum format, GLsizei
 			target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", bound, len);
 
 		// Compile ARB program to D3D9 shader
+		bool compiled = false;
+		bool failed = false;
 		if ( D3DGlobal.pDevice && !D3DGlobal.settings.enableARBProgramsStub ) {
 			std::string errorStr;
 			if ( !ARB_CompileProgram( bound, target, static_cast<const char*>(string), len, errorStr ) ) {
+				failed = true;
 				logPrintf("WARNING: ARB program %u compilation failed: %s\n", bound, errorStr.c_str());
+			} else {
+				compiled = true;
 			}
 		}
+		QGL_DiagnosticsRecordARBProgramUpload(compiled, failed);
 	}
 }
 
 OPENGL_API void WINAPI glBindProgramARB( GLenum target, GLuint program )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	// ID 0 means unbind
 	if (program != 0 && gARBProgramIDs.find(program) == gARBProgramIDs.end()) {
 		// Auto-create if not existing (per spec)
@@ -126,6 +136,7 @@ OPENGL_API void WINAPI glBindProgramARB( GLenum target, GLuint program )
 
 OPENGL_API void WINAPI glDeleteProgramsARB( GLsizei n, const GLuint *programs )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (!programs) return;
 	for (GLsizei i = 0; i < n; ++i) {
 		gARBProgramIDs.erase(programs[i]);
@@ -139,6 +150,7 @@ OPENGL_API void WINAPI glDeleteProgramsARB( GLsizei n, const GLuint *programs )
 
 OPENGL_API void WINAPI glGenProgramsARB( GLsizei n, GLuint *programs )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (!programs || n <= 0) return;
 	for (GLsizei i = 0; i < n; ++i) {
 		GLuint id = gARBProgramNextID++;
@@ -149,6 +161,7 @@ OPENGL_API void WINAPI glGenProgramsARB( GLsizei n, GLuint *programs )
 
 OPENGL_API void WINAPI glProgramEnvParameter4dARB( GLenum target, GLuint index, GLdouble x, GLdouble y, GLdouble z, GLdouble w )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (index < ARB_MAX_ENV_PARAMS) {
 		GLfloat (*p)[4] = ARB_EnvParams(target);
 		p[index][0] = (GLfloat)x; p[index][1] = (GLfloat)y; p[index][2] = (GLfloat)z; p[index][3] = (GLfloat)w;
@@ -157,6 +170,7 @@ OPENGL_API void WINAPI glProgramEnvParameter4dARB( GLenum target, GLuint index, 
 
 OPENGL_API void WINAPI glProgramEnvParameter4dvARB( GLenum target, GLuint index, const GLdouble *v )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (v && index < ARB_MAX_ENV_PARAMS) {
 		GLfloat (*p)[4] = ARB_EnvParams(target);
 		p[index][0] = (GLfloat)v[0]; p[index][1] = (GLfloat)v[1]; p[index][2] = (GLfloat)v[2]; p[index][3] = (GLfloat)v[3];
@@ -165,6 +179,7 @@ OPENGL_API void WINAPI glProgramEnvParameter4dvARB( GLenum target, GLuint index,
 
 OPENGL_API void WINAPI glProgramEnvParameter4fARB( GLenum target, GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (index < ARB_MAX_ENV_PARAMS) {
 		GLfloat (*p)[4] = ARB_EnvParams(target);
 		p[index][0] = x; p[index][1] = y; p[index][2] = z; p[index][3] = w;
@@ -173,6 +188,7 @@ OPENGL_API void WINAPI glProgramEnvParameter4fARB( GLenum target, GLuint index, 
 
 OPENGL_API void WINAPI glProgramEnvParameter4fvARB( GLenum target, GLuint index, const GLfloat *v )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (v && index < ARB_MAX_ENV_PARAMS) {
 		GLfloat (*p)[4] = ARB_EnvParams(target);
 		p[index][0] = v[0]; p[index][1] = v[1]; p[index][2] = v[2]; p[index][3] = v[3];
@@ -181,6 +197,7 @@ OPENGL_API void WINAPI glProgramEnvParameter4fvARB( GLenum target, GLuint index,
 
 OPENGL_API void WINAPI glProgramLocalParameter4dARB( GLenum target, GLuint index, GLdouble x, GLdouble y, GLdouble z, GLdouble w )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = (GLfloat)x; p[index][1] = (GLfloat)y; p[index][2] = (GLfloat)z; p[index][3] = (GLfloat)w;
@@ -189,6 +206,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4dARB( GLenum target, GLuint index
 
 OPENGL_API void WINAPI glProgramLocalParameter4dvARB( GLenum target, GLuint index, const GLdouble *v )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (v && index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = (GLfloat)v[0]; p[index][1] = (GLfloat)v[1]; p[index][2] = (GLfloat)v[2]; p[index][3] = (GLfloat)v[3];
@@ -197,6 +215,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4dvARB( GLenum target, GLuint inde
 
 OPENGL_API void WINAPI glProgramLocalParameter4fARB( GLenum target, GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = x; p[index][1] = y; p[index][2] = z; p[index][3] = w;
@@ -205,6 +224,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4fARB( GLenum target, GLuint index
 
 OPENGL_API void WINAPI glProgramLocalParameter4fvARB( GLenum target, GLuint index, const GLfloat *v )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (v && index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = v[0]; p[index][1] = v[1]; p[index][2] = v[2]; p[index][3] = v[3];
@@ -213,6 +233,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4fvARB( GLenum target, GLuint inde
 
 OPENGL_API void WINAPI glGetProgramEnvParameterdvARB( GLenum target, GLuint index, GLdouble *params )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (params) {
 		if (index < ARB_MAX_ENV_PARAMS) {
 			GLfloat (*p)[4] = ARB_EnvParams(target);
@@ -225,6 +246,7 @@ OPENGL_API void WINAPI glGetProgramEnvParameterdvARB( GLenum target, GLuint inde
 
 OPENGL_API void WINAPI glGetProgramEnvParameterfvARB( GLenum target, GLuint index, GLfloat *params )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (params) {
 		if (index < ARB_MAX_ENV_PARAMS) {
 			GLfloat (*p)[4] = ARB_EnvParams(target);
@@ -237,6 +259,7 @@ OPENGL_API void WINAPI glGetProgramEnvParameterfvARB( GLenum target, GLuint inde
 
 OPENGL_API void WINAPI glGetProgramLocalParameterdvARB( GLenum target, GLuint index, GLdouble *params )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (params) {
 		if (index < ARB_MAX_LOCAL_PARAMS) {
 			GLfloat (*p)[4] = ARB_LocalParams(target);
@@ -249,6 +272,7 @@ OPENGL_API void WINAPI glGetProgramLocalParameterdvARB( GLenum target, GLuint in
 
 OPENGL_API void WINAPI glGetProgramLocalParameterfvARB( GLenum target, GLuint index, GLfloat *params )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (params) {
 		if (index < ARB_MAX_LOCAL_PARAMS) {
 			GLfloat (*p)[4] = ARB_LocalParams(target);
@@ -261,6 +285,7 @@ OPENGL_API void WINAPI glGetProgramLocalParameterfvARB( GLenum target, GLuint in
 
 OPENGL_API void WINAPI glGetProgramivARB( GLenum target, GLenum pname, GLint *params )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (!params) return;
 	switch (pname) {
 	case GL_PROGRAM_LENGTH_ARB: {
@@ -330,10 +355,24 @@ OPENGL_API void WINAPI glGetProgramivARB( GLenum target, GLenum pname, GLint *pa
 		params[0] = 0;
 		break;
 	}
+	if (pname == GL_MAX_PROGRAM_INSTRUCTIONS_ARB
+		|| pname == GL_MAX_PROGRAM_NATIVE_INSTRUCTIONS_ARB
+		|| pname == GL_MAX_PROGRAM_ALU_INSTRUCTIONS_ARB
+		|| pname == GL_MAX_PROGRAM_NATIVE_ALU_INSTRUCTIONS_ARB
+		|| pname == GL_MAX_PROGRAM_TEX_INSTRUCTIONS_ARB
+		|| pname == GL_MAX_PROGRAM_NATIVE_TEX_INSTRUCTIONS_ARB
+		|| pname == GL_MAX_PROGRAM_TEX_INDIRECTIONS_ARB
+		|| pname == GL_MAX_PROGRAM_NATIVE_TEX_INDIRECTIONS_ARB) {
+		QGL_DiagnosticsRecordEvent(false, "GL_CAP_QUERY",
+			"glGetProgramivARB target=0x%X pname=0x%X value=%d", target, pname, params[0]);
+		logPrintfLevel(QGL_LOG_INFO, "GL_CAP_QUERY",
+			"glGetProgramivARB target=0x%X pname=0x%X value=%d", target, pname, params[0]);
+	}
 }
 
 OPENGL_API void WINAPI glGetProgramStringARB( GLenum target, GLenum pname, GLvoid *string )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	if (!string) return;
 	if (pname == GL_PROGRAM_STRING_ARB) {
 		GLuint bound = (target == GL_VERTEX_PROGRAM_ARB) ? gARBBoundVertexProgram : gARBBoundFragmentProgram;
@@ -348,8 +387,12 @@ OPENGL_API void WINAPI glGetProgramStringARB( GLenum target, GLenum pname, GLvoi
 
 OPENGL_API GLboolean WINAPI glIsProgramARB( GLuint program )
 {
+	RECORD_ARB_PROGRAM_STUB();
 	return (gARBProgramIDs.find(program) != gARBProgramIDs.end()) ? GL_TRUE : GL_FALSE;
 }
+
+#undef RECORD_ARB_PROGRAM_STUB
+#define RECORD_COMPAT_STUB() D3DExtension_RecordStubInvocation(__FUNCTION__)
 
 //=========================================
 // ARB_vertex_program vertex attributes
@@ -364,54 +407,67 @@ namespace {
 
 OPENGL_API void WINAPI glVertexAttrib1fARB( GLuint index, GLfloat x )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = 0; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
 }
 OPENGL_API void WINAPI glVertexAttrib2fARB( GLuint index, GLfloat x, GLfloat y )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = y; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
 }
 OPENGL_API void WINAPI glVertexAttrib3fARB( GLuint index, GLfloat x, GLfloat y, GLfloat z )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = y; gVertexAttribs[index][2] = z; gVertexAttribs[index][3] = 1; }
 }
 OPENGL_API void WINAPI glVertexAttrib4fARB( GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = y; gVertexAttribs[index][2] = z; gVertexAttribs[index][3] = w; }
 }
 OPENGL_API void WINAPI glVertexAttrib1fvARB( GLuint index, const GLfloat *v )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = 0; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
 }
 OPENGL_API void WINAPI glVertexAttrib2fvARB( GLuint index, const GLfloat *v )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = v[1]; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
 }
 OPENGL_API void WINAPI glVertexAttrib3fvARB( GLuint index, const GLfloat *v )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = v[1]; gVertexAttribs[index][2] = v[2]; gVertexAttribs[index][3] = 1; }
 }
 OPENGL_API void WINAPI glVertexAttrib4fvARB( GLuint index, const GLfloat *v )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = v[1]; gVertexAttribs[index][2] = v[2]; gVertexAttribs[index][3] = v[3]; }
 }
 OPENGL_API void WINAPI glVertexAttrib4NubvARB( GLuint index, const GLubyte *v )
 {
+	RECORD_COMPAT_STUB();
 	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]/255.0f; gVertexAttribs[index][1] = v[1]/255.0f; gVertexAttribs[index][2] = v[2]/255.0f; gVertexAttribs[index][3] = v[3]/255.0f; }
 }
 OPENGL_API void WINAPI glVertexAttribPointerARB( GLuint, GLint, GLenum, GLboolean, GLsizei, const GLvoid * )
 {
+	RECORD_COMPAT_STUB();
 	// stub - vertex attrib arrays not yet routed to D3D
 }
 OPENGL_API void WINAPI glEnableVertexAttribArrayARB( GLuint )
 {
+	RECORD_COMPAT_STUB();
 	// stub
 }
 OPENGL_API void WINAPI glDisableVertexAttribArrayARB( GLuint )
 {
+	RECORD_COMPAT_STUB();
 	// stub
 }
 OPENGL_API void WINAPI glGetVertexAttribfvARB( GLuint index, GLenum pname, GLfloat *params )
 {
+	RECORD_COMPAT_STUB();
 	if (!params) return;
 	if (pname == GL_CURRENT_VERTEX_ATTRIB_ARB && index < 16) {
 		params[0] = gVertexAttribs[index][0]; params[1] = gVertexAttribs[index][1];
@@ -422,6 +478,7 @@ OPENGL_API void WINAPI glGetVertexAttribfvARB( GLuint index, GLenum pname, GLflo
 }
 OPENGL_API void WINAPI glGetVertexAttribdvARB( GLuint index, GLenum pname, GLdouble *params )
 {
+	RECORD_COMPAT_STUB();
 	if (!params) return;
 	if (pname == GL_CURRENT_VERTEX_ATTRIB_ARB && index < 16) {
 		params[0] = (GLdouble)gVertexAttribs[index][0]; params[1] = (GLdouble)gVertexAttribs[index][1];
@@ -432,6 +489,8 @@ OPENGL_API void WINAPI glGetVertexAttribdvARB( GLuint index, GLenum pname, GLdou
 }
 OPENGL_API void WINAPI glGetVertexAttribivARB( GLuint index, GLenum pname, GLint *params )
 {
+	RECORD_COMPAT_STUB();
+	_CRT_UNUSED(index);
 	if (!params) return;
 	switch (pname) {
 	case GL_VERTEX_ATTRIB_ARRAY_ENABLED_ARB: params[0] = 0; break;
@@ -444,6 +503,7 @@ OPENGL_API void WINAPI glGetVertexAttribivARB( GLuint index, GLenum pname, GLint
 }
 OPENGL_API void WINAPI glGetVertexAttribPointervARB( GLuint, GLenum, GLvoid **pointer )
 {
+	RECORD_COMPAT_STUB();
 	if (pointer) *pointer = NULL;
 }
 
@@ -462,6 +522,7 @@ namespace {
 
 OPENGL_API void WINAPI glGenQueriesARB( GLsizei n, GLuint *ids )
 {
+	D3DExtension_RecordStubInvocation("glGenQueriesARB");
 	if (!ids || n <= 0) return;
 	for (GLsizei i = 0; i < n; ++i) {
 		GLuint id = gOccQueryNextID++;
@@ -471,6 +532,7 @@ OPENGL_API void WINAPI glGenQueriesARB( GLsizei n, GLuint *ids )
 }
 OPENGL_API void WINAPI glDeleteQueriesARB( GLsizei n, const GLuint *ids )
 {
+	D3DExtension_RecordStubInvocation("glDeleteQueriesARB");
 	if (!ids) return;
 	for (GLsizei i = 0; i < n; ++i) {
 		gOccQueryIDs.erase(ids[i]);
@@ -479,18 +541,22 @@ OPENGL_API void WINAPI glDeleteQueriesARB( GLsizei n, const GLuint *ids )
 }
 OPENGL_API GLboolean WINAPI glIsQueryARB( GLuint id )
 {
+	D3DExtension_RecordStubInvocation("glIsQueryARB");
 	return (gOccQueryIDs.find(id) != gOccQueryIDs.end()) ? GL_TRUE : GL_FALSE;
 }
 OPENGL_API void WINAPI glBeginQueryARB( GLenum, GLuint id )
 {
+	D3DExtension_RecordStubInvocation("glBeginQueryARB");
 	gOccQueryActive = id;
 }
 OPENGL_API void WINAPI glEndQueryARB( GLenum )
 {
+	D3DExtension_RecordStubInvocation("glEndQueryARB");
 	gOccQueryActive = 0;
 }
 OPENGL_API void WINAPI glGetQueryivARB( GLenum, GLenum pname, GLint *params )
 {
+	D3DExtension_RecordStubInvocation("glGetQueryivARB");
 	if (!params) return;
 	switch (pname) {
 	case GL_QUERY_COUNTER_BITS_ARB: params[0] = 32; break;
@@ -500,6 +566,7 @@ OPENGL_API void WINAPI glGetQueryivARB( GLenum, GLenum pname, GLint *params )
 }
 OPENGL_API void WINAPI glGetQueryObjectivARB( GLuint, GLenum pname, GLint *params )
 {
+	D3DExtension_RecordStubInvocation("glGetQueryObjectivARB");
 	if (!params) return;
 	switch (pname) {
 	case GL_QUERY_RESULT_ARB: params[0] = 1; break; // always 1 sample passed
@@ -509,6 +576,7 @@ OPENGL_API void WINAPI glGetQueryObjectivARB( GLuint, GLenum pname, GLint *param
 }
 OPENGL_API void WINAPI glGetQueryObjectuivARB( GLuint, GLenum pname, GLuint *params )
 {
+	D3DExtension_RecordStubInvocation("glGetQueryObjectuivARB");
 	if (!params) return;
 	switch (pname) {
 	case GL_QUERY_RESULT_ARB: params[0] = 1; break;
@@ -522,12 +590,16 @@ OPENGL_API void WINAPI glGetQueryObjectuivARB( GLuint, GLenum pname, GLuint *par
 //=========================================
 OPENGL_API void WINAPI glPointParameterfARB( GLenum, GLfloat )
 {
+	RECORD_COMPAT_STUB();
 	// stub - point parameters not implemented
 }
 OPENGL_API void WINAPI glPointParameterfvARB( GLenum, const GLfloat * )
 {
+	RECORD_COMPAT_STUB();
 	// stub
 }
+
+#undef RECORD_COMPAT_STUB
 
 typedef struct glext_entry_point_s
 {
@@ -1067,8 +1139,11 @@ void D3DExtension_BuildExtensionsString()
 // Return a requested extension proc address
 //=========================================
 namespace {
-	std::vector<std::string> gMissingProcs;
-	std::vector<std::string> gDisabledProcs;
+	std::map<std::string, uint64_t> gImplementedProcs;
+	std::map<std::string, uint64_t> gMissingProcs;
+	std::map<std::string, uint64_t> gDisabledProcs;
+	std::map<std::string, uint64_t> gStubbedProcsRequested;
+	std::map<std::string, uint64_t> gStubbedInvocations;
 
 	bool IsARBProgramExtension( const char *extname )
 	{
@@ -1078,42 +1153,49 @@ namespace {
 				|| !strcmp( extname, "GL_ARB_fragment_program" ));
 	}
 
-	void AddUniqueProc(std::vector<std::string>& list, const std::string& name)
+	void RecordProc(std::map<std::string, uint64_t>& list, const std::string& name)
 	{
-		if (name.empty()) {
-			return;
-		}
+		if (!name.empty())
+			++list[name];
+	}
 
-		if (std::find(list.begin(), list.end(), name) == list.end()) {
-			list.emplace_back(name);
-		}
+	bool IsStubbedProcedure( const char *name, const char *extname )
+	{
+		if (!name || !extname)
+			return false;
+		if (!strcmp(extname, "GL_ARB_occlusion_query")
+			|| !strcmp(extname, "GL_ARB_point_parameters")
+			|| !strcmp(extname, "GL_EXT_point_parameters")
+			|| !strcmp(extname, "GL_ATI_pn_triangles"))
+			return true;
+		if (!strncmp(name, "glVertexAttrib", 14)
+			|| !strncmp(name, "glGetVertexAttrib", 17)
+			|| !strcmp(name, "glEnableVertexAttribArrayARB")
+			|| !strcmp(name, "glDisableVertexAttribArrayARB"))
+			return true;
+		// The ARB program entry points retain enough state for compatibility,
+		// but do not affect D3D rendering when the explicit stub mode is active.
+		return D3DGlobal.settings.enableARBProgramsStub && IsARBProgramExtension(extname);
 	}
 }
 
-static const char *gMissingProcName = NULL;
-static const char *gMissingProcExt = NULL;
-static void WINAPI MissingProcStub()
+void D3DExtension_RecordStubInvocation( const char *name )
 {
-	if (gMissingProcName)
-	{
-		if (gMissingProcExt)
-			logPrintf("ERROR: Missing GL/WGL proc '%s' (extension '%s') invoked; returning GL_INVALID_OPERATION.\n", gMissingProcName, gMissingProcExt);
-		else
-			logPrintf("ERROR: Missing GL/WGL proc '%s' invoked; returning GL_INVALID_OPERATION.\n", gMissingProcName);
-	}
-	else
-	{
-		logPrintf("ERROR: Missing GL/WGL proc invoked; returning GL_INVALID_OPERATION.\n");
-	}
-
-	D3DGlobal.lastError = E_INVALID_OPERATION;
+	if (!name) return;
+	const uint64_t count = ++gStubbedInvocations[name];
+	if (count != 1)
+		return;
+	QGL_DiagnosticsRecordEvent(false, "STUB_INVOKED", "%s", name);
+	logPrintfLevel(QGL_LOG_DEBUG, "STUB_INVOKED", "%s (first invocation; total is reported at shutdown)", name);
 }
 
 OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 {
-	// WG: some games check for this being NULL, and crash
-	static PROC stubAddress = (PROC)MissingProcStub;
 	const char *pszDisabledExt = NULL;
+	if (!s || !*s) {
+		logPrintfLevel(QGL_LOG_WARN, "PROC_QUERY", "empty procedure name; returning NULL");
+		return NULL;
+	}
 
 	// Block NV-specific extensions to force ARB fallback path in engines
 	// that support both (e.g. "You Are Empty" / DS2 engine)
@@ -1139,7 +1221,9 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 		(strncmp(s, "glProgramNamedParameter", 23) == 0 && strstr(s, "NV"))
 	))
 	{
-		logPrintf("wglGetProcAddress: BLOCKED NV proc '%s' (forcing ARB path)\n", s);
+		RecordProc(gDisabledProcs, std::string(s).append(" (YAE NV path blocked)"));
+		QGL_DiagnosticsRecordEvent(false, "PROC_DISABLED", "%s (YAE NV path blocked)", s);
+		logPrintfLevel(QGL_LOG_DEBUG, "PROC_QUERY", "name=%s result=DISABLED reason=YAE_NV_PATH", s);
 		return NULL;
 	}
 
@@ -1162,7 +1246,12 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 				pszDisabledExt = glext_EntryPoints[i].extname;
 				break;
 			} else {
-				logPrintf("wglGetProcAddress: queried proc '%s'\n", s);
+				const bool stubbed = IsStubbedProcedure(s, glext_EntryPoints[i].extname);
+				RecordProc(stubbed ? gStubbedProcsRequested : gImplementedProcs, s);
+				QGL_DiagnosticsRecordEvent(false, stubbed ? "PROC_STUBBED" : "PROC_IMPLEMENTED",
+					"%s extension=%s", s, glext_EntryPoints[i].extname);
+				logPrintfLevel(QGL_LOG_DEBUG, "PROC_QUERY", "name=%s result=%s extension=%s",
+					s, stubbed ? "STUBBED" : "IMPLEMENTED", glext_EntryPoints[i].extname);
 				return glext_EntryPoints[i].func;
 			}
 		}
@@ -1172,8 +1261,9 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 
 	if (pszDisabledExt)
 	{
-		logPrintf("WARNING: wglGetProcAddress: returning NULL for disabled proc '%s' (extension '%s')\n", s, pszDisabledExt);
-		AddUniqueProc(gDisabledProcs, std::string(s).append(" (").append(pszDisabledExt).append(")"));
+		RecordProc(gDisabledProcs, std::string(s).append(" (").append(pszDisabledExt).append(")"));
+		QGL_DiagnosticsRecordEvent(false, "PROC_DISABLED", "%s extension=%s", s, pszDisabledExt);
+		logPrintfLevel(QGL_LOG_DEBUG, "PROC_QUERY", "name=%s result=DISABLED extension=%s", s, pszDisabledExt);
 		return NULL;
 	}
 	else
@@ -1181,19 +1271,22 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 		FARPROC fp = GetProcAddress(D3DGlobal.hModule, s);
 		if (fp)
 		{
-			logPrintf("wglGetProcAddress: queried proc '%s'\n", s);
+			RecordProc(gImplementedProcs, s);
+			QGL_DiagnosticsRecordEvent(false, "PROC_IMPLEMENTED", "%s core-export", s);
+			logPrintfLevel(QGL_LOG_DEBUG, "PROC_QUERY", "name=%s result=IMPLEMENTED source=core-export", s);
 			return fp;
 		}
 		else
 		{
-			gMissingProcName = s;
-			gMissingProcExt = NULL;
-			logPrintf("WARNING: wglGetProcAddress: returning stub for unknown proc '%s'\n", s);
-			AddUniqueProc(gMissingProcs, s);
+			RecordProc(gMissingProcs, s);
+			QGL_DiagnosticsRecordEvent(false, "PROC_UNKNOWN", "%s", s);
+			logPrintfLevel(QGL_LOG_DEBUG, "PROC_QUERY", "name=%s result=UNKNOWN", s);
 		}
 	}
 
-	return (PROC)stubAddress;
+	// A non-NULL value is a capability promise. Unknown procedures must not
+	// enable a renderer path that QindieGL cannot execute.
+	return NULL;
 }
 
 OPENGL_API PROC WINAPI wrap_wglGetDefaultProcAddress( LPCSTR s )
@@ -1203,22 +1296,26 @@ OPENGL_API PROC WINAPI wrap_wglGetDefaultProcAddress( LPCSTR s )
 
 void D3DExtension_DumpMissingProcs()
 {
-	if (gMissingProcs.empty() && gDisabledProcs.empty()) {
-		return;
-	}
+	D3DExtension_DumpProcSummary();
+}
 
-	logPrintf("---- Missing/disabled OpenGL entry points summary ----\n");
-	if (!gDisabledProcs.empty()) {
-		logPrintf("Disabled extension entry points (requested anyway):\n");
-		for (const auto& name : gDisabledProcs) {
-			logPrintf("  %s\n", name.c_str());
-		}
-	}
-	if (!gMissingProcs.empty()) {
-		logPrintf("Unknown entry points (not implemented/exposed):\n");
-		for (const auto& name : gMissingProcs) {
-			logPrintf("  %s\n", name.c_str());
-		}
-	}
-	logPrintf("---- End missing/disabled OpenGL entry points summary ----\n");
+void D3DExtension_DumpProcSummary()
+{
+	logPrintf("Implemented GL/WGL procedures requested: %u unique\n", static_cast<unsigned int>(gImplementedProcs.size()));
+	logPrintf("Unknown GL/WGL procedures requested:\n");
+	if (gMissingProcs.empty()) logPrintf("  none\n");
+	for (const auto& proc : gMissingProcs)
+		logPrintf("  %s: %llu request(s)\n", proc.first.c_str(), static_cast<unsigned long long>(proc.second));
+	logPrintf("Disabled GL/WGL procedures requested:\n");
+	if (gDisabledProcs.empty()) logPrintf("  none\n");
+	for (const auto& proc : gDisabledProcs)
+		logPrintf("  %s: %llu request(s)\n", proc.first.c_str(), static_cast<unsigned long long>(proc.second));
+	logPrintf("Stubbed GL/WGL procedures requested:\n");
+	if (gStubbedProcsRequested.empty()) logPrintf("  none\n");
+	for (const auto& proc : gStubbedProcsRequested)
+		logPrintf("  %s: %llu request(s)\n", proc.first.c_str(), static_cast<unsigned long long>(proc.second));
+	logPrintf("Stubbed GL/WGL procedures actually invoked:\n");
+	if (gStubbedInvocations.empty()) logPrintf("  none\n");
+	for (const auto& proc : gStubbedInvocations)
+		logPrintf("  %s: %llu invocation(s)\n", proc.first.c_str(), static_cast<unsigned long long>(proc.second));
 }
