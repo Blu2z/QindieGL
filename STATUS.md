@@ -193,3 +193,116 @@ miscellaneous string conversion, and Remix helper code; no build errors occur.
 The next scoped task is Phase B: make DS2 select its genuine non-shader fallback
 without advertising incomplete ARB support, then reach the main menu and first
 level.
+
+## Phase B — startup and capability detection
+
+Status: **complete and tested through the first playable level**. YAE now boots,
+passes the DS2 hardware gate, renders a stable main menu, and reaches gameplay
+both from the console and through the normal New Game flow.
+
+### Hardware gate and compatibility profile
+
+Disassembly of `ds2render.dll` established that its startup gate requires all of
+the following, even with `use_shaders=0`:
+
+```text
+GL_ARB_fragment_program
+GL_ARB_vertex_program
+GL_ARB_vertex_buffer_object
+GL_EXT_draw_range_elements
+```
+
+The texture-unit and ARB-program limit queries are logged but are not themselves
+the final pass/fail comparisons. DS2 also resolves and calls the complete ARB
+program entry-point surface without consistently guarding null pointers.
+
+The exception is isolated behind `yae_fallback_compatibility=1` in both known YAE
+executable profiles, `[game.game]` and `[game.YOU_ARE_EMPTY]`. It exposes the
+minimum gate extensions and ABI-correct entry points needed by this engine. The
+global/default profile remains unchanged.
+
+### Startup fixes
+
+- Added the complete ARB vertex-attribute entry-point surface requested by DS2.
+- Made `GL_PROGRAM_ERROR_POSITION_ARB` return the required no-error value `-1`.
+- Implemented correct CPU-backed VBO offset resolution for legacy vertex arrays
+  and element arrays. This fixed the startup/level-load null dereference caused
+  by `glVertexPointer(..., 0)` while an array buffer was bound.
+- Saved the array-buffer binding at array specification time and validated the
+  referenced byte range when resolving it for a draw.
+- Silently accepted `GL_LINE_SMOOTH`, which DS2 enables but QindieGL cannot map
+  directly to D3D9.
+- Capped repeated invalid-combiner diagnostics so a bad scene cannot grow the
+  log without bound.
+- Added a YAE-only `GL_TEXTURE_RECTANGLE` storage compatibility path. Rectangle
+  textures are backed by D3D9 2D texture storage; the three DS2 startup surfaces
+  now allocate without `GL_INVALID_OPERATION`.
+
+### Test configuration
+
+```text
+1920x1080x32 fullscreen at 60 Hz
+depth_bpp=24
+stencil_bpp=0
+hdr=0
+use_shaders=0
+use_normalmaps=0
+motion_blur=false
+use_cached_skinning=false
+```
+
+The reproducible engine configuration is stored as
+`tools/glintercept/ds2engine.phase-b-test.cfg`.
+
+The final New Game validation ran for 3272 presented frames and 447085 draw
+calls. The QindieGL summary reported:
+
+```text
+unsupported enums: none
+failed D3D calls: none
+device resets: 0
+PBuffers created: 0
+ARB programs uploaded: 7
+ARB programs compiled: 0
+VBOs created: 184
+peak VBO storage: 57990452 bytes
+```
+
+The user confirmed that the intro opens, its audio plays, and the first level
+starts. The video image is currently reduced to a thin white strip; this is a
+remaining rectangle/video-coordinate rendering defect, not a loading blocker.
+
+### Captured Phase B artifacts
+
+- Normal New Game run:
+  `H:\YAE\Original\You Are Empty\QindieGL.phaseB-new-game-success.log`
+- Matching clean GLIntercept trace:
+  `H:\YAE\Original\You Are Empty\gliInterceptLog_FULL.phaseB-new-game-success.txt`
+- Matching GLIntercept parser log:
+  `H:\YAE\Original\You Are Empty\gliLog.phaseB-new-game-success.txt`
+- Longer console-to-level run:
+  `H:\YAE\Original\You Are Empty\QindieGL.phaseB-gameplay-console.log`
+- First QindieGL gameplay screenshot:
+  `tools/glintercept/phaseB-texture2d-current.png`
+
+### Compatibility exceptions and remaining work
+
+The task's proposed Phase C configuration assumes that DS2 can run with VBO and
+ARB programs absent. The retail `ds2render.dll` disproves that assumption: it
+hard-requires both families and, after loading the level, invokes the ARB program
+API heavily even though `use_shaders=0`. The present Phase B profile therefore:
+
+- advertises VBO and uses corrected CPU-backed VBO semantics;
+- exposes ARB programs in explicit compatibility-stub mode;
+- keeps HDR, normal maps, and optional material shaders disabled.
+
+This is sufficient for startup but not visual parity. In the first level, base
+textures are missing from much of the static geometry, lightmaps are mapped
+incorrectly, nearby geometry can disappear, input/frame pacing is jerky, and
+performance is low. These are the starting defects for Phase C. The trace shows
+seven actual DS2 ARB programs and no generic vertex-attrib-array invocations, so
+the first Phase C experiment should compile that small observed program corpus
+instead of broadening generic OpenGL support.
+
+Pure QindieGL to D3D9 is now usable for Phase C investigation, but it is not
+visually correct, stability-qualified, or ready for RTX Remix.

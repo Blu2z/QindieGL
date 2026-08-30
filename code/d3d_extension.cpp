@@ -403,52 +403,205 @@ OPENGL_API GLboolean WINAPI glIsProgramARB( GLuint program )
 
 namespace {
 	static GLfloat gVertexAttribs[16][4];
+
+	void SetVertexAttrib( GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w )
+	{
+		if (index >= 16) return;
+		gVertexAttribs[index][0] = x;
+		gVertexAttribs[index][1] = y;
+		gVertexAttribs[index][2] = z;
+		gVertexAttribs[index][3] = w;
+	}
+
+	GLfloat NormalizeSignedAttrib( double value, double positiveMax )
+	{
+		const double normalized = value / positiveMax;
+		return static_cast<GLfloat>(normalized < -1.0 ? -1.0 : normalized);
+	}
+}
+
+OPENGL_API void WINAPI glVertexAttrib1dARB( GLuint index, GLdouble x )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), 0.0f, 0.0f, 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib1dvARB( GLuint index, const GLdouble *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), 0.0f, 0.0f, 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib1sARB( GLuint index, GLshort x )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), 0.0f, 0.0f, 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib1svARB( GLuint index, const GLshort *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), 0.0f, 0.0f, 1.0f);
 }
 
 OPENGL_API void WINAPI glVertexAttrib1fARB( GLuint index, GLfloat x )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = 0; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
+	SetVertexAttrib(index, x, 0.0f, 0.0f, 1.0f);
 }
 OPENGL_API void WINAPI glVertexAttrib2fARB( GLuint index, GLfloat x, GLfloat y )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = y; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
+	SetVertexAttrib(index, x, y, 0.0f, 1.0f);
 }
 OPENGL_API void WINAPI glVertexAttrib3fARB( GLuint index, GLfloat x, GLfloat y, GLfloat z )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = y; gVertexAttribs[index][2] = z; gVertexAttribs[index][3] = 1; }
+	SetVertexAttrib(index, x, y, z, 1.0f);
 }
 OPENGL_API void WINAPI glVertexAttrib4fARB( GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16) { gVertexAttribs[index][0] = x; gVertexAttribs[index][1] = y; gVertexAttribs[index][2] = z; gVertexAttribs[index][3] = w; }
+	SetVertexAttrib(index, x, y, z, w);
 }
 OPENGL_API void WINAPI glVertexAttrib1fvARB( GLuint index, const GLfloat *v )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = 0; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
+	if (v) SetVertexAttrib(index, v[0], 0.0f, 0.0f, 1.0f);
 }
 OPENGL_API void WINAPI glVertexAttrib2fvARB( GLuint index, const GLfloat *v )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = v[1]; gVertexAttribs[index][2] = 0; gVertexAttribs[index][3] = 1; }
+	if (v) SetVertexAttrib(index, v[0], v[1], 0.0f, 1.0f);
 }
 OPENGL_API void WINAPI glVertexAttrib3fvARB( GLuint index, const GLfloat *v )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = v[1]; gVertexAttribs[index][2] = v[2]; gVertexAttribs[index][3] = 1; }
+	if (v) SetVertexAttrib(index, v[0], v[1], v[2], 1.0f);
 }
 OPENGL_API void WINAPI glVertexAttrib4fvARB( GLuint index, const GLfloat *v )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]; gVertexAttribs[index][1] = v[1]; gVertexAttribs[index][2] = v[2]; gVertexAttribs[index][3] = v[3]; }
+	if (v) SetVertexAttrib(index, v[0], v[1], v[2], v[3]);
+}
+
+OPENGL_API void WINAPI glVertexAttrib2dARB( GLuint index, GLdouble x, GLdouble y )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), static_cast<GLfloat>(y), 0.0f, 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib2dvARB( GLuint index, const GLdouble *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), 0.0f, 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib2sARB( GLuint index, GLshort x, GLshort y )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), static_cast<GLfloat>(y), 0.0f, 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib2svARB( GLuint index, const GLshort *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), 0.0f, 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib3dARB( GLuint index, GLdouble x, GLdouble y, GLdouble z )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), static_cast<GLfloat>(y), static_cast<GLfloat>(z), 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib3dvARB( GLuint index, const GLdouble *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib3sARB( GLuint index, GLshort x, GLshort y, GLshort z )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), static_cast<GLfloat>(y), static_cast<GLfloat>(z), 1.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib3svARB( GLuint index, const GLshort *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), 1.0f);
+}
+
+OPENGL_API void WINAPI glVertexAttrib4NbvARB( GLuint index, const GLbyte *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, NormalizeSignedAttrib(v[0], 127.0), NormalizeSignedAttrib(v[1], 127.0), NormalizeSignedAttrib(v[2], 127.0), NormalizeSignedAttrib(v[3], 127.0));
+}
+OPENGL_API void WINAPI glVertexAttrib4NivARB( GLuint index, const GLint *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, NormalizeSignedAttrib(v[0], 2147483647.0), NormalizeSignedAttrib(v[1], 2147483647.0), NormalizeSignedAttrib(v[2], 2147483647.0), NormalizeSignedAttrib(v[3], 2147483647.0));
+}
+OPENGL_API void WINAPI glVertexAttrib4NsvARB( GLuint index, const GLshort *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, NormalizeSignedAttrib(v[0], 32767.0), NormalizeSignedAttrib(v[1], 32767.0), NormalizeSignedAttrib(v[2], 32767.0), NormalizeSignedAttrib(v[3], 32767.0));
+}
+OPENGL_API void WINAPI glVertexAttrib4NubARB( GLuint index, GLubyte x, GLubyte y, GLubyte z, GLubyte w )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, x / 255.0f, y / 255.0f, z / 255.0f, w / 255.0f);
 }
 OPENGL_API void WINAPI glVertexAttrib4NubvARB( GLuint index, const GLubyte *v )
 {
 	RECORD_COMPAT_STUB();
-	if (index < 16 && v) { gVertexAttribs[index][0] = v[0]/255.0f; gVertexAttribs[index][1] = v[1]/255.0f; gVertexAttribs[index][2] = v[2]/255.0f; gVertexAttribs[index][3] = v[3]/255.0f; }
+	if (v) SetVertexAttrib(index, v[0] / 255.0f, v[1] / 255.0f, v[2] / 255.0f, v[3] / 255.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib4NuivARB( GLuint index, const GLuint *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0] / 4294967295.0), static_cast<GLfloat>(v[1] / 4294967295.0), static_cast<GLfloat>(v[2] / 4294967295.0), static_cast<GLfloat>(v[3] / 4294967295.0));
+}
+OPENGL_API void WINAPI glVertexAttrib4NusvARB( GLuint index, const GLushort *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, v[0] / 65535.0f, v[1] / 65535.0f, v[2] / 65535.0f, v[3] / 65535.0f);
+}
+OPENGL_API void WINAPI glVertexAttrib4bvARB( GLuint index, const GLbyte *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), static_cast<GLfloat>(v[3]));
+}
+OPENGL_API void WINAPI glVertexAttrib4dARB( GLuint index, GLdouble x, GLdouble y, GLdouble z, GLdouble w )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), static_cast<GLfloat>(y), static_cast<GLfloat>(z), static_cast<GLfloat>(w));
+}
+OPENGL_API void WINAPI glVertexAttrib4dvARB( GLuint index, const GLdouble *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), static_cast<GLfloat>(v[3]));
+}
+OPENGL_API void WINAPI glVertexAttrib4ivARB( GLuint index, const GLint *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), static_cast<GLfloat>(v[3]));
+}
+OPENGL_API void WINAPI glVertexAttrib4sARB( GLuint index, GLshort x, GLshort y, GLshort z, GLshort w )
+{
+	RECORD_COMPAT_STUB();
+	SetVertexAttrib(index, static_cast<GLfloat>(x), static_cast<GLfloat>(y), static_cast<GLfloat>(z), static_cast<GLfloat>(w));
+}
+OPENGL_API void WINAPI glVertexAttrib4svARB( GLuint index, const GLshort *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), static_cast<GLfloat>(v[3]));
+}
+OPENGL_API void WINAPI glVertexAttrib4ubvARB( GLuint index, const GLubyte *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), static_cast<GLfloat>(v[3]));
+}
+OPENGL_API void WINAPI glVertexAttrib4uivARB( GLuint index, const GLuint *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), static_cast<GLfloat>(v[3]));
+}
+OPENGL_API void WINAPI glVertexAttrib4usvARB( GLuint index, const GLushort *v )
+{
+	RECORD_COMPAT_STUB();
+	if (v) SetVertexAttrib(index, static_cast<GLfloat>(v[0]), static_cast<GLfloat>(v[1]), static_cast<GLfloat>(v[2]), static_cast<GLfloat>(v[3]));
 }
 OPENGL_API void WINAPI glVertexAttribPointerARB( GLuint, GLint, GLenum, GLboolean, GLsizei, const GLvoid * )
 {
@@ -796,15 +949,42 @@ static glext_entry_point_t glext_EntryPoints[] =
 	WGL_EXT_ENTRY_POINT( "ARB", "pixel_format", wglGetPixelFormatAttribfvARB, -2 ),
 
 	//GL_ARB_vertex_program (vertex attrib functions)
+	{ "glVertexAttrib1dARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib1dARB },
+	{ "glVertexAttrib1dvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib1dvARB },
 	{ "glVertexAttrib1fARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib1fARB },
+	{ "glVertexAttrib1sARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib1sARB },
+	{ "glVertexAttrib1svARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib1svARB },
+	{ "glVertexAttrib2dARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib2dARB },
+	{ "glVertexAttrib2dvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib2dvARB },
 	{ "glVertexAttrib2fARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib2fARB },
+	{ "glVertexAttrib2sARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib2sARB },
+	{ "glVertexAttrib2svARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib2svARB },
+	{ "glVertexAttrib3dARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib3dARB },
+	{ "glVertexAttrib3dvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib3dvARB },
 	{ "glVertexAttrib3fARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib3fARB },
+	{ "glVertexAttrib3sARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib3sARB },
+	{ "glVertexAttrib3svARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib3svARB },
+	{ "glVertexAttrib4NbvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4NbvARB },
+	{ "glVertexAttrib4NivARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4NivARB },
+	{ "glVertexAttrib4NsvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4NsvARB },
+	{ "glVertexAttrib4NubARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4NubARB },
 	{ "glVertexAttrib4fARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4fARB },
 	{ "glVertexAttrib1fvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib1fvARB },
 	{ "glVertexAttrib2fvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib2fvARB },
 	{ "glVertexAttrib3fvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib3fvARB },
 	{ "glVertexAttrib4fvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4fvARB },
 	{ "glVertexAttrib4NubvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4NubvARB },
+	{ "glVertexAttrib4NuivARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4NuivARB },
+	{ "glVertexAttrib4NusvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4NusvARB },
+	{ "glVertexAttrib4bvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4bvARB },
+	{ "glVertexAttrib4dARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4dARB },
+	{ "glVertexAttrib4dvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4dvARB },
+	{ "glVertexAttrib4ivARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4ivARB },
+	{ "glVertexAttrib4sARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4sARB },
+	{ "glVertexAttrib4svARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4svARB },
+	{ "glVertexAttrib4ubvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4ubvARB },
+	{ "glVertexAttrib4uivARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4uivARB },
+	{ "glVertexAttrib4usvARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttrib4usvARB },
 	{ "glVertexAttribPointerARB", "GL_ARB_vertex_program", -1, (PROC)glVertexAttribPointerARB },
 	{ "glEnableVertexAttribArrayARB", "GL_ARB_vertex_program", -1, (PROC)glEnableVertexAttribArrayARB },
 	{ "glDisableVertexAttribArrayARB", "GL_ARB_vertex_program", -1, (PROC)glDisableVertexAttribArrayARB },
@@ -944,9 +1124,13 @@ void D3DExtension_BuildExtensionsString()
 	GLuint checkCaps;
 	bool bCombineSupportEXT( true );
 	bool bCombineSupportARB( true );
+	const bool yaeFallbackCompatibility = D3DGlobal.settings.game.yaeFallbackCompatibility != 0;
 
 	if (D3DGlobal.maxActiveTMU > 1) ExtensionBuf.AddExtension( "GL_ARB_multitexture" );
-	ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
+	if (yaeFallbackCompatibility)
+		ExtensionBuf.AddExtensionUnchecked( "GL_ARB_vertex_buffer_object" );
+	else
+		ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
 
 	gEnableARBProgramsStub = D3DGlobal.settings.enableARBProgramsStub != 0
 		|| D3DGlobal_GetRegistryValue( "GL_ARB_program", "Extensions", 0 )
@@ -1002,7 +1186,8 @@ void D3DExtension_BuildExtensionsString()
 
 	//we implement them at driver level
 	ExtensionBuf.AddExtension( "GL_ARB_transpose_matrix" );
-	ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
+	if (!yaeFallbackCompatibility)
+		ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
 
 	checkCaps = (D3DPTADDRESSCAPS_MIRRORONCE);
 	if ((D3DGlobal.hD3DCaps.TextureAddressCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_ATI_texture_mirror_once" );
@@ -1049,6 +1234,10 @@ void D3DExtension_BuildExtensionsString()
 	if ( D3DGlobal.supportsS3TC ) ExtensionBuf.AddExtension( "GL_EXT_texture_compression_s3tc" );
 	checkCaps = (D3DPTEXTURECAPS_CUBEMAP);
 	if ((D3DGlobal.hD3DCaps.TextureCaps & checkCaps) == checkCaps) ExtensionBuf.AddExtension( "GL_EXT_texture_cube_map" );
+	// The YAE profile accepts the engine's rectangle-backed surfaces as D3D9
+	// 2D texture storage. DS2 does not sample these surfaces through the fixed
+	// function path during fallback rendering, so normalized-coordinate
+	// emulation is not required for this compatibility path.
 	ExtensionBuf.AddExtension( "GL_EXT_texture_rectangle" );
 	
 	checkCaps = (D3DTEXOPCAPS_ADD);
@@ -1236,6 +1425,9 @@ OPENGL_API PROC WINAPI wrap_wglGetProcAddress( LPCSTR s )
 		{
 			if (IsARBProgramExtension(glext_EntryPoints[i].extname)) {
 				glext_EntryPoints[i].enabled = gEnableARBProgramsStub ? 1 : 0;
+			} else if (D3DGlobal.settings.game.yaeFallbackCompatibility
+				&& !strcmp(glext_EntryPoints[i].extname, "GL_ARB_vertex_buffer_object")) {
+				glext_EntryPoints[i].enabled = 1;
 			} else {
 				glext_EntryPoints[i].enabled = D3DGlobal_GetRegistryValue(glext_EntryPoints[i].extname, "Extensions", glext_EntryPoints[i].enabled==-1 ? 0 : 1);
 			}

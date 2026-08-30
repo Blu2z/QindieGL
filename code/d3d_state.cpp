@@ -1023,6 +1023,7 @@ static DWORD D3DState_IsEnabledState( GLenum cap )
 	case GL_TEXTURE_1D:
 		return D3DState.EnableState.textureTargetEnabled[D3DState.TextureState.currentTMU][D3D_TEXTARGET_1D];
 	case GL_TEXTURE_2D:
+	case GL_TEXTURE_RECTANGLE_ARB:
 		return D3DState.EnableState.textureTargetEnabled[D3DState.TextureState.currentTMU][D3D_TEXTARGET_2D];
 	case GL_TEXTURE_3D_EXT:
 		return D3DState.EnableState.textureTargetEnabled[D3DState.TextureState.currentTMU][D3D_TEXTARGET_3D];
@@ -1176,6 +1177,7 @@ static void D3DState_EnableDisableState( GLenum cap, DWORD value )
 		}
 		break;
 	case GL_TEXTURE_2D:
+	case GL_TEXTURE_RECTANGLE_ARB:
 		if (D3DState.EnableState.textureTargetEnabled[D3DState.TextureState.currentTMU][D3D_TEXTARGET_2D] != value) {
 			D3DState.EnableState.textureTargetEnabled[D3DState.TextureState.currentTMU][D3D_TEXTARGET_2D] = value;
 			D3DState.TextureState.textureSamplerStateChanged = TRUE;
@@ -1294,6 +1296,7 @@ static void D3DState_EnableDisableState( GLenum cap, DWORD value )
 		break;
 
 	case GL_AUTO_NORMAL:
+	case GL_LINE_SMOOTH:
 	case GL_LINE_STIPPLE:
 	case GL_POLYGON_OFFSET_LINE:
 	case GL_POLYGON_OFFSET_POINT:

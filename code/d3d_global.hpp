@@ -91,6 +91,7 @@ typedef struct D3DVAInfo_s
 	GLenum			elementType;
 	GLsizei			stride;
 	const GLubyte*	data;
+	GLuint			bufferBinding;
 	struct {
 		GLint		compiledFirst;
 		GLsizei		compiledLast;
@@ -171,6 +172,7 @@ typedef struct D3DGlobal_s
 			DWORD               remixapi;
 			DWORD               orthovertexshader;
 			DWORD               orthoskipuntextureddraws;
+			DWORD               yaeFallbackCompatibility;
 		} game;
 	} settings;
 	struct {

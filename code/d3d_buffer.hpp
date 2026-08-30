@@ -34,5 +34,6 @@ struct D3DBufferObject
 extern void D3DBuffer_Bind( GLenum target, GLuint buffer );
 extern GLuint D3DBuffer_GetBinding( GLenum target );
 extern D3DBufferObject *D3DBuffer_GetObject( GLuint buffer, bool create );
+extern const GLubyte *D3DBuffer_ResolvePointer( GLuint buffer, const GLvoid *pointer, size_t requiredBytes );
 
 #endif //QINDIEGL_D3D_BUFFER_H

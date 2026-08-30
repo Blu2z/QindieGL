@@ -1004,6 +1004,15 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 	D3DGlobal.settings.game.remixapi = D3DGlobal_ReadGameConf( "remixapi" );
 	D3DGlobal.settings.game.orthovertexshader = D3DGlobal_ReadGameConf( "orthovertexshader" );
 	D3DGlobal.settings.game.orthoskipuntextureddraws = D3DGlobal_ReadGameConf( "orthoskipuntextureddraws" );
+	D3DGlobal.settings.game.yaeFallbackCompatibility = D3DGlobal_ReadGameConf( "yae_fallback_compatibility" );
+	if (D3DGlobal.settings.game.yaeFallbackCompatibility) {
+		// DS2 rejects the hardware before honoring use_shaders=0 unless both ARB
+		// program families are present. Keep their non-rendering compatibility
+		// implementation isolated to the explicit You Are Empty game profile.
+		D3DGlobal.settings.enableARBProgramsStub = 1;
+		logPrintfLevel(QGL_LOG_WARN, "YAE_COMPAT",
+			"enabled: exposing DS2 hardware-gate extensions; use_shaders must remain 0");
+	}
 
 	D3DGlobal.normalPtrGuessEnabled = 0;
 	{

@@ -632,6 +632,7 @@ void QGL_DiagnosticsDumpCapabilityReport()
 	logPrintf("  ProjectionFix: %u\n", D3DGlobal.settings.projectionFix);
 	logPrintf("  DrawCallFastPath: %u\n", D3DGlobal.settings.drawcallFastPath);
 	logPrintf("  EnableARBProgramsStub: %u\n", D3DGlobal.settings.enableARBProgramsStub);
+	logPrintf("  YAEFallbackCompatibility: %u\n", D3DGlobal.settings.game.yaeFallbackCompatibility);
 	logPrintf("  MultiSample: %u\n", D3DGlobal.settings.multisample);
 	logPrintf("  CrashDiagnostics: %u\n", D3DGlobal.settings.crashDiagnostics);
 	logPrintf("  DebugMaxDrawCall: %d\n", D3DGlobal.settings.debugMaxDrawCall);

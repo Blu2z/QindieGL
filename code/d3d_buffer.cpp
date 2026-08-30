@@ -90,6 +90,33 @@ D3DBufferObject *D3DBuffer_GetObject( GLuint buffer, bool create )
 	return &result.first->second;
 }
 
+const GLubyte *D3DBuffer_ResolvePointer( GLuint buffer, const GLvoid *pointer, size_t requiredBytes )
+{
+	if (!buffer)
+		return static_cast<const GLubyte *>(pointer);
+
+	D3DBufferObject *bufferObject = D3DBuffer_GetObject(buffer, false);
+	const size_t offset = reinterpret_cast<size_t>(pointer);
+	if (!bufferObject || !bufferObject->storage || bufferObject->size < 0) {
+		QGL_SET_ERROR(E_INVALID_OPERATION);
+		QGL_DiagnosticsRecordEvent(true, "VBO_RESOLVE",
+			"buffer=%u offset=%u unavailable", buffer, static_cast<unsigned>(offset));
+		return nullptr;
+	}
+
+	const size_t bufferSize = static_cast<size_t>(bufferObject->size);
+	if (offset > bufferSize || requiredBytes > bufferSize - offset) {
+		QGL_SET_ERROR(E_INVALID_OPERATION);
+		QGL_DiagnosticsRecordEvent(true, "VBO_RESOLVE",
+			"buffer=%u offset=%u required=%u size=%u out of range", buffer,
+			static_cast<unsigned>(offset), static_cast<unsigned>(requiredBytes),
+			static_cast<unsigned>(bufferSize));
+		return nullptr;
+	}
+
+	return static_cast<const GLubyte *>(bufferObject->storage) + offset;
+}
+
 OPENGL_API void WINAPI glBindBuffer( GLenum target, GLuint buffer )
 {
 	D3DBuffer_Bind( target, buffer );

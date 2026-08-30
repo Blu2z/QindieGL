@@ -239,6 +239,13 @@ static const char* CombineOperandToString( GLenum func )
 
 static void DumpCombiners() 
 {
+	static unsigned int dumpCount = 0;
+	if (dumpCount >= 4)
+		return;
+	++dumpCount;
+	if (dumpCount == 4)
+		logPrintf("Further invalid-combiner dumps are suppressed for this session.\n");
+
 	int numActiveTextures = 0;
 	for (int i = 0; i < D3DGlobal.maxActiveTMU; ++i) {
 		if (!D3DState.EnableState.textureEnabled[i])
