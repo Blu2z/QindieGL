@@ -206,4 +206,10 @@ void ARB_DeleteCompiledProgram( GLuint programId );
 // Get the compiled program for a given ID (or NULL)
 ARBCompiledProgram* ARB_GetCompiledProgram( GLuint programId );
 
+// Number of consecutive D3D TEXCOORD semantics required to preserve the
+// OpenGL texcoord[n] indices used by the active vertex and fragment programs.
+// A fragment program can run with the fixed-function vertex pipeline, so its
+// inputs must participate even when the corresponding texture unit is disabled.
+int ARB_GetRequiredVertexTexCoordCount();
+
 #endif //QINDIEGL_D3D_ARB_PROGRAM_H

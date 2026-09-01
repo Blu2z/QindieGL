@@ -98,18 +98,28 @@ OPENGL_API void WINAPI glProgramStringARB( GLenum target, GLenum format, GLsizei
 	RECORD_ARB_PROGRAM_STUB();
 	GLuint bound = (target == GL_VERTEX_PROGRAM_ARB) ? gARBBoundVertexProgram : gARBBoundFragmentProgram;
 	if (bound && string && len > 0 && format == GL_PROGRAM_FORMAT_ASCII_ARB) {
+		const char *source = static_cast<const char*>(string);
+		GLsizei textLen = 0;
+		while (textLen < len && source[textLen] != '\0')
+			++textLen;
 		ARBProgramData &pd = gARBProgramStore[bound];
 		pd.target = target;
-		pd.source.assign( static_cast<const char*>(string), len );
-		logPrintf("glProgramStringARB: stored %s program %u (%d bytes)\n",
-			target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", bound, len);
+		pd.source.assign( source, textLen );
+#if 0 // Full source is persisted by ARB_CompileProgram without log truncation.
+		logPrintf("glProgramStringARB: stored %s program %u (%d API bytes, %d text bytes)\n"
+			"----- ARB program %u source -----\n%.*s\n----- end ARB program %u source -----\n",
+			target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", bound, len, textLen,
+			bound, textLen, source, bound);
+#endif
+		logPrintf("glProgramStringARB: stored %s program %u (%d API bytes, %d text bytes)\n",
+			target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", bound, len, textLen);
 
 		// Compile ARB program to D3D9 shader
 		bool compiled = false;
 		bool failed = false;
 		if ( D3DGlobal.pDevice && !D3DGlobal.settings.enableARBProgramsStub ) {
 			std::string errorStr;
-			if ( !ARB_CompileProgram( bound, target, static_cast<const char*>(string), len, errorStr ) ) {
+			if ( !ARB_CompileProgram( bound, target, source, textLen, errorStr ) ) {
 				failed = true;
 				logPrintf("WARNING: ARB program %u compilation failed: %s\n", bound, errorStr.c_str());
 			} else {
@@ -1132,7 +1142,8 @@ void D3DExtension_BuildExtensionsString()
 	else
 		ExtensionBuf.AddExtension( "GL_ARB_vertex_buffer_object" );
 
-	gEnableARBProgramsStub = D3DGlobal.settings.enableARBProgramsStub != 0
+	gEnableARBProgramsStub = yaeFallbackCompatibility
+		|| D3DGlobal.settings.enableARBProgramsStub != 0
 		|| D3DGlobal_GetRegistryValue( "GL_ARB_program", "Extensions", 0 )
 		|| D3DGlobal_GetRegistryValue( "GL_ARB_vertex_program", "Extensions", 0 )
 		|| D3DGlobal_GetRegistryValue( "GL_ARB_fragment_program", "Extensions", 0 );

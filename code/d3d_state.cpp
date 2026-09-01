@@ -458,7 +458,11 @@ static void D3DState_SetTextureEnv( int stage, int sampler, eTexTypeInternal int
 
 void D3DState_SetTexture()
 {
-	if (!D3DState.TextureState.textureSamplerStateChanged)
+	bool textureMatrixChanged = false;
+	for (int i = 0; i < D3DGlobal.maxActiveTMU; ++i)
+		textureMatrixChanged |= D3DState.textureMatrixModified[i];
+
+	if (!D3DState.TextureState.textureSamplerStateChanged && !textureMatrixChanged)
 		return;
 
 	DWORD currentSampler = 0;
@@ -472,25 +476,28 @@ void D3DState_SetTexture()
 			!(D3DState.TextureState.textureReference & (1<<i)))
 			continue;
 
-		bool matrixChanged = D3DState.TextureState.textureEnableChanged || D3DState.textureMatrixModified[i];
-		if (matrixChanged) {
-			D3DState.textureMatrixModified[i] = false;
-			D3DStateMatrix& mat = D3DGlobal.textureMatrixStack[i]->top();
-			if ( !mat.is_identity() ||
-				D3DState.TextureState.transformEnabled )
-			{
-				if ( !D3DState.TextureState.transformEnabled )
-				{
-					D3DState.TextureState.transformEnabled = TRUE;
-					for (int j = 0; j < D3DGlobal.maxActiveTMU; ++j) {
-						D3DGlobal.pDevice->SetTextureStageState( j, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT4 | D3DTTFF_PROJECTED );
-					}
-				}
-				hr = D3DGlobal.pDevice->SetTransform( (D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + currentSampler), mat );
-				if (FAILED(hr)) {
-					QGL_SET_ERROR(hr);
-					break;
-				}
+		D3DState.textureMatrixModified[i] = false;
+		D3DStateMatrix& mat = D3DGlobal.textureMatrixStack[i]->top();
+		const bool stageTransformEnabled = !mat.is_identity();
+
+		// YAE only uses affine 2D texture matrices in this path.  Requesting a
+		// projected COUNT4 result makes D3D consume/divide by components that are
+		// not present in its ordinary float2 streams; the resulting undefined q
+		// manifested as very large, intermittently flashing textured triangles.
+		// COUNT2 applies the affine S/T transform without changing the vertex FVF.
+		hr = D3DGlobal.pDevice->SetTextureStageState( currentSampler,
+			D3DTSS_TEXTURETRANSFORMFLAGS,
+			stageTransformEnabled ? D3DTTFF_COUNT2 : D3DTTFF_DISABLE );
+		if (FAILED(hr)) {
+			QGL_SET_ERROR(hr);
+			break;
+		}
+		if (stageTransformEnabled) {
+			hr = D3DGlobal.pDevice->SetTransform(
+				(D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + currentSampler), mat );
+			if (FAILED(hr)) {
+				QGL_SET_ERROR(hr);
+				break;
 			}
 		}
 
@@ -574,6 +581,11 @@ void D3DState_SetTexture()
 
 		++currentSampler;
 	}
+
+	// D3D expands missing texture-coordinate components for the texture matrix.
+	// Keep the vertex layout stable when a texture matrix comes and goes; changing
+	// the FVF here corrupts YAE's cached/streamed draws during post effects.
+	D3DState.TextureState.transformEnabled = FALSE;
 
 	// if we've got "invalid" TNT combiners (e.g. texture as arg2), try to
 	// replace it with valid D3D combiners

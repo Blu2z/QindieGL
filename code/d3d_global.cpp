@@ -1005,13 +1005,17 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 	D3DGlobal.settings.game.orthovertexshader = D3DGlobal_ReadGameConf( "orthovertexshader" );
 	D3DGlobal.settings.game.orthoskipuntextureddraws = D3DGlobal_ReadGameConf( "orthoskipuntextureddraws" );
 	D3DGlobal.settings.game.yaeFallbackCompatibility = D3DGlobal_ReadGameConf( "yae_fallback_compatibility" );
+	D3DGlobal.settings.game.yaeCompileARBPrograms = D3DGlobal_ReadGameConf( "yae_compile_arb_programs" );
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility) {
 		// DS2 rejects the hardware before honoring use_shaders=0 unless both ARB
-		// program families are present. Keep their non-rendering compatibility
-		// implementation isolated to the explicit You Are Empty game profile.
-		D3DGlobal.settings.enableARBProgramsStub = 1;
+		// program families are present. Phase B used the non-rendering stub; the
+		// explicit Phase C switch lets us compile the observed DS2 program corpus
+		// without changing other game profiles.
+		if (!D3DGlobal.settings.game.yaeCompileARBPrograms)
+			D3DGlobal.settings.enableARBProgramsStub = 1;
 		logPrintfLevel(QGL_LOG_WARN, "YAE_COMPAT",
-			"enabled: exposing DS2 hardware-gate extensions; use_shaders must remain 0");
+			"enabled: exposing DS2 hardware-gate extensions; ARB programs=%s; use_shaders must remain 0",
+			D3DGlobal.settings.enableARBProgramsStub ? "compatibility stub" : "D3D9 compiler");
 	}
 
 	D3DGlobal.normalPtrGuessEnabled = 0;
