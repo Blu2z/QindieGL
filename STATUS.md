@@ -306,3 +306,41 @@ instead of broadening generic OpenGL support.
 
 Pure QindieGL to D3D9 is now usable for Phase C investigation, but it is not
 visually correct, stability-qualified, or ready for RTX Remix.
+
+## Phase C - basic world-rendering checkpoint
+
+Status: **validated in the first playable level**.
+
+The following QindieGL rendering fixes are now working together in the YAE
+fallback profile:
+
+- static and dynamic geometry remain visible at normal viewing distances;
+- the lightmap atlas uses the correct vertical orientation;
+- VBO-backed index ranges no longer produce full-screen flashing triangles;
+- texture matrices use affine 2D transforms without corrupting the vertex layout;
+- the menu remains intact after entering and leaving gameplay.
+
+The apparent missing-diffuse defect was traced to modified game data rather
+than another texture-stage bug. The active `med1.ds2` and `med1_lm_0.tga` had
+been rebuilt on February 21, 2026. That scene registered only 219 materials,
+created 11 static vertex buffers, requested a missing `baked_atlas_0` four
+times, and intentionally bound the neutral gray texture to the lightmapped
+static diffuse stage. Replacing that stage with a diagnostic texture proved
+that its UVs and lightmap combine state were already correct.
+
+Restoring the retail files dated July 28, 2006 removed the missing-atlas
+requests. The game then registered 338 scene materials and created 16 static
+vertex buffers in the QindieGL path. The user confirmed that static diffuse
+textures, lightmaps, geometry stability, and the menu all render correctly.
+
+Known retail asset hashes for this test installation:
+
+```text
+med1.ds2       B5DAF95A6606725AF54B9C3598FD15BFDAD97725038CC5E7F245931F9C11D529
+med1_lm_0.tga  E4CB830A2C12431837D0937C2041DE0E87472847ED75764F2DE5AEC27D6341EF
+```
+
+The modified files were preserved outside the repository as
+`*.phaseC-rebuilt-backup`; they are not required by QindieGL. Remaining Phase C
+work is limited to the intro/video path and post-effect alpha fidelity before
+the longer Phase D stability run.
