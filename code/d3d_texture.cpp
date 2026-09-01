@@ -381,6 +381,10 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 
 HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048)) {
+		logPrintf("YAE_LARGE_TEXTURE: id=%u op=TexImage level=%d size=%dx%dx%d internal=0x%X format=0x%X type=0x%X pixels=%s\n",
+			m_glIndex, level, width, height, depth, internalformat, format, type, pixels ? "YES" : "NO");
+	}
 	if (D3DTex_IsDepthFormat(m_format)) {
 		switch (m_format) {
 		case D3DFMT_D16:
@@ -505,7 +509,19 @@ HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint
 		pitch2 = 0;
 	}
 
-	hr = D3DPixels_Unpack( width, height, depth, pitch, pitch2, dstdata, m_dstbytes, m_internalFormat, false, format, type, pixels );
+	// YAE builds its uncompressed 4096x4096 lightmap atlas at runtime.  Unlike
+	// authored textures (whose asset UV convention already matches this wrapper),
+	// the atlas rows follow OpenGL's lower-left upload convention.  D3D samples
+	// row zero at the upper edge, so preserve the GL image by reflecting its rows
+	// while uploading this one compatibility texture.
+	const bool yaeRuntimeLightmapAtlas =
+		D3DGlobal.settings.game.yaeFallbackCompatibility && level == 0 && depth == 1 &&
+		width == 4096 && height == 4096 && internalformat == GL_RGBA8 &&
+		format == GL_BGRA_EXT && type == GL_UNSIGNED_BYTE;
+	if ( yaeRuntimeLightmapAtlas )
+		PRINT_ONCE( "YAE_COMPAT: vertically reflecting the runtime 4096x4096 lightmap atlas.\n" );
+	hr = D3DPixels_Unpack( width, height, depth, pitch, pitch2, dstdata, m_dstbytes,
+		m_internalFormat, yaeRuntimeLightmapAtlas, format, type, pixels );
 	if (FAILED(hr)) {
 		if (m_target == GL_TEXTURE_3D_EXT) {	
 			m_pD3DVolumeTexture->UnlockBox( level );
@@ -530,6 +546,12 @@ HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint
 
 HRESULT D3DTextureObject :: FillTextureSubLevel( GLint cubeface, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	static int yaeLargeSubImageLogs = 0;
+	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048) &&
+		yaeLargeSubImageLogs++ < 64) {
+		logPrintf("YAE_LARGE_TEXTURE: id=%u op=TexSubImage level=%d offset=%d,%d,%d size=%dx%dx%d format=0x%X type=0x%X\n",
+			m_glIndex, level, xoffset, yoffset, zoffset, width, height, depth, format, type);
+	}
 	HRESULT hr;
 	GLubyte *dstdata;
 	GLint pitch;
@@ -613,6 +635,12 @@ HRESULT D3DTextureObject :: FillTextureSubLevel( GLint cubeface, GLint level, GL
 
 HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height )
 {
+	static int yaeLargeCopyLogs = 0;
+	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048) &&
+		yaeLargeCopyLogs++ < 64) {
+		logPrintf("YAE_LARGE_TEXTURE: id=%u op=CopyTexSubImage level=%d dst=%d,%d src=%d,%d size=%dx%d\n",
+			m_glIndex, level, xoffset, yoffset, x, y, width, height);
+	}
 	HRESULT hr;
 	LPDIRECT3DSURFACE9 lpRenderTarget( nullptr );
 
@@ -759,6 +787,10 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 
 HRESULT D3DTextureObject :: FillCompressedTextureLevel( GLint cubeface, GLint level, GLint /*internalformat*/, GLsizei /*width*/, GLsizei /*height*/, GLsizei /*depth*/, GLsizei imageSize, const GLvoid *pixels )
 {
+	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048)) {
+		logPrintf("YAE_LARGE_TEXTURE: id=%u op=CompressedTexImage level=%d size=%dx%d bytes=%d pixels=%s\n",
+			m_glIndex, level, m_width, m_height, imageSize, pixels ? "YES" : "NO");
+	}
 	HRESULT hr;
 	GLubyte *dstdata;
 	GLint pitch;

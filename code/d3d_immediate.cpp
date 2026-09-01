@@ -24,6 +24,16 @@
 #include "d3d_utils.hpp"
 #include "d3d_immediate.hpp"
 #include "d3d_lists.hpp"
+#include "d3d_arb_program.hpp"
+#include "d3d_extension.hpp"
+
+namespace {
+	// Program 8 is YAE's full-screen pickup blur.  Keep a very small trace
+	// window around it so that the following fixed-function composite can be
+	// inspected without enabling per-draw TRACE logging for the whole level.
+	uint64_t gYAEPostImmediateLastFrame = ~uint64_t( 0 );
+	unsigned int gYAEPostImmediateLogs = 0;
+}
 
 //==================================================================================
 // OpenGL Immediate Mode
@@ -50,6 +60,86 @@ D3DIMBuffer :: ~D3DIMBuffer( )
 			m_pVertexBuffer[i]->Release();
 		}
 	}
+}
+
+void D3DIMBuffer :: TraceYAEPostImmediateComposite()
+{
+	if ( !D3DGlobal.settings.game.yaeFallbackCompatibility || !m_pBuffer ||
+		m_primitiveType != GL_QUADS || m_passedVertexCount != 4 || m_vertexCount < 6 ||
+		gYAEPostImmediateLogs >= 384 )
+		return;
+
+	const uint64_t frame = QGL_DiagnosticsGetFrameId();
+	const bool blurProgram = D3DState.EnableState.fragmentProgramEnabled &&
+		ARB_GetBoundFragmentProgram() == 8;
+	if ( blurProgram )
+		gYAEPostImmediateLastFrame = frame;
+
+	// Once program 8 has appeared, include the rest of this frame and the
+	// first two draw frames after it.  Repeated blur frames naturally keep
+	// the window alive while the pickup effect is active.
+	if ( gYAEPostImmediateLastFrame == ~uint64_t( 0 ) ||
+		frame > gYAEPostImmediateLastFrame + 2 )
+		return;
+
+	unsigned int minimumAlpha = 255;
+	unsigned int maximumAlpha = 0;
+	float minimumX = m_pBuffer[0].position[0];
+	float maximumX = minimumX;
+	float minimumY = m_pBuffer[0].position[1];
+	float maximumY = minimumY;
+	for ( int i = 0; i < m_vertexCount; ++i ) {
+		const unsigned int alpha = ( m_pBuffer[i].color >> 24 ) & 0xFF;
+		if ( alpha < minimumAlpha ) minimumAlpha = alpha;
+		if ( alpha > maximumAlpha ) maximumAlpha = alpha;
+		if ( m_pBuffer[i].position[0] < minimumX ) minimumX = m_pBuffer[i].position[0];
+		if ( m_pBuffer[i].position[0] > maximumX ) maximumX = m_pBuffer[i].position[0];
+		if ( m_pBuffer[i].position[1] < minimumY ) minimumY = m_pBuffer[i].position[1];
+		if ( m_pBuffer[i].position[1] > maximumY ) maximumY = m_pBuffer[i].position[1];
+	}
+
+	// The blur itself is already traced in d3d_diagnostics.cpp.  Log only a
+	// few anchor samples of it, but retain every plausible alpha composite.
+	const bool alphaCandidate = D3DState.EnableState.alphaBlendEnabled || minimumAlpha < 255;
+	if ( !alphaCandidate && ( !blurProgram || gYAEPostImmediateLogs >= 4 ) )
+		return;
+
+	DWORD d3dBlendEnabled = 0;
+	DWORD d3dSourceBlend = 0;
+	DWORD d3dDestinationBlend = 0;
+	DWORD d3dBlendOperation = 0;
+	DWORD d3dSeparateAlphaEnabled = 0;
+	DWORD d3dSourceBlendAlpha = 0;
+	DWORD d3dDestinationBlendAlpha = 0;
+	D3DGlobal.pDevice->GetRenderState( D3DRS_ALPHABLENDENABLE, &d3dBlendEnabled );
+	D3DGlobal.pDevice->GetRenderState( D3DRS_SRCBLEND, &d3dSourceBlend );
+	D3DGlobal.pDevice->GetRenderState( D3DRS_DESTBLEND, &d3dDestinationBlend );
+	D3DGlobal.pDevice->GetRenderState( D3DRS_BLENDOP, &d3dBlendOperation );
+	D3DGlobal.pDevice->GetRenderState( D3DRS_SEPARATEALPHABLENDENABLE,
+		&d3dSeparateAlphaEnabled );
+	D3DGlobal.pDevice->GetRenderState( D3DRS_SRCBLENDALPHA, &d3dSourceBlendAlpha );
+	D3DGlobal.pDevice->GetRenderState( D3DRS_DESTBLENDALPHA,
+		&d3dDestinationBlendAlpha );
+
+	++gYAEPostImmediateLogs;
+	logPrintfLevel( QGL_LOG_INFO, "YAE_POST_COMPOSITE",
+		"sample=%u frame=%llu draw=%llu blur=%u programs=%u/%u enabled=%u/%u bbox=(%.3f,%.3f)-(%.3f,%.3f) alpha=%u..%u colors=%08X/%08X/%08X/%08X glBlend=%u 0x%X/0x%X d3dBlend=%u %u/%u op=%u separate=%u %u/%u textureSamplers=%u",
+		gYAEPostImmediateLogs,
+		static_cast<unsigned long long>( frame ),
+		static_cast<unsigned long long>( QGL_DiagnosticsGetDrawId() ),
+		blurProgram ? 1u : 0u,
+		ARB_GetBoundVertexProgram(), ARB_GetBoundFragmentProgram(),
+		D3DState.EnableState.vertexProgramEnabled,
+		D3DState.EnableState.fragmentProgramEnabled,
+		minimumX, minimumY, maximumX, maximumY,
+		minimumAlpha, maximumAlpha,
+		m_pBuffer[0].color, m_pBuffer[1].color, m_pBuffer[2].color, m_pBuffer[5].color,
+		D3DState.EnableState.alphaBlendEnabled,
+		D3DState.ColorBufferState.glBlendSrc,
+		D3DState.ColorBufferState.glBlendDst,
+		d3dBlendEnabled, d3dSourceBlend, d3dDestinationBlend, d3dBlendOperation,
+		d3dSeparateAlphaEnabled, d3dSourceBlendAlpha, d3dDestinationBlendAlpha,
+		D3DState.TextureState.currentSamplerCount );
 }
 
 void D3DIMBuffer :: EnsureBufferSize( int numVerts )
@@ -203,8 +293,9 @@ void D3DIMBuffer :: End( bool recordDraw )
 
 	int numSamplers = 0;
 	m_samplerMask = 0;
+	const int arbTexCoordCount = ARB_GetRequiredVertexTexCoordCount();
 	for ( int i = 0; i < D3DGlobal.maxActiveTMU; ++i ) {
-		if ( D3DState.EnableState.textureEnabled[i] ) {
+		if ( i < arbTexCoordCount || D3DState.EnableState.textureEnabled[i] ) {
 			m_samplerMask |= ( 1 << i );
 			int numCoordsX = D3DState.TextureState.transformEnabled ? 3 :
 				(DWORD( D3DState.CurrentState.isSet.bits.texcoord ) >> (i * 2)) & 0x3;
@@ -231,6 +322,27 @@ void D3DIMBuffer :: End( bool recordDraw )
 		}
 	}
 	iFVF |= ( numSamplers << D3DFVF_TEXCOUNT_SHIFT );
+	if ( D3DGlobal.settings.game.yaeFallbackCompatibility &&
+		D3DState.EnableState.fragmentProgramEnabled &&
+		ARB_GetBoundFragmentProgram() == 8 ) {
+		static unsigned int postFVFLogs = 0;
+		if ( postFVFLogs++ < 2 ) {
+			logPrintfLevel( QGL_LOG_INFO, "YAE_POST_EFFECT",
+				"immediate FVF=0x%08X stride=%d samplers=%d mask=0x%X vertices=%d texcoordBits=0x%X",
+				iFVF, sizeFVF, numSamplers, m_samplerMask, m_vertexCount,
+				D3DState.CurrentState.isSet.bits.texcoord );
+			for ( int vertex = 0; vertex < m_vertexCount; ++vertex ) {
+				const D3DIMBufferVertex& v = m_pBuffer[vertex];
+				logPrintfLevel( QGL_LOG_INFO, "YAE_POST_EFFECT",
+					"v%d pos=(%.3f,%.3f,%.3f,%.3f) tc0=(%.3f,%.3f) tc1=(%.3f,%.3f) tc2=(%.3f,%.3f) tc3=(%.3f,%.3f) tc4=(%.3f,%.3f)",
+					vertex, v.position[0], v.position[1], v.position[2], v.position[3],
+					v.texCoord[0][0], v.texCoord[0][1], v.texCoord[1][0], v.texCoord[1][1],
+					v.texCoord[2][0], v.texCoord[2][1], v.texCoord[3][0], v.texCoord[3][1],
+					v.texCoord[4][0], v.texCoord[4][1] );
+			}
+		}
+	}
+	TraceYAEPostImmediateComposite();
 
 	HRESULT hr = D3DGlobal.pDevice->SetFVF( iFVF );
 	if ( FAILED( hr ) ) {
@@ -301,6 +413,7 @@ void D3DIMBuffer :: End( bool recordDraw )
 			QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::DrawPrimitive", hr);
 			QGL_SET_ERROR(hr);
 		}
+		QGL_DiagnosticsAfterDraw();
 	}
 
 	++m_swapFrame;
@@ -366,8 +479,9 @@ void D3DIMBuffer :: AddVertex( float x, float y, float z )
 	pVertex->color2 = D3DState.CurrentState.currentColor2;
 	memcpy( pVertex->normal, D3DState.CurrentState.currentNormal, sizeof( D3DState.CurrentState.currentNormal ) );
 
+	const int arbTexCoordCount = ARB_GetRequiredVertexTexCoordCount();
 	for ( int i = 0; i < D3DGlobal.maxActiveTMU; ++i ) {
-		if ( D3DState.EnableState.textureEnabled[i] ) {
+		if ( i < arbTexCoordCount || D3DState.EnableState.textureEnabled[i] ) {
 			SetupTexCoords( pVertex, i );
 		}
 	}
@@ -402,8 +516,9 @@ void D3DIMBuffer :: AddVertex( float x, float y, float z, float w )
 	pVertex->color2 = D3DState.CurrentState.currentColor2;
 	memcpy( pVertex->normal, D3DState.CurrentState.currentNormal, sizeof( D3DState.CurrentState.currentNormal ) );
 
+	const int arbTexCoordCount = ARB_GetRequiredVertexTexCoordCount();
 	for ( int i = 0; i < D3DGlobal.maxActiveTMU; ++i ) {
-		if ( D3DState.EnableState.textureEnabled[i] ) {
+		if ( i < arbTexCoordCount || D3DState.EnableState.textureEnabled[i] ) {
 			SetupTexCoords( pVertex, i );
 		}
 	}

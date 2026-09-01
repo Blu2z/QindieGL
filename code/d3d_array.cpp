@@ -27,6 +27,7 @@
 #include "d3d_buffer.hpp"
 #include "d3d_matrix_stack.hpp"
 #include "d3d_helpers.hpp"
+#include "d3d_arb_program.hpp"
 
 //!DO NOT UNCOMMENT THIS UNLESS YOU MAKE PERFORMANCE TESTS!
 //#define VA_USE_IMMEDIATE_MODE
@@ -262,12 +263,16 @@ void D3DVABuffer :: SetMinimumVertexBufferSize( int numVerts )
 		QGL_SET_ERROR(hr);
 }
 
-int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices )
+int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumIndex )
 {
 	//select either 16-bit or 32-bit index buffer
 	int currentIndexBuffer = 0;
 	m_indexSize = 2;
-	if (numIndices > USHRT_MAX) {
+	// The index format is determined by the values stored in the buffer, not by
+	// how many of them this draw happens to contain.  A short draw into a large
+	// VBO can still reference vertices above 65535; truncating those values made
+	// unrelated vertices form intermittent screen-sized triangles in YAE.
+	if (maximumIndex > USHRT_MAX) {
 		++currentIndexBuffer;
 		m_indexSize += 2;
 	}
@@ -356,13 +361,17 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	}
 	
 	int numSamplers = 0;
+	const int arbTexCoordCount = ARB_GetRequiredVertexTexCoordCount();
 	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
-		if (D3DState.EnableState.textureEnabled[j] &&
+		const bool arbSemanticRequired = j < arbTexCoordCount;
+		if (arbSemanticRequired || (D3DState.EnableState.textureEnabled[j] &&
 				(VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j) || D3DState.EnableState.texGenEnabled[j])
-			)
+			))
 		{
-			int numCoords = D3DState.ClientVertexArrayState.texCoordInfo[j].elementCount;
-			if ( D3DState.TextureState.transformEnabled )
+			int numCoords = (arbSemanticRequired &&
+				!VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j)) ?
+				2 : D3DState.ClientVertexArrayState.texCoordInfo[j].elementCount;
+			if ( D3DState.TextureState.transformEnabled && !arbSemanticRequired )
 			{
 				numCoords = 4;
 			}
@@ -409,6 +418,11 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	const D3DVAInfo* pVAInfo;
 	do
 	{
+		if ( arbTexCoordCount > 0 )
+		{
+			fast_path_abort_reason = __LINE__;
+			break;
+		}
 		if ( ! D3DGlobal.settings.drawcallFastPath)
 		{
 			fast_path_abort_reason = __LINE__;
@@ -654,9 +668,12 @@ FAST_PATH_CHECK_ABORT:
 			}
 
 			for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
-				if (D3DState.EnableState.textureEnabled[j]) {
-					int numCoords = D3DState.ClientVertexArrayState.texCoordInfo[j].elementCount;
-					if ( D3DState.TextureState.transformEnabled )
+				const bool arbSemanticRequired = j < arbTexCoordCount;
+				if (arbSemanticRequired || D3DState.EnableState.textureEnabled[j]) {
+					int numCoords = (arbSemanticRequired &&
+						!VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j)) ?
+						2 : D3DState.ClientVertexArrayState.texCoordInfo[j].elementCount;
+					if ( D3DState.TextureState.transformEnabled && !arbSemanticRequired )
 					{
 						numCoords = 4;
 					}
@@ -681,6 +698,10 @@ FAST_PATH_CHECK_ABORT:
 							texcoord[1] += D3DState.TransformState.texcoordFix[1];
 						}
 						SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, pLockedVertices );
+						pLockedVertices += numCoords;
+					} else if (arbSemanticRequired) {
+						for ( int coord = 0; coord < numCoords; ++coord )
+							pLockedVertices[coord] = ( coord == 3 ) ? 1.0f : 0.0f;
 						pLockedVertices += numCoords;
 					}
 				}
@@ -733,8 +754,6 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 		return;
 	}
 
-	const bool bValidRange = (end >= start) && (start != ~0u);
-
 	m_primitiveType = mode;
 
 	//For GL_QUADS, we add 2 additional indices per quad
@@ -745,8 +764,34 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 	else if ( mode == GL_LINE_LOOP )
 		++m_primitiveIndexCount;
 
+	// Resolve the real referenced range before selecting the D3D index format.
+	// glDrawRangeElements' start/end values are validation hints; copying every
+	// vertex in a conservative advertised range is both unnecessary and can run
+	// past the actual VBO slice.  The index data is authoritative for this draw.
+	GLuint minVertexIndex = 0;
+	GLuint maxVertexIndex = count > 0 ? static_cast<GLuint>(count - 1) : 0;
+	if (indices && count > 0) {
+		minVertexIndex = UINT_MAX;
+		maxVertexIndex = 0;
+		for (GLsizei i = 0; i < count; ++i) {
+			const GLuint index = static_cast<GLuint>(indices[i]);
+			if (index < minVertexIndex) minVertexIndex = index;
+			if (index > maxVertexIndex) maxVertexIndex = index;
+		}
+	}
+	if (D3DGlobal.settings.game.yaeFallbackCompatibility && indices &&
+		(maxVertexIndex > USHRT_MAX || start != minVertexIndex || end != maxVertexIndex)) {
+		static unsigned int yaeIndexRangeLogs = 0;
+		if (yaeIndexRangeLogs++ < 32) {
+			logPrintfLevel(QGL_LOG_INFO, "YAE_INDEX_RANGE",
+				"count=%d advertised=%u..%u actual=%u..%u d3dIndexBits=%u",
+				count, start, end, minVertexIndex, maxVertexIndex,
+				maxVertexIndex > USHRT_MAX ? 32u : 16u);
+		}
+	}
+
 	//Set index buffer size
-	int currentIndexBuffer = SetMinimumIndexBufferSize( m_primitiveIndexCount );
+	int currentIndexBuffer = SetMinimumIndexBufferSize( m_primitiveIndexCount, maxVertexIndex );
 
 	//Lock index buffer
 	GLvoid *pLockedIndices = nullptr;
@@ -755,9 +800,6 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 		QGL_SET_ERROR(hr);
 		return;
 	}
-
-	GLuint minVertexIndex;
-	GLuint maxVertexIndex;
 
 	if (!indices) {
 		//Generate indices by ourselves
@@ -777,14 +819,9 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 		if ( mode == GL_LINE_LOOP ) {
 			SetIndex(pLockedIndices, dstIndex, 0);
 		}
-		minVertexIndex = 0;
-		maxVertexIndex = count-1;
 	} else {
 		//Use provided index data
 		//Fill index buffer with data
-		minVertexIndex = UINT_MAX;
-		maxVertexIndex = 0;
-
 		GLuint dstIndex = 0;
 		for (GLsizei i = 0; i < count; ++i) {
 			if ((mode == GL_QUADS) && ((i % 4) == 3)) {
@@ -795,13 +832,6 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 			//add index i
 			SetIndex<T>(pLockedIndices, dstIndex, indices[i]);
 			++dstIndex;
-
-			if (!m_lockCount && !bValidRange) {
-				if (indices[i] < minVertexIndex)
-					minVertexIndex = indices[i];
-				if (indices[i] > maxVertexIndex)
-					maxVertexIndex = indices[i];
-			}
 		}
 
 		if ( mode == GL_LINE_LOOP ) {
@@ -813,7 +843,7 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 	m_pIndexBuffer[currentIndexBuffer][m_swapFrame]->Unlock();
 
 	if (!m_lockCount) {
-		if (bValidRange)
+		if (!indices)
 			Lock( start, end );
 		else
 			Lock( minVertexIndex, maxVertexIndex );

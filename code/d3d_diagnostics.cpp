@@ -7,10 +7,12 @@
 #include "d3d_texture.hpp"
 #include "d3d_buffer.hpp"
 #include "d3d_extension.hpp"
+#include "d3d_arb_program.hpp"
 #include "d3d_matrix_stack.hpp"
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <string>
 
 namespace {
@@ -64,6 +66,10 @@ namespace {
 	static char gProjectionState[160] = "unavailable";
 	static std::map<std::string, uint64_t> gD3DFailures;
 	static std::map<std::string, uint64_t> gUnsupportedEnums;
+	static std::set<uint32_t> gYAEWorldDrawStates;
+	static std::set<GLuint> gYAEDumpedTextures;
+	static unsigned int gYAEPostEffectDraws = 0;
+	static bool gYAEPostEffectAfterDumped = false;
 
 	const char *GLModeName( unsigned int mode )
 	{
@@ -121,6 +127,218 @@ namespace {
 			hash *= 16777619u;
 		}
 		return hash;
+	}
+
+	void MixHash( uint32_t& hash, const void *data, size_t length )
+	{
+		const unsigned char *bytes = static_cast<const unsigned char *>(data);
+		for (size_t i = 0; i < length; ++i) {
+			hash ^= bytes[i];
+			hash *= 16777619u;
+		}
+	}
+
+	int ResolveSampleVertex( int first, unsigned int indexType, const void *indices )
+	{
+		if (!indexType) return first;
+		size_t size = indexType == GL_UNSIGNED_BYTE ? 1 : indexType == GL_UNSIGNED_SHORT ? 2 :
+			indexType == GL_UNSIGNED_INT ? 4 : 0;
+		if (!size) return first;
+		const GLubyte *resolved = D3DBuffer_ResolvePointer(
+			D3DBuffer_GetBinding(GL_ELEMENT_ARRAY_BUFFER_ARB), indices, size);
+		if (!resolved) return first;
+		if (indexType == GL_UNSIGNED_BYTE) return *resolved;
+		if (indexType == GL_UNSIGNED_SHORT) return *reinterpret_cast<const GLushort *>(resolved);
+		return static_cast<int>(*reinterpret_cast<const GLuint *>(resolved));
+	}
+
+	void LogArraySample( const char *name, const D3DVAInfo& info, int vertex )
+	{
+		const size_t componentBytes = info.elementType == GL_FLOAT ? sizeof(GLfloat) : 0;
+		const size_t packedBytes = componentBytes * static_cast<size_t>(info.elementCount);
+		const size_t stride = info.stride > 0 ? static_cast<size_t>(info.stride) : packedBytes;
+		const size_t required = componentBytes ? static_cast<size_t>(vertex) * stride + packedBytes : 0;
+		const GLubyte *base = componentBytes ?
+			D3DBuffer_ResolvePointer(info.bufferBinding, info.data, required) : nullptr;
+		if (!base) {
+			logPrintfLevel(QGL_LOG_INFO, "YAE_DRAW_CENSUS",
+				"%s buffer=%u offset=%p size=%d type=0x%X stride=%d sample=unavailable",
+				name, info.bufferBinding, info.data, info.elementCount, info.elementType, info.stride);
+			return;
+		}
+		const GLfloat *value = reinterpret_cast<const GLfloat *>(base + static_cast<size_t>(vertex) * stride);
+		logPrintfLevel(QGL_LOG_INFO, "YAE_DRAW_CENSUS",
+			"%s buffer=%u offset=%p size=%d type=0x%X stride=%d v%d=(%.6f,%.6f,%.6f,%.6f)",
+			name, info.bufferBinding, info.data, info.elementCount, info.elementType, info.stride, vertex,
+			info.elementCount > 0 ? value[0] : 0.0f, info.elementCount > 1 ? value[1] : 0.0f,
+			info.elementCount > 2 ? value[2] : 0.0f, info.elementCount > 3 ? value[3] : 1.0f);
+	}
+
+	void CensusYAEWorldDraw( const char *api, unsigned int mode, int count, int first,
+		unsigned int indexType, const void *indices )
+	{
+		if (!D3DGlobal.settings.game.yaeFallbackCompatibility || gDiagnostics.frameId < 250 ||
+			!D3DGlobal.projectionMatrixStack || D3DGlobal_IsOrthoProjection() ||
+			!D3DState.EnableState.depthTestEnabled ||
+			!(D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_VERTEX_BIT) ||
+			gYAEWorldDrawStates.size() >= 64)
+			return;
+
+		uint32_t signature = 2166136261u;
+		MixHash(signature, &D3DState.ClientVertexArrayState.vertexArrayEnable,
+			sizeof(D3DState.ClientVertexArrayState.vertexArrayEnable));
+		MixHash(signature, &D3DState.EnableState.textureEnabled,
+			sizeof(D3DState.EnableState.textureEnabled));
+		MixHash(signature, &D3DState.EnableState.textureTargetEnabled,
+			sizeof(D3DState.EnableState.textureTargetEnabled));
+		MixHash(signature, &D3DState.EnableState.vertexProgramEnabled,
+			sizeof(D3DState.EnableState.vertexProgramEnabled));
+		MixHash(signature, &D3DState.EnableState.fragmentProgramEnabled,
+			sizeof(D3DState.EnableState.fragmentProgramEnabled));
+		for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
+			MixHash(signature, &D3DState.TextureState.TextureCombineState[unit],
+				sizeof(D3DState.TextureState.TextureCombineState[unit]));
+			for (int target = 0; target < D3D_TEXTARGET_MAX; ++target) {
+				D3DTextureObject *texture = D3DState.TextureState.currentTexture[unit][target];
+				GLuint id = texture ? texture->GetGLIndex() : 0;
+				MixHash(signature, &id, sizeof(id));
+			}
+		}
+		if (!gYAEWorldDrawStates.insert(signature).second) return;
+
+		const int sampleVertex = ResolveSampleVertex(first, indexType, indices);
+		logPrintfLevel(QGL_LOG_INFO, "YAE_DRAW_CENSUS",
+			"state=%u/64 signature=%08X frame=%llu draw=%llu api=%s mode=0x%X count=%d sampleVertex=%d arrayMask=0x%08X programs=%u/%u enabled=%u/%u",
+			(unsigned int)gYAEWorldDrawStates.size(), signature,
+			static_cast<unsigned long long>(gDiagnostics.frameId),
+			static_cast<unsigned long long>(gDiagnostics.drawId), api, mode, count, sampleVertex,
+			D3DState.ClientVertexArrayState.vertexArrayEnable,
+			ARB_GetBoundVertexProgram(), ARB_GetBoundFragmentProgram(),
+			D3DState.EnableState.vertexProgramEnabled, D3DState.EnableState.fragmentProgramEnabled);
+		LogArraySample("vertex", D3DState.ClientVertexArrayState.vertexInfo, sampleVertex);
+		for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
+			const bool coordEnabled = VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, unit);
+			if (!D3DState.EnableState.textureEnabled[unit] && !coordEnabled) continue;
+			GLuint textureId = 0;
+			int chosenTarget = -1;
+			unsigned int targetMask = 0;
+			for (int target = 0; target < D3D_TEXTARGET_MAX; ++target) {
+				if (D3DState.EnableState.textureTargetEnabled[unit][target]) {
+					targetMask |= 1u << target;
+					D3DTextureObject *texture = D3DState.TextureState.currentTexture[unit][target];
+					if (texture) { textureId = texture->GetGLIndex(); chosenTarget = target; }
+				}
+			}
+			const auto& combiner = D3DState.TextureState.TextureCombineState[unit];
+			DWORD textureTransformFlags = D3DTTFF_DISABLE;
+			DWORD textureCoordinateIndex = 0;
+			D3DGlobal.pDevice->GetTextureStageState(unit, D3DTSS_TEXTURETRANSFORMFLAGS,
+				&textureTransformFlags);
+			D3DGlobal.pDevice->GetTextureStageState(unit, D3DTSS_TEXCOORDINDEX,
+				&textureCoordinateIndex);
+			logPrintfLevel(QGL_LOG_INFO, "YAE_DRAW_CENSUS",
+				"tmu=%d enabled=%u targetMask=0x%X texture=%u target=%d size=%ux%u coord=%s d3dCoord=%u transform=0x%X env=0x%X rgbOp=0x%X rgbArgs=0x%X/0x%X/0x%X scale=%u",
+				unit, D3DState.EnableState.textureEnabled[unit], targetMask, textureId, chosenTarget,
+				chosenTarget >= 0 && D3DState.TextureState.currentTexture[unit][chosenTarget] ?
+					D3DState.TextureState.currentTexture[unit][chosenTarget]->GetWidth() : 0,
+				chosenTarget >= 0 && D3DState.TextureState.currentTexture[unit][chosenTarget] ?
+					D3DState.TextureState.currentTexture[unit][chosenTarget]->GetHeight() : 0,
+				coordEnabled ? "YES" : "NO", textureCoordinateIndex, textureTransformFlags,
+				combiner.envMode, combiner.colorOp,
+				combiner.colorArg1, combiner.colorArg2, combiner.colorArg3, combiner.colorScale);
+
+			// Capture the first static-world material inputs after the level has settled.
+			// D3DX performs the DXT decompression, making the dump useful for checking
+			// whether corruption happened during upload rather than during sampling.
+			if (D3DState.EnableState.vertexProgramEnabled && ARB_GetBoundVertexProgram() == 6 &&
+				chosenTarget >= 0) {
+				D3DTextureObject *texture = D3DState.TextureState.currentTexture[unit][chosenTarget];
+				if (texture && texture->GetTarget() != GL_TEXTURE_CUBE_MAP_ARB &&
+					(texture->GetGLIndex() == 1 || texture->GetGLIndex() == 209) &&
+					gYAEDumpedTextures.insert(texture->GetGLIndex()).second) {
+					_mkdir("QindieGL-dump");
+					_mkdir("QindieGL-dump\\textures");
+					char filename[MAX_PATH];
+					sprintf_s(filename, "QindieGL-dump\\textures\\yae_id_%u_%ux%u.png",
+						texture->GetGLIndex(), texture->GetWidth(), texture->GetHeight());
+					const HRESULT dumpResult = D3DXSaveTextureToFileA(filename, D3DXIFF_PNG,
+						texture->GetD3DTexture(), nullptr);
+					logPrintfLevel(QGL_LOG_INFO, "YAE_TEXTURE_DUMP",
+						"texture=%u tmu=%d file=%s result=0x%08X",
+						texture->GetGLIndex(), unit, filename, dumpResult);
+				}
+			}
+			if (coordEnabled) {
+				char name[24];
+				sprintf_s(name, "texcoord%d", unit);
+				LogArraySample(name, D3DState.ClientVertexArrayState.texCoordInfo[unit], sampleVertex);
+			}
+		}
+	}
+
+	void TraceYAEPostEffectDraw( const char *api, unsigned int mode, int count, int first,
+		unsigned int indexType, const void *indices )
+	{
+		if (!D3DGlobal.settings.game.yaeFallbackCompatibility ||
+			!D3DState.EnableState.fragmentProgramEnabled ||
+			ARB_GetBoundFragmentProgram() != 8 || gYAEPostEffectDraws >= 96)
+			return;
+
+		++gYAEPostEffectDraws;
+		const int sampleVertex = ResolveSampleVertex(first, indexType, indices);
+		logPrintfLevel(QGL_LOG_INFO, "YAE_POST_EFFECT",
+			"sample=%u frame=%llu draw=%llu api=%s mode=0x%X count=%d vertex=%d blend=%u glBlend=0x%X/0x%X d3dBlend=%u/%u op=%u color=0x%08X arrays=0x%08X programs=%u/%u enabled=%u/%u requiredTexcoords=%d",
+			gYAEPostEffectDraws,
+			static_cast<unsigned long long>(gDiagnostics.frameId),
+			static_cast<unsigned long long>(gDiagnostics.drawId), api, mode, count, sampleVertex,
+			D3DState.EnableState.alphaBlendEnabled,
+			D3DState.ColorBufferState.glBlendSrc, D3DState.ColorBufferState.glBlendDst,
+			D3DState.ColorBufferState.alphaBlendSrcFunc,
+			D3DState.ColorBufferState.alphaBlendDstFunc,
+			D3DState.ColorBufferState.alphaBlendOp, D3DState.CurrentState.currentColor,
+			D3DState.ClientVertexArrayState.vertexArrayEnable,
+			ARB_GetBoundVertexProgram(), ARB_GetBoundFragmentProgram(),
+			D3DState.EnableState.vertexProgramEnabled,
+			D3DState.EnableState.fragmentProgramEnabled,
+			ARB_GetRequiredVertexTexCoordCount());
+
+		if (gYAEPostEffectDraws == 1) {
+			_mkdir("QindieGL-dump");
+			_mkdir("QindieGL-dump\\textures");
+			D3DTextureObject *source = D3DState.TextureState.currentTexture[0][D3D_TEXTARGET_2D];
+			const HRESULT sourceResult = source ? D3DXSaveTextureToFileA(
+				"QindieGL-dump\\textures\\yae_post_source.png", D3DXIFF_PNG,
+				source->GetD3DTexture(), nullptr) : E_FAIL;
+			logPrintfLevel(QGL_LOG_INFO, "YAE_POST_EFFECT",
+				"source dump result=0x%08X file=QindieGL-dump\\textures\\yae_post_source.png",
+				sourceResult);
+		}
+
+		for (int unit : { 0, 1, 2, 4 }) {
+			D3DTextureObject *texture = D3DState.TextureState.currentTexture[unit][D3D_TEXTARGET_2D];
+			DWORD transformFlags = D3DTTFF_DISABLE;
+			D3DGlobal.pDevice->GetTextureStageState(unit, D3DTSS_TEXTURETRANSFORMFLAGS,
+				&transformFlags);
+			D3DStateMatrix& matrix = D3DGlobal.textureMatrixStack[unit]->top();
+			const D3DXMATRIX& m = *static_cast<const D3DXMATRIX *>(matrix);
+			logPrintfLevel(QGL_LOG_INFO, "YAE_POST_EFFECT",
+				"tmu=%d enabled=%u texture=%u size=%ux%u format=%d coord=(%.3f,%.3f,%.3f,%.3f) matrixIdentity=%u transform=0x%X matrix=[%.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f]",
+				unit, D3DState.EnableState.textureEnabled[unit], texture ? texture->GetGLIndex() : 0,
+				texture ? texture->GetWidth() : 0, texture ? texture->GetHeight() : 0,
+				texture ? texture->GetInternalFormat() : -1,
+				D3DState.CurrentState.currentTexCoord[unit][0],
+				D3DState.CurrentState.currentTexCoord[unit][1],
+				D3DState.CurrentState.currentTexCoord[unit][2],
+				D3DState.CurrentState.currentTexCoord[unit][3],
+				matrix.is_identity(), transformFlags,
+				m._11, m._12, m._13, m._14, m._21, m._22, m._23, m._24,
+				m._31, m._32, m._33, m._34, m._41, m._42, m._43, m._44);
+			if (VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, unit)) {
+				char name[24];
+				sprintf_s(name, "postTexcoord%d", unit);
+				LogArraySample(name, D3DState.ClientVertexArrayState.texCoordInfo[unit], sampleVertex);
+			}
+		}
 	}
 
 	void SnapshotState()
@@ -423,6 +641,8 @@ void QGL_DiagnosticsInitialize()
 	strcpy_s(gProjectionState, "unavailable");
 	gD3DFailures.clear();
 	gUnsupportedEnums.clear();
+	gYAEWorldDrawStates.clear();
+	gYAEDumpedTextures.clear();
 	gPreviousExceptionFilter = SetUnhandledExceptionFilter(QGL_UnhandledExceptionFilter);
 	gExceptionFilterInstalled = true;
 	QGL_DiagnosticsRecordEvent(false, "LIFECYCLE", "diagnostics initialized");
@@ -479,6 +699,8 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 		api ? api : "<unknown>", GLModeName(mode), mode, count, first, indexType, indices);
 
 	SnapshotState();
+	CensusYAEWorldDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
+	TraceYAEPostEffectDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
 	if (gDiagnostics.debugDumpDraw >= 0
 		&& static_cast<int>(gDiagnostics.frameId) == gDiagnostics.debugDumpFrame
 		&& static_cast<int>(gDiagnostics.drawId) == gDiagnostics.debugDumpDraw) {
@@ -493,6 +715,37 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 		return false;
 	}
 	return true;
+}
+
+void QGL_DiagnosticsAfterDraw()
+{
+	if (gYAEPostEffectAfterDumped || !D3DGlobal.settings.game.yaeFallbackCompatibility ||
+		!D3DState.EnableState.fragmentProgramEnabled || ARB_GetBoundFragmentProgram() != 8)
+		return;
+
+	gYAEPostEffectAfterDumped = true;
+	_mkdir("QindieGL-dump");
+	_mkdir("QindieGL-dump\\textures");
+	LPDIRECT3DSURFACE9 renderTarget = nullptr;
+	LPDIRECT3DSURFACE9 systemCopy = nullptr;
+	HRESULT result = D3DGlobal.pDevice->GetRenderTarget(0, &renderTarget);
+	if (SUCCEEDED(result) && renderTarget) {
+		D3DSURFACE_DESC desc = {};
+		result = renderTarget->GetDesc(&desc);
+		if (SUCCEEDED(result))
+			result = D3DGlobal.pDevice->CreateOffscreenPlainSurface(desc.Width, desc.Height,
+				desc.Format, D3DPOOL_SYSTEMMEM, &systemCopy, nullptr);
+		if (SUCCEEDED(result))
+			result = D3DGlobal.pDevice->GetRenderTargetData(renderTarget, systemCopy);
+		if (SUCCEEDED(result))
+			result = D3DXSaveSurfaceToFileA(
+				"QindieGL-dump\\textures\\yae_post_result.png", D3DXIFF_PNG,
+				systemCopy, nullptr, nullptr);
+	}
+	if (systemCopy) systemCopy->Release();
+	if (renderTarget) renderTarget->Release();
+	logPrintfLevel(QGL_LOG_INFO, "YAE_POST_EFFECT",
+		"result dump result=0x%08X file=QindieGL-dump\\textures\\yae_post_result.png", result);
 }
 
 void QGL_DiagnosticsEndFrame( long presentResult )
@@ -633,6 +886,7 @@ void QGL_DiagnosticsDumpCapabilityReport()
 	logPrintf("  DrawCallFastPath: %u\n", D3DGlobal.settings.drawcallFastPath);
 	logPrintf("  EnableARBProgramsStub: %u\n", D3DGlobal.settings.enableARBProgramsStub);
 	logPrintf("  YAEFallbackCompatibility: %u\n", D3DGlobal.settings.game.yaeFallbackCompatibility);
+	logPrintf("  YAECompileARBPrograms: %u\n", D3DGlobal.settings.game.yaeCompileARBPrograms);
 	logPrintf("  MultiSample: %u\n", D3DGlobal.settings.multisample);
 	logPrintf("  CrashDiagnostics: %u\n", D3DGlobal.settings.crashDiagnostics);
 	logPrintf("  DebugMaxDrawCall: %d\n", D3DGlobal.settings.debugMaxDrawCall);

@@ -32,6 +32,7 @@ uint64_t QGL_DiagnosticsGetDrawId();
 // be observed but not submitted to D3D9.
 bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 	int first, unsigned int indexType, const void *indices );
+void QGL_DiagnosticsAfterDraw();
 void QGL_DiagnosticsEndFrame( long presentResult );
 
 void QGL_DiagnosticsRecordEvent( bool d3dEvent, const char *category, const char *fmt, ... );

@@ -45,6 +45,7 @@ protected:
 	void EnsureBufferSize( int numVerts );
 	UINT ReorderBufferToFVF( int fvf, int fvfsz );
 	void SetupTexCoords( D3DIMBufferVertex *pVertex, int stage );
+	void TraceYAEPostImmediateComposite();
 
 private:
 	D3DIMBufferVertex *m_pBuffer;

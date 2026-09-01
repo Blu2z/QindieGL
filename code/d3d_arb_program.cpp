@@ -23,6 +23,7 @@
 #include "d3d_state.hpp"
 #include "d3d_utils.hpp"
 #include "d3d_matrix_stack.hpp"
+#include "d3d_texture.hpp"
 #include "d3d_arb_program.hpp"
 
 #include <algorithm>
@@ -30,6 +31,8 @@
 #include <cstring>
 #include <cctype>
 #include <cstdio>
+#include <cstdint>
+#include <direct.h>
 #include <map>
 
 //==================================================================================
@@ -37,6 +40,35 @@
 //==================================================================================
 static std::map<GLuint, ARBCompiledProgram*> gARBCompiledPrograms;
 static bool gARBShadersActive = false;
+static bool gARBVertexShaderActive = false;
+static bool gARBPixelShaderActive = false;
+
+static uint32_t HashARBProgram( const char* data, size_t length )
+{
+	uint32_t hash = 2166136261u;
+	for ( size_t i = 0; i < length; ++i ) {
+		hash ^= (unsigned char)data[i];
+		hash *= 16777619u;
+	}
+	return hash;
+}
+
+static std::string DumpARBProgramText( GLuint programId, GLenum target, uint32_t sourceHash,
+	const char* kind, const char* data, size_t length )
+{
+	_mkdir( "QindieGL-dump" );
+	_mkdir( "QindieGL-dump\\shaders" );
+	char path[256];
+	sprintf( path, "QindieGL-dump\\shaders\\%s_%03u_%08X.%s",
+		target == GL_VERTEX_PROGRAM_ARB ? "vp" : "fp", programId, sourceHash, kind );
+	FILE* file = nullptr;
+	if ( fopen_s( &file, path, "wb" ) == 0 && file ) {
+		fwrite( data, 1, length, file );
+		fclose( file );
+		return path;
+	}
+	return "";
+}
 
 ARBCompiledProgram* ARB_GetCompiledProgram( GLuint programId )
 {
@@ -51,6 +83,8 @@ void ARB_Cleanup()
 	}
 	gARBCompiledPrograms.clear();
 	gARBShadersActive = false;
+	gARBVertexShaderActive = false;
+	gARBPixelShaderActive = false;
 }
 
 void ARB_DeleteCompiledProgram( GLuint programId )
@@ -343,6 +377,44 @@ static ARBParamBinding ParseParamBinding( const std::string& binding )
 	return pb;
 }
 
+// Expand consecutive ARB bindings used by PARAM arrays.
+static void AppendExpandedParamBinding( const std::string& binding, std::vector<ARBParamBinding>& bindings )
+{
+	std::string b = TrimString( binding );
+	if ( b.empty() ) return;
+
+	size_t range = b.find( ".." );
+	if ( range != std::string::npos ) {
+		size_t open = b.rfind( '[', range );
+		size_t close = b.find( ']', range );
+		if ( open != std::string::npos && close != std::string::npos ) {
+			int first = atoi( b.substr( open + 1, range - open - 1 ).c_str() );
+			int last = atoi( b.substr( range + 2, close - range - 2 ).c_str() );
+			if ( last >= first ) {
+				std::string prefix = b.substr( 0, open );
+				std::string suffix = b.substr( close + 1 );
+				for ( int index = first; index <= last; ++index ) {
+					char expanded[256];
+					sprintf( expanded, "%s[%d]%s", prefix.c_str(), index, suffix.c_str() );
+					bindings.push_back( ParseParamBinding( expanded ) );
+				}
+				return;
+			}
+		}
+	}
+
+	ARBParamBinding parsed = ParseParamBinding( b );
+	if ( parsed.type == PARAM_STATE_MATRIX_ROW && parsed.index < 0 ) {
+		for ( int row = 0; row < 4; ++row ) {
+			ARBParamBinding rowBinding = parsed;
+			rowBinding.index = row;
+			bindings.push_back( rowBinding );
+		}
+		return;
+	}
+	bindings.push_back( parsed );
+}
+
 //==================================================================================
 // PARSER: ARB assembly → ARBParsedProgram
 //==================================================================================
@@ -442,6 +514,22 @@ bool ARB_ParseProgram( const char* source, int length, GLenum target, ARBParsedP
 
 		// PARAM declaration: PARAM name = binding or PARAM name[n] = { binding, ... }
 		if ( line.find( "PARAM" ) == 0 && ( line.size() > 5 && ( line[5] == ' ' || line[5] == '\t' ) ) ) {
+			// PARAM initializers can span physical lines. SplitLines treats ';' as
+			// an instruction delimiter, so join continuations until braces balance.
+			int braceDepth = 0;
+			for ( char c : line ) {
+				if ( c == '{' ) ++braceDepth;
+				else if ( c == '}' ) --braceDepth;
+			}
+			while ( braceDepth > 0 && lineIdx + 1 < lines.size() ) {
+				std::string continuation = TrimString( StripComment( lines[++lineIdx] ) );
+				if ( !continuation.empty() ) line += " " + continuation;
+				for ( char c : continuation ) {
+					if ( c == '{' ) ++braceDepth;
+					else if ( c == '}' ) --braceDepth;
+				}
+			}
+
 			std::string rest = TrimString( line.substr( 5 ) );
 			if ( !rest.empty() && rest.back() == ';' ) rest.pop_back();
 			size_t eq = rest.find( '=' );
@@ -462,6 +550,23 @@ bool ARB_ParseProgram( const char* source, int length, GLenum target, ARBParsedP
 					}
 				}
 
+				std::vector<ARBParamBinding> bindings;
+				if ( arraySize > 0 && bindingPart.size() >= 2 &&
+					 bindingPart.front() == '{' && bindingPart.back() == '}' ) {
+					std::string initializer = bindingPart.substr( 1, bindingPart.size() - 2 );
+					std::vector<std::string> entries = SplitOperands( initializer );
+					for ( const std::string& entry : entries )
+						AppendExpandedParamBinding( entry, bindings );
+				} else {
+					AppendExpandedParamBinding( bindingPart, bindings );
+				}
+				out.paramMap[paramName] = bindings;
+				if ( arraySize > 0 && arraySize != (int)bindings.size() ) {
+					logPrintf( "WARNING: ARB PARAM %s declares %d bindings but parsed %u\n",
+						paramName.c_str(), arraySize, (unsigned int)bindings.size() );
+				}
+
+#if 0 // Replaced by the generic array/range expansion above.
 				// Check if it's a matrix range: state.matrix.*.row[0..3]
 				if ( bindingPart.find( ".row[" ) != std::string::npos && bindingPart.find( ".." ) != std::string::npos ) {
 					// e.g. state.matrix.mvp.row[0..3] → 4 row bindings
@@ -506,6 +611,7 @@ bool ARB_ParseProgram( const char* source, int length, GLenum target, ARBParsedP
 					bindings.push_back( ParseParamBinding( bindingPart ) );
 					out.paramMap[paramName] = bindings;
 				}
+#endif
 			}
 			continue;
 		}
@@ -952,6 +1058,33 @@ static std::string FormatOperandHLSL( const ARBOperand& op, const ARBParsedProgr
 	return base;
 }
 
+// HLSL truncates vectors from x, while an ARB destination mask selects the
+// corresponding source components. Preserve that rule for component-wise ops.
+static std::string FormatOperandForMaskHLSL( const ARBOperand& op, const ARBParsedProgram& p,
+	const std::string& writeMask )
+{
+	ARBOperand masked = op;
+	if ( !writeMask.empty() && writeMask != "xyzw" ) {
+		if ( masked.swizzle.empty() ) {
+			masked.swizzle = writeMask;
+		} else if ( masked.swizzle.size() > 1 ) {
+			std::string selected;
+			for ( char component : writeMask ) {
+				int index = component == 'x' ? 0 : component == 'y' ? 1 : component == 'z' ? 2 : 3;
+				selected += masked.swizzle[index < (int)masked.swizzle.size() ? index : (int)masked.swizzle.size() - 1];
+			}
+			masked.swizzle = selected;
+		}
+	}
+	return FormatOperandHLSL( masked, p, false );
+}
+
+static std::string ApplyResultMaskHLSL( const std::string& expression, const std::string& writeMask )
+{
+	if ( writeMask.empty() || writeMask == "xyzw" ) return expression;
+	return "(" + expression + ")." + writeMask;
+}
+
 // Format a write-masked destination assignment
 static std::string FormatDestHLSL( const ARBOperand& op, const ARBParsedProgram& p )
 {
@@ -988,7 +1121,9 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 
 	// Matrix constants
 	for ( auto& mr : p.usedMatrices ) {
-		hlsl << "float4x4 " << MatrixConstName( mr ) << ";\n";
+		// Store explicit ARB rows. This avoids HLSL/D3DX matrix packing and
+		// transpose conventions leaking into state.matrix.*.row[n].
+		hlsl << "float4 " << MatrixConstName( mr ) << "[4];\n";
 	}
 
 	// State param constants (material, lights, fog, lightmodel)
@@ -1023,6 +1158,8 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 				else if ( tit->second == "RECT" ) samplerType = "sampler2D"; // RECT → 2D on D3D9
 			}
 			hlsl << samplerType << " _tex" << unit << " : register(s" << unit << ");\n";
+			if ( tit != p.texTargetPerUnit.end() && tit->second == "RECT" )
+				hlsl << "float2 _rectScale" << unit << ";\n";
 		}
 	}
 	hlsl << "\n";
@@ -1113,7 +1250,10 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 		}
 		if ( !mvpName.empty() ) {
 			hlsl << "\t// OPTION ARB_position_invariant\n";
-			hlsl << "\to.position = mul(" << mvpName << ", v.position);\n\n";
+			hlsl << "\to.position = float4(dot(v.position, " << mvpName << "[0]), "
+				 << "dot(v.position, " << mvpName << "[1]), "
+				 << "dot(v.position, " << mvpName << "[2]), "
+				 << "dot(v.position, " << mvpName << "[3]));\n\n";
 		}
 	}
 
@@ -1125,33 +1265,41 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 		std::string s0 = ( inst.srcCount > 0 ) ? FormatOperandHLSL( inst.src[0], p, false ) : "";
 		std::string s1 = ( inst.srcCount > 1 ) ? FormatOperandHLSL( inst.src[1], p, false ) : "";
 		std::string s2 = ( inst.srcCount > 2 ) ? FormatOperandHLSL( inst.src[2], p, false ) : "";
+		std::string m0 = ( inst.srcCount > 0 ) ? FormatOperandForMaskHLSL( inst.src[0], p, inst.dst.swizzle ) : "";
+		std::string m1 = ( inst.srcCount > 1 ) ? FormatOperandForMaskHLSL( inst.src[1], p, inst.dst.swizzle ) : "";
+		std::string m2 = ( inst.srcCount > 2 ) ? FormatOperandForMaskHLSL( inst.src[2], p, inst.dst.swizzle ) : "";
 
 		const std::string& op = inst.opcode;
 
 		if ( op == "MOV" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( s0, inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( m0, inst.saturate ) << ";\n";
 		}
 		else if ( op == "ADD" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + s0 + " + " + s1 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + m0 + " + " + m1 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "SUB" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + s0 + " - " + s1 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + m0 + " - " + m1 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "MUL" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + s0 + " * " + s1 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + m0 + " * " + m1 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "MAD" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + s0 + " * " + s1 + " + " + s2 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + m0 + " * " + m1 + " + " + m2 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "DP3" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "dot(float3(" + s0 + "), float3(" + s1 + "))", inst.saturate ) << ";\n";
+			std::string d0 = FormatOperandForMaskHLSL( inst.src[0], p, "xyz" );
+			std::string d1 = FormatOperandForMaskHLSL( inst.src[1], p, "xyz" );
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "dot(" + d0 + ", " + d1 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "DP4" ) {
 			hlsl << "\t" << dst << " = " << MaybeSaturate( "dot(" + s0 + ", " + s1 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "DPH" ) {
 			// DPH: dot(src0.xyz, src1.xyz) + src1.w
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "(dot(float3(" + s0 + "), float3(" + s1 + ")) + (" + s1 + ").w)", inst.saturate ) << ";\n";
+			std::string d0 = FormatOperandForMaskHLSL( inst.src[0], p, "xyz" );
+			std::string d1 = FormatOperandForMaskHLSL( inst.src[1], p, "xyz" );
+			std::string d1w = FormatOperandForMaskHLSL( inst.src[1], p, "w" );
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "(dot(" + d0 + ", " + d1 + ") + " + d1w + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "DST" ) {
 			std::string expr = "float4(1.0, (" + s0 + ").y * (" + s1 + ").y, (" + s0 + ").z, (" + s1 + ").w)";
@@ -1166,27 +1314,27 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 			hlsl << "\t" << dst << " = " << MaybeSaturate( "rsqrt(abs(" + s0 + "))", inst.saturate ) << ";\n";
 		}
 		else if ( op == "MAX" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "max(" + s0 + ", " + s1 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "max(" + m0 + ", " + m1 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "MIN" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "min(" + s0 + ", " + s1 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "min(" + m0 + ", " + m1 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "SGE" ) {
 			// SGE: per-component (src0 >= src1) ? 1.0 : 0.0
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "step(" + s1 + ", " + s0 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "step(" + m1 + ", " + m0 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "SLT" ) {
 			// SLT: per-component (src0 < src1) ? 1.0 : 0.0
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "(1.0 - step(" + s1 + ", " + s0 + "))", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "(1.0 - step(" + m1 + ", " + m0 + "))", inst.saturate ) << ";\n";
 		}
 		else if ( op == "ABS" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "abs(" + s0 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "abs(" + m0 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "FLR" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "floor(" + s0 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "floor(" + m0 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "FRC" ) {
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "frac(" + s0 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "frac(" + m0 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "EX2" ) {
 			hlsl << "\t" << dst << " = " << MaybeSaturate( "exp2((" + s0 + ").x)", inst.saturate ) << ";\n";
@@ -1234,11 +1382,11 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 		}
 		else if ( op == "CMP" ) {
 			// CMP: per-component, if src0 < 0 then src1 else src2 (src0 >= 0 → src2)
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + s0 + " < 0 ? " + s1 + " : " + s2 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "(" + m0 + " < 0 ? " + m1 + " : " + m2 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "LRP" ) {
 			// LRP: dst = lerp(src2, src1, src0) = src0 * src1 + (1-src0) * src2
-			hlsl << "\t" << dst << " = " << MaybeSaturate( "lerp(" + s2 + ", " + s1 + ", " + s0 + ")", inst.saturate ) << ";\n";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( "lerp(" + m2 + ", " + m1 + ", " + m0 + ")", inst.saturate ) << ";\n";
 		}
 		else if ( op == "TEX" ) {
 			// TEX dst, coord, texture[n], target — use correct fetch function per target
@@ -1247,7 +1395,20 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 			std::string coordSwiz = ".xy";
 			if ( inst.texTarget == "3D" ) { texFn = "tex3D"; coordSwiz = ".xyz"; }
 			else if ( inst.texTarget == "CUBE" ) { texFn = "texCUBE"; coordSwiz = ".xyz"; }
-			hlsl << "\t" << dst << " = " << MaybeSaturate( texFn + "(" + buf + ", (" + s0 + ")" + coordSwiz + ")", inst.saturate ) << ";\n";
+			std::string coord = "(" + s0 + ")" + coordSwiz;
+			if ( inst.texTarget == "RECT" ) {
+				char scale[64]; sprintf( scale, "_rectScale%d", inst.texUnit );
+				// OpenGL rectangle coordinates use the framebuffer's lower-left
+				// origin.  CopyTextureSubLevel preserves the captured image in the
+				// D3D texture, whose sampling origin is upper-left, so normalize X
+				// directly and reflect Y around the texture height.  Without this,
+				// YAE's full-screen pickup effect displays the captured scene upside
+				// down and reads as an opaque replacement rather than a screen blur.
+				coord = "float2((" + coord + ").x * " + scale + ".x, "
+					"1.0 - (" + coord + ").y * " + scale + ".y)";
+			}
+			std::string fetch = texFn + "(" + buf + ", " + coord + ")";
+			hlsl << "\t" << dst << " = " << MaybeSaturate( ApplyResultMaskHLSL( fetch, inst.dst.swizzle ), inst.saturate ) << ";\n";
 		}
 		else if ( op == "TXP" ) {
 			// TXP: projective texture fetch
@@ -1282,11 +1443,11 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 		}
 		else if ( op == "SEQ" ) {
 			// SEQ: per-component (src0 == src1) ? 1.0 : 0.0
-			hlsl << "\t" << dst << " = (1.0 - abs(sign(" + s0 + " - " + s1 + ")));\n";
+			hlsl << "\t" << dst << " = (1.0 - abs(sign(" + m0 + " - " + m1 + ")));\n";
 		}
 		else if ( op == "SNE" ) {
 			// SNE: per-component (src0 != src1) ? 1.0 : 0.0
-			hlsl << "\t" << dst << " = abs(sign(" + s0 + " - " + s1 + "));\n";
+			hlsl << "\t" << dst << " = abs(sign(" + m0 + " - " + m1 + "));\n";
 		}
 		else {
 			hlsl << "\t// UNSUPPORTED: " << op << "\n";
@@ -1307,6 +1468,12 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 //==================================================================================
 bool ARB_CompileProgram( GLuint programId, GLenum target, const char* source, int length, std::string& errorString )
 {
+	uint32_t sourceHash = HashARBProgram( source, length );
+	std::string arbDumpPath = DumpARBProgramText( programId, target, sourceHash, "arb", source, length );
+	logPrintf( "ARB_CompileProgram: program %u (%s), %d source bytes, hash %08X, dump %s\n",
+		programId, target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", length, sourceHash,
+		arbDumpPath.empty() ? "FAILED" : arbDumpPath.c_str() );
+
 	// Delete previous compilation for this program
 	auto it = gARBCompiledPrograms.find( programId );
 	if ( it != gARBCompiledPrograms.end() ) {
@@ -1323,9 +1490,15 @@ bool ARB_CompileProgram( GLuint programId, GLenum target, const char* source, in
 
 	// Generate HLSL
 	std::string hlslSource = ARB_GenerateHLSL( parsed );
+	std::string hlslDumpPath = DumpARBProgramText( programId, target, sourceHash, "hlsl",
+		hlslSource.c_str(), hlslSource.size() );
+	logPrintf( "ARB_CompileProgram: generated %u HLSL bytes, dump %s\n",
+		(unsigned int)hlslSource.size(), hlslDumpPath.empty() ? "FAILED" : hlslDumpPath.c_str() );
 
+#if 0 // Full HLSL is stored in the dump file above.
 	logPrintf( "ARB_CompileProgram: program %u (%s) → HLSL:\n%s\n",
 		programId, target == GL_VERTEX_PROGRAM_ARB ? "VP" : "FP", hlslSource.c_str() );
+#endif
 
 	// Compile
 	ID3DXBuffer* shaderBuffer = nullptr;
@@ -1480,12 +1653,14 @@ static void SetProgramConstants( ARBCompiledProgram* prog, bool isVS )
 		if ( h ) {
 			D3DXMATRIX mat;
 			GetGLMatrix( mr, mat );
-			// ARB programs expect row-major matrix access (row[n] is a float4)
-			// D3D matrices are row-major in memory, but D3DXConstantTable::SetMatrix
-			// transposes for shader. We want the matrix stored so that
-			// row[0] = first row of the GL matrix. Use SetMatrixTranspose to avoid
-			// D3DX's automatic transposition.
-			ct->SetMatrixTranspose( dev, h, &mat );
+			// Matrix stacks contain the transpose of the conceptual OpenGL matrix
+			// (so D3D's row-vector fixed pipeline produces the same transform).
+			// ARB row[n] therefore corresponds to column n of this D3D matrix.
+			float rows[16];
+			for ( int row = 0; row < 4; ++row )
+				for ( int column = 0; column < 4; ++column )
+					rows[row * 4 + column] = mat.m[column][row];
+			ct->SetFloatArray( dev, h, rows, 16 );
 		}
 	}
 
@@ -1542,6 +1717,65 @@ static void SetProgramConstants( ARBCompiledProgram* prog, bool isVS )
 extern GLuint ARB_GetBoundVertexProgram();
 extern GLuint ARB_GetBoundFragmentProgram();
 
+int ARB_GetRequiredVertexTexCoordCount()
+{
+	int required = 0;
+	if ( D3DState.EnableState.vertexProgramEnabled ) {
+		ARBCompiledProgram* vp = ARB_GetCompiledProgram( ARB_GetBoundVertexProgram() );
+		if ( vp && vp->target == GL_VERTEX_PROGRAM_ARB && !vp->parsed.usedTexCoords.empty() )
+			required = *vp->parsed.usedTexCoords.rbegin() + 1;
+	}
+	if ( D3DState.EnableState.fragmentProgramEnabled ) {
+		ARBCompiledProgram* fp = ARB_GetCompiledProgram( ARB_GetBoundFragmentProgram() );
+		if ( fp && fp->target == GL_FRAGMENT_PROGRAM_ARB && !fp->parsed.usedTexCoords.empty() )
+			required = std::max( required, *fp->parsed.usedTexCoords.rbegin() + 1 );
+	}
+	return required;
+}
+
+static void SetProgramTextures( ARBCompiledProgram* fp )
+{
+	if ( !fp || !D3DGlobal.pDevice ) return;
+	for ( int unit : fp->parsed.usedTexUnits ) {
+		if ( unit < 0 || unit >= MAX_D3D_TMU ) continue;
+		int target = D3D_TEXTARGET_2D;
+		auto targetIt = fp->parsed.texTargetPerUnit.find( unit );
+		if ( targetIt != fp->parsed.texTargetPerUnit.end() ) {
+			if ( targetIt->second == "1D" ) target = D3D_TEXTARGET_1D;
+			else if ( targetIt->second == "3D" ) target = D3D_TEXTARGET_3D;
+			else if ( targetIt->second == "CUBE" ) target = D3D_TEXTARGET_CUBE;
+		}
+		D3DTextureObject* texture = D3DState.TextureState.currentTexture[unit][target];
+		D3DGlobal.pDevice->SetTexture( unit, texture ? texture->GetD3DTexture() : nullptr );
+		if ( !texture ) continue;
+		if ( targetIt != fp->parsed.texTargetPerUnit.end() && targetIt->second == "RECT" &&
+			fp->constants ) {
+			char constantName[64];
+			sprintf_s( constantName, "_rectScale%d", unit );
+			D3DXHANDLE scaleHandle = fp->constants->GetConstantByName( nullptr, constantName );
+			if ( scaleHandle ) {
+				const float rectangleScale[2] = {
+					texture->GetWidth() ? 1.0f / texture->GetWidth() : 1.0f,
+					texture->GetHeight() ? 1.0f / texture->GetHeight() : 1.0f
+				};
+				fp->constants->SetFloatArray( D3DGlobal.pDevice, scaleHandle, rectangleScale, 2 );
+				PRINT_ONCE( "YAE_COMPAT: ARB RECT coordinates normalized for D3D9 texture %ux%u.\n",
+					texture->GetWidth(), texture->GetHeight() );
+			}
+		}
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_BORDERCOLOR, texture->GetD3DBorderColor() );
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_ADDRESSU, texture->GetD3DAddressMode( 0 ) );
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_ADDRESSV, texture->GetD3DAddressMode( 1 ) );
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_ADDRESSW, texture->GetD3DAddressMode( 2 ) );
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_MAXANISOTROPY, texture->GetAnisotropy() );
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_MAGFILTER, texture->GetD3DFilter( 0 ) );
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_MINFILTER, texture->GetD3DFilter( 1 ) );
+		D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_MIPFILTER, texture->GetD3DFilter( 2 ) );
+		if ( D3DGlobal.hD3DCaps.RasterCaps & D3DPRASTERCAPS_MIPMAPLODBIAS )
+			D3DGlobal.pDevice->SetSamplerState( unit, D3DSAMP_MIPMAPLODBIAS, UTIL_FloatToDword( texture->GetLodBias() ) );
+	}
+}
+
 bool ARB_ActivateShaders()
 {
 	LPDIRECT3DDEVICE9 dev = D3DGlobal.pDevice;
@@ -1560,17 +1794,36 @@ bool ARB_ActivateShaders()
 			dev->SetVertexShader( vp->vs );
 			SetProgramConstants( vp, true );
 			activated = true;
+			gARBVertexShaderActive = true;
+		} else {
+			dev->SetVertexShader( nullptr );
+			gARBVertexShaderActive = false;
 		}
+	} else {
+		dev->SetVertexShader( nullptr );
+		gARBVertexShaderActive = false;
 	}
 
 	if ( fpEnabled ) {
 		GLuint fpId = ARB_GetBoundFragmentProgram();
 		ARBCompiledProgram* fp = ARB_GetCompiledProgram( fpId );
 		if ( fp && fp->ps ) {
+			SetProgramTextures( fp );
 			dev->SetPixelShader( fp->ps );
 			SetProgramConstants( fp, false );
 			activated = true;
+			gARBPixelShaderActive = true;
+		} else {
+			dev->SetPixelShader( nullptr );
+			gARBPixelShaderActive = false;
 		}
+	} else {
+		if ( gARBPixelShaderActive ) {
+			D3DState.TextureState.textureSamplerStateChanged = TRUE;
+			D3DState.TextureState.textureEnableChanged = TRUE;
+		}
+		dev->SetPixelShader( nullptr );
+		gARBPixelShaderActive = false;
 	}
 
 	gARBShadersActive = activated;
@@ -1584,13 +1837,23 @@ void ARB_DeactivateShaders()
 	LPDIRECT3DDEVICE9 dev = D3DGlobal.pDevice;
 	if ( !dev ) return;
 
-	// Only restore NULL if we're not using ortho shader
-	if ( D3DState.EnableState.vertexProgramEnabled ) {
+	dev->SetPixelShader( nullptr );
+	if ( D3DGlobal.settings.game.orthovertexshader && D3DGlobal_IsOrthoProjection() ) {
+		dev->SetVertexShader( D3DGlobal.orthoShaders.vs );
+		D3DGlobal.orthoShaders.constants->SetMatrix( dev, "projectionMatrix", D3DGlobal.projectionMatrixStack->top() );
+		D3DGlobal.orthoShaders.constants->SetMatrix( dev, "worldMatrix", D3DGlobal.modelMatrixStack->top() );
+		D3DGlobal.orthoShaders.constants->SetMatrix( dev, "viewMatrix", D3DGlobal.viewMatrixStack->top() );
+		float texelOffset[4] = { -1.0f / D3DState.viewport.Width, 1.0f / D3DState.viewport.Height, 0.0f, 0.0f };
+		dev->SetVertexShaderConstantF( 0, texelOffset, 1 );
+	} else {
 		dev->SetVertexShader( nullptr );
 	}
-	if ( D3DState.EnableState.fragmentProgramEnabled ) {
-		dev->SetPixelShader( nullptr );
+	if ( gARBPixelShaderActive ) {
+		D3DState.TextureState.textureSamplerStateChanged = TRUE;
+		D3DState.TextureState.textureEnableChanged = TRUE;
 	}
 
 	gARBShadersActive = false;
+	gARBVertexShaderActive = false;
+	gARBPixelShaderActive = false;
 }
