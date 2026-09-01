@@ -908,6 +908,7 @@ void D3DVABuffer :: DrawPrimitive()
 		QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::DrawIndexedPrimitive", hr);
 		QGL_SET_ERROR(hr);
 	}
+	QGL_DiagnosticsAfterDraw();
 }
 
 //------------------------------------------------------------------------------------------------------
