@@ -385,3 +385,50 @@ peak VBO storage: 25175072 bytes
 Phase C's basic world-rendering acceptance target is therefore complete for the
 reference level. The known pickup post-effect alpha mismatch is deferred as an
 advanced effect and does not block the Phase D stability run.
+
+## Phase D - stability checkpoint
+
+Status: **15-minute gameplay and repeated save loading validated without a
+crash**.
+
+An earlier save/load and menu run ended with the Microsoft runtime dialog
+`R6025 - pure virtual function call`. QindieGL's crash report identified the
+actual first fault as an access violation in `D3DTextureObject::CopyTextureSubLevel`.
+DS2 had requested a 512x512 framebuffer copy immediately after `CreateTexture`
+failed with `E_OUTOFMEMORY`; release assertions did not stop the wrapper from
+dereferencing the resulting null D3D texture.
+
+The failure paths used while extending a texture from one level to a complete
+mip chain also leaked the newly-created COM texture and/or level surfaces when
+a get/copy operation failed. Those paths now release every temporary resource
+before returning. Texture image/subimage/copy entry points validate the backing
+D3D texture and return a GL error instead of invoking through a null pointer.
+Object-buffer growth no longer loses the original allocation when `realloc`
+fails, and deleting a currently bound texture detaches all wrapper bindings
+before destroying the object so no dangling texture pointers remain.
+
+The validating run repeated the original save/load scenario, exercised menus,
+performed two fullscreen device resets, and continued through more than 15
+minutes of stable gameplay. Its clean shutdown summary reported:
+
+```text
+frames: 35127
+draw calls: 16741901
+failed D3D calls: none
+device resets: 2
+ARB programs uploaded/compiled: 8/8
+ARB program compilation failures: 0
+peak VBO storage: 39930622 bytes
+```
+
+No texture allocation/recreation warning, skipped framebuffer copy,
+`GL_OUT_OF_MEMORY`, or new crash report occurred. Save loading, menus, and
+`Alt+Tab` all remained operational.
+
+Remaining observed rendering issues for follow-up:
+
+- some menu/drop-down background quads extend outside their intended clipping
+  area;
+- materials which scroll their texture coordinates in native OpenGL currently
+  appear static;
+- the pickup post-effect works but lacks the original translucent appearance.
