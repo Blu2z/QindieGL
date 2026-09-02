@@ -292,21 +292,49 @@ OPENGL_API void WINAPI glViewport( GLint x, GLint y, GLsizei width, GLsizei heig
 OPENGL_API void WINAPI glScissor( GLint x, GLint y, GLsizei width, GLsizei height )
 {
 	DL_RECORD_4( glScissor, x, y, width, height );
-	// translate from OpenGL bottom-left to D3D top-left
-	y = D3DGlobal.hCurrentMode.Height - (height + y);
+	if (width < 0 || height < 0) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		return;
+	}
 
-	int newx = (x < 0) ? 0 : x;
-	int newy = (y < 0) ? 0 : y;
-	D3DState.ScissorState.scissorRect.left = newx;
-	D3DState.ScissorState.scissorRect.right = newx + width;
-	D3DState.ScissorState.scissorRect.top = newy;
-	D3DState.ScissorState.scissorRect.bottom = newy + height;
+	D3DState.ScissorState.glX = x;
+	D3DState.ScissorState.glY = y;
+	D3DState.ScissorState.glWidth = width;
+	D3DState.ScissorState.glHeight = height;
+
+	// OpenGL accepts boxes which extend beyond the framebuffer and intersects
+	// them during rasterization.  D3D9 expects a render-target-relative RECT, so
+	// clamp both edges (not just the origin) before flipping the Y axis.
+	const LONGLONG framebufferWidth = D3DGlobal.hCurrentMode.Width;
+	const LONGLONG framebufferHeight = D3DGlobal.hCurrentMode.Height;
+	const LONGLONG glLeft = QINDIEGL_MAX(0LL, QINDIEGL_MIN((LONGLONG)x, framebufferWidth));
+	const LONGLONG glRight = QINDIEGL_MAX(0LL, QINDIEGL_MIN((LONGLONG)x + width, framebufferWidth));
+	const LONGLONG glBottom = QINDIEGL_MAX(0LL, QINDIEGL_MIN((LONGLONG)y, framebufferHeight));
+	const LONGLONG glTop = QINDIEGL_MAX(0LL, QINDIEGL_MIN((LONGLONG)y + height, framebufferHeight));
+
+	D3DState.ScissorState.empty = (glRight <= glLeft || glTop <= glBottom);
+	if (D3DState.ScissorState.empty) {
+		// SetScissorRect implementations need not accept an empty RECT.  Draws are
+		// rejected centrally while GL_SCISSOR_TEST is enabled; keep valid D3D state.
+		D3DState.ScissorState.scissorRect.left = 0;
+		D3DState.ScissorState.scissorRect.top = 0;
+		D3DState.ScissorState.scissorRect.right = 1;
+		D3DState.ScissorState.scissorRect.bottom = 1;
+	} else {
+		D3DState.ScissorState.scissorRect.left = (LONG)glLeft;
+		D3DState.ScissorState.scissorRect.right = (LONG)glRight;
+		D3DState.ScissorState.scissorRect.top = (LONG)(framebufferHeight - glTop);
+		D3DState.ScissorState.scissorRect.bottom = (LONG)(framebufferHeight - glBottom);
+	}
 	if (!D3DGlobal.initialized) {
 		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
 	HRESULT hr = D3DGlobal.pDevice->SetScissorRect(&D3DState.ScissorState.scissorRect);
-	if (FAILED(hr)) QGL_SET_ERROR(hr);
+	if (FAILED(hr)) {
+		QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::SetScissorRect", hr);
+		QGL_SET_ERROR(hr);
+	}
 }
 OPENGL_API void WINAPI glDebugEntry( DWORD, DWORD )
 {
