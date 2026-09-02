@@ -309,7 +309,7 @@ HRESULT D3DTextureObject :: CreateD3DTexture( GLenum target, GLsizei width, GLsi
 
 HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 {
-	if (!m_pD3DTexture) return E_FAIL;
+	if (!m_pD3DBaseTexture) return E_FAIL;
 	if (m_mipmaps == mipmaps) return S_OK;
 
 	if (m_target == GL_TEXTURE_3D_EXT) {
@@ -324,22 +324,31 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 
 	if (m_target == GL_TEXTURE_3D_EXT)
 	{
-		LPDIRECT3DVOLUMETEXTURE9 newTexture;
+		LPDIRECT3DVOLUMETEXTURE9 newTexture = nullptr;
 		D3DTex_GetUsagePoolForFormat(m_format, usage, pool);
 		hr = D3DGlobal.pDevice->CreateVolumeTexture(m_width, m_height, m_depth, mipmaps ? 0 : 1, usage, m_format, pool, &newTexture, NULL);
 		if (FAILED(hr)) return hr;	
 
-		LPDIRECT3DVOLUME9 srcsurf, dstsurf;
+		LPDIRECT3DVOLUME9 srcsurf = nullptr, dstsurf = nullptr;
 		hr = m_pD3DVolumeTexture->GetVolumeLevel( 0, &srcsurf );
-		if (FAILED(hr)) return hr;	
+		if (FAILED(hr)) {
+			newTexture->Release();
+			return hr;
+		}
 		hr = newTexture->GetVolumeLevel( 0, &dstsurf );
-		if (FAILED(hr)) return hr;	
+		if (FAILED(hr)) {
+			srcsurf->Release();
+			newTexture->Release();
+			return hr;
+		}
 
 		hr = D3DXLoadVolumeFromVolume(dstsurf, NULL, NULL, srcsurf, NULL, NULL, D3DX_FILTER_NONE, 0);
-		if (FAILED(hr)) return hr;	
-
 		srcsurf->Release();
 		dstsurf->Release();
+		if (FAILED(hr)) {
+			newTexture->Release();
+			return hr;
+		}
 
 		m_pD3DVolumeTexture->Release();
 		m_pD3DVolumeTexture = newTexture;
@@ -347,23 +356,34 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 	}
 	else if (m_target == GL_TEXTURE_CUBE_MAP_ARB)
 	{
-		LPDIRECT3DCUBETEXTURE9 newTexture;
+		LPDIRECT3DCUBETEXTURE9 newTexture = nullptr;
 		D3DTex_GetUsagePoolForFormat(m_format, usage, pool);
 		hr = D3DGlobal.pDevice->CreateCubeTexture(m_width, mipmaps ? 0 : 1, usage, m_format, pool, &newTexture, NULL);
 		if (FAILED(hr)) return hr;	
 
-		LPDIRECT3DSURFACE9 srcsurf, dstsurf;
+		LPDIRECT3DSURFACE9 srcsurf = nullptr, dstsurf = nullptr;
 		for (int i = 0; i < 6; ++i) {
 			hr = m_pD3DCubeTexture->GetCubeMapSurface( (D3DCUBEMAP_FACES)i, 0, &srcsurf );
-			if (FAILED(hr)) return hr;	
+			if (FAILED(hr)) {
+				newTexture->Release();
+				return hr;
+			}
 			hr = newTexture->GetCubeMapSurface( (D3DCUBEMAP_FACES)i, 0, &dstsurf );
-			if (FAILED(hr)) return hr;	
+			if (FAILED(hr)) {
+				srcsurf->Release();
+				newTexture->Release();
+				return hr;
+			}
 
 			hr = D3DXLoadSurfaceFromSurface(dstsurf, NULL, NULL, srcsurf, NULL, NULL, D3DX_FILTER_NONE, 0);
-			if (FAILED(hr)) return hr;	
-
 			srcsurf->Release();
 			dstsurf->Release();
+			srcsurf = nullptr;
+			dstsurf = nullptr;
+			if (FAILED(hr)) {
+				newTexture->Release();
+				return hr;
+			}
 		}
 
 		m_pD3DCubeTexture->Release();
@@ -372,22 +392,31 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 	}
 	else
 	{
-		LPDIRECT3DTEXTURE9 newTexture;
+		LPDIRECT3DTEXTURE9 newTexture = nullptr;
 		D3DTex_GetUsagePoolForFormat(m_format, usage, pool);
 		hr = D3DGlobal.pDevice->CreateTexture(m_width, m_height, mipmaps ? 0 : 1, usage, m_format, pool, &newTexture, NULL);
 		if (FAILED(hr)) return hr;	
 
-		LPDIRECT3DSURFACE9 srcsurf, dstsurf;
+		LPDIRECT3DSURFACE9 srcsurf = nullptr, dstsurf = nullptr;
 		hr = m_pD3DTexture->GetSurfaceLevel( 0, &srcsurf );
-		if (FAILED(hr)) return hr;	
+		if (FAILED(hr)) {
+			newTexture->Release();
+			return hr;
+		}
 		hr = newTexture->GetSurfaceLevel( 0, &dstsurf );
-		if (FAILED(hr)) return hr;	
+		if (FAILED(hr)) {
+			srcsurf->Release();
+			newTexture->Release();
+			return hr;
+		}
 
 		hr = D3DXLoadSurfaceFromSurface(dstsurf, NULL, NULL, srcsurf, NULL, NULL, D3DX_FILTER_NONE, 0);
-		if (FAILED(hr)) return hr;	
-		
 		srcsurf->Release();
 		dstsurf->Release();
+		if (FAILED(hr)) {
+			newTexture->Release();
+			return hr;
+		}
 
 		m_pD3DTexture->Release();
 		m_pD3DTexture = newTexture;
@@ -396,11 +425,13 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 
 
 	m_mipmaps = mipmaps;
-	return hr;
+	return S_OK;
 }
 
 HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	if (!m_pD3DBaseTexture)
+		return E_INVALID_OPERATION;
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048)) {
 		logPrintf("YAE_LARGE_TEXTURE: id=%u op=TexImage level=%d size=%dx%dx%d internal=0x%X format=0x%X type=0x%X pixels=%s\n",
 			m_glIndex, level, width, height, depth, internalformat, format, type, pixels ? "YES" : "NO");
@@ -576,6 +607,8 @@ HRESULT D3DTextureObject :: FillTextureSubLevel( GLint cubeface, GLint level, GL
 	GLubyte *dstdata;
 	GLint pitch;
 	GLint pitch2;
+	if (!m_pD3DBaseTexture)
+		return E_INVALID_OPERATION;
 
 	if (D3DTex_IsDepthFormat(m_format)) {
 		logPrintf("WARNING: Depth texture subimage updates are not supported for format %s\n", D3DGlobal_FormatToString(m_format));
@@ -663,6 +696,8 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 	}
 	HRESULT hr;
 	LPDIRECT3DSURFACE9 lpRenderTarget( nullptr );
+	if (!m_pD3DBaseTexture)
+		return E_INVALID_OPERATION;
 
 	if (m_target == GL_TEXTURE_3D_EXT) {
 		logPrintf("WARNING: CopyTextureSubLevel is not supported for 3D textures\n");
@@ -771,6 +806,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 		if (FAILED(hr)) {
 			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: CopyTextureSubLevel: LockRect #2 failed with error '%s'\n", DXGetErrorString(hr));
+			D3DGlobal.pSystemMemRT->UnlockRect();
 			if (lpRenderTarget != D3DGlobal.pSystemMemFB)
 				lpRenderTarget->Release();
 			return hr;
@@ -780,6 +816,7 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 		if (FAILED(hr)) {
 			QGL_SET_ERROR(hr);
 			logPrintf("WARNING: CopyTextureSubLevel: LockRect #2 failed with error '%s'\n", DXGetErrorString(hr));
+			D3DGlobal.pSystemMemRT->UnlockRect();
 			if (lpRenderTarget != D3DGlobal.pSystemMemFB)
 				lpRenderTarget->Release();
 			return hr;
@@ -807,6 +844,8 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 
 HRESULT D3DTextureObject :: FillCompressedTextureLevel( GLint cubeface, GLint level, GLint /*internalformat*/, GLsizei /*width*/, GLsizei /*height*/, GLsizei /*depth*/, GLsizei imageSize, const GLvoid *pixels )
 {
+	if (!m_pD3DBaseTexture)
+		return E_INVALID_OPERATION;
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048)) {
 		logPrintf("YAE_LARGE_TEXTURE: id=%u op=CompressedTexImage level=%d size=%dx%d bytes=%d pixels=%s\n",
 			m_glIndex, level, m_width, m_height, imageSize, pixels ? "YES" : "NO");
@@ -815,7 +854,6 @@ HRESULT D3DTextureObject :: FillCompressedTextureLevel( GLint cubeface, GLint le
 	GLubyte *dstdata;
 	GLint pitch;
 	GLint pitch2;
-
 	if (!pixels)
 		return S_OK;
 
@@ -1166,6 +1204,9 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 			D3DState.TextureState.currentTexture[currentTMU][targetIndex]->FreeD3DTexture();
 			HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CreateD3DTexture( target, width, height, depth, !!border, d3dFormat, false );
 			if (FAILED(hr)) {
+				logPrintf("ERROR: Texture creation failed: id=%u target=0x%X level=%d size=%dx%dx%d internal=0x%X d3d=%s hr=0x%08X (%s) availableTextureMem=%u\n",
+					pTexture->GetGLIndex(), target, level, width, height, depth, internalformat,
+					D3DGlobal_FormatToString(d3dFormat), hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1184,6 +1225,9 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 		{
 			HRESULT hr = pTexture->RecreateD3DTexture( true );
 			if (FAILED(hr)) {
+				logPrintf("ERROR: Texture mip-chain recreation failed: id=%u target=0x%X level=%d baseSize=%ux%ux%u internal=0x%X hr=0x%08X (%s) availableTextureMem=%u\n",
+					pTexture->GetGLIndex(), target, level, pTexture->GetWidth(), pTexture->GetHeight(), pTexture->GetDepth(),
+					internalformat, hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1219,18 +1263,23 @@ static void D3DTex_LoadSubImage(GLenum target, GLint level, GLint xoffset, GLint
 		cubeFace = target - GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB;
 
 	int currentTMU = D3DState.TextureState.currentTMU;
-	assert(D3DState.TextureState.currentTexture[currentTMU][targetIndex] != nullptr);
-	assert(D3DState.TextureState.currentTexture[currentTMU][targetIndex]->GetD3DTexture() != nullptr);
+	D3DTextureObject *pTexture = D3DState.TextureState.currentTexture[currentTMU][targetIndex];
+	if (!pTexture || !pTexture->GetD3DTexture()) {
+		logPrintf("WARNING: Texture subimage ignored because no D3D texture exists: target=0x%X level=%d size=%dx%dx%d\n",
+			target, level, width, height, depth);
+		QGL_SET_ERROR(E_INVALID_OPERATION);
+		return;
+	}
 
 	if (pixels)
 	{
-		HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->FillTextureSubLevel( cubeFace, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels );
+		HRESULT hr = pTexture->FillTextureSubLevel( cubeFace, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels );
 		if (FAILED(hr)) {
 			QGL_SET_ERROR(hr);
 			return;
 		}
 		if (level == 0) {
-			D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CheckMipmapAutogen();
+			pTexture->CheckMipmapAutogen();
 		}
 	}
 }
@@ -1287,6 +1336,9 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 			D3DState.TextureState.currentTexture[currentTMU][targetIndex]->FreeD3DTexture();
 			HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CreateD3DTexture( target, width, height, depth, !!border, d3dFormat, false );
 			if (FAILED(hr)) {
+				logPrintf("ERROR: Compressed texture creation failed: id=%u target=0x%X level=%d size=%dx%dx%d internal=0x%X d3d=%s hr=0x%08X (%s) availableTextureMem=%u\n",
+					pTexture->GetGLIndex(), target, level, width, height, depth, internalformat,
+					D3DGlobal_FormatToString(d3dFormat), hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1305,6 +1357,9 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 		{
 			HRESULT hr = pTexture->RecreateD3DTexture( true );
 			if (FAILED(hr)) {
+				logPrintf("ERROR: Compressed texture mip-chain recreation failed: id=%u target=0x%X level=%d baseSize=%ux%ux%u internal=0x%X hr=0x%08X (%s) availableTextureMem=%u\n",
+					pTexture->GetGLIndex(), target, level, pTexture->GetWidth(), pTexture->GetHeight(), pTexture->GetDepth(),
+					internalformat, hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1363,16 +1418,21 @@ static void D3DTex_CopySubImage( GLenum target, GLint level, GLint xoffset, GLin
 		cubeFace = target - GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB;
 
 	int currentTMU = D3DState.TextureState.currentTMU;
-	assert(D3DState.TextureState.currentTexture[currentTMU][targetIndex] != nullptr);
-	assert(D3DState.TextureState.currentTexture[currentTMU][targetIndex]->GetD3DTexture() != nullptr);
+	D3DTextureObject *pTexture = D3DState.TextureState.currentTexture[currentTMU][targetIndex];
+	if (!pTexture || !pTexture->GetD3DTexture()) {
+		logPrintf("WARNING: Framebuffer-to-texture copy ignored because no D3D texture exists: target=0x%X level=%d dst=%d,%d src=%d,%d size=%dx%d\n",
+			target, level, xoffset, yoffset, x, y, width, height);
+		QGL_SET_ERROR(E_INVALID_OPERATION);
+		return;
+	}
 
-	HRESULT hr = D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CopyTextureSubLevel( cubeFace, level, xoffset, yoffset, x, y, width, height );
+	HRESULT hr = pTexture->CopyTextureSubLevel( cubeFace, level, xoffset, yoffset, x, y, width, height );
 	if (FAILED(hr)) {
 		QGL_SET_ERROR(hr);
 		return;
 	}
 	if (level == 0) {
-		D3DState.TextureState.currentTexture[currentTMU][targetIndex]->CheckMipmapAutogen();
+		pTexture->CheckMipmapAutogen();
 	}
 }
 
@@ -1380,6 +1440,28 @@ static void D3DTex_CopySubImage( GLenum target, GLint level, GLint xoffset, GLin
 OPENGL_API void WINAPI glDeleteTextures( GLsizei n, const GLuint *textures )
 {
 	assert(D3DGlobal.pObjectBuffer != nullptr);
+	if (!textures || n < 0) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		return;
+	}
+
+	// OpenGL deletion immediately removes the name, but a texture that is still
+	// bound remains valid until it is unbound.  This wrapper deletes objects
+	// immediately, so detach every matching binding first to avoid stale pointers.
+	for (int i = 0; i < n; ++i) {
+		if (!textures[i]) continue;
+		for (int unit = 0; unit < MAX_D3D_TMU; ++unit) {
+			for (int target = 0; target < D3D_TEXTARGET_MAX; ++target) {
+				D3DTextureObject *pTexture = D3DState.TextureState.currentTexture[unit][target];
+				if (pTexture && pTexture != D3DGlobal.defaultTexture[target] && pTexture->GetGLIndex() == textures[i]) {
+					D3DState.TextureState.currentTexture[unit][target] = D3DGlobal.defaultTexture[target];
+					D3DState.TextureState.textureChanged[unit][target] = TRUE;
+					D3DState.TextureState.textureStateChanged[unit] = TRUE;
+					D3DState.TextureState.textureSamplerStateChanged = TRUE;
+				}
+			}
+		}
+	}
 	HRESULT hr = D3DGlobal.pObjectBuffer->DeleteObjects( D3D_OBJECT_TYPE_TEXTURE, n, textures );
 	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }

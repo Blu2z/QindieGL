@@ -43,7 +43,8 @@ D3DObjectBuffer :: ~D3DObjectBuffer()
 
 HRESULT D3DObjectBuffer :: GenObjects( D3DObjType type, GLsizei count, GLuint *identifiers )
 {
-	if (!identifiers) return E_INVALIDARG;
+	if (!identifiers || count < 0) return E_INVALIDARG;
+	if (!count) return S_OK;
 
 	//all identifiers must be subsequent
 	if (m_size >= count) {
@@ -68,17 +69,21 @@ HRESULT D3DObjectBuffer :: GenObjects( D3DObjType type, GLsizei count, GLuint *i
 	}
 
 	int oldsize = m_size;
-	m_size += count;
+	int newsize = m_size + count;
+	D3DObj *pNewBuffer;
 	if (!m_pBuffer) {
-		m_pBuffer = (D3DObj*)UTIL_Alloc(sizeof(D3DObj) * m_size);
-		memset( m_pBuffer, 0, sizeof(D3DObj) * m_size );
+		pNewBuffer = (D3DObj*)UTIL_Alloc(sizeof(D3DObj) * newsize);
 	} else {
-		m_pBuffer = (D3DObj*)UTIL_Realloc(m_pBuffer, sizeof(D3DObj) * m_size);
-		memset( m_pBuffer + oldsize, 0, sizeof(D3DObj) * (m_size - oldsize) );
+		pNewBuffer = (D3DObj*)UTIL_Realloc(m_pBuffer, sizeof(D3DObj) * newsize);
 	}
 
-	if (!m_pBuffer)
+	// realloc leaves the original allocation valid on failure.  Do not lose it
+	// or publish the larger size until the allocation has actually succeeded.
+	if (!pNewBuffer)
 		return E_OUTOFMEMORY;
+	m_pBuffer = pNewBuffer;
+	memset( m_pBuffer + oldsize, 0, sizeof(D3DObj) * (newsize - oldsize) );
+	m_size = newsize;
 
 	//allocated a number of identifiers
 	for ( int k = 0; k < count; ++k ) {
@@ -123,15 +128,17 @@ void *D3DObjectBuffer :: GetObjectData( D3DObjType type, GLuint objIdentifier )
 		//create new object
 		if (objIdentifier > (GLuint)m_size) {
 			int oldsize = m_size;
-			m_size = objIdentifier;
+			int newsize = objIdentifier;
+			D3DObj *pNewBuffer;
 			if (!m_pBuffer) {
-				m_pBuffer = (D3DObj*)UTIL_Alloc(sizeof(D3DObj) * m_size);
-				memset( m_pBuffer, 0, sizeof(D3DObj) * m_size );
+				pNewBuffer = (D3DObj*)UTIL_Alloc(sizeof(D3DObj) * newsize);
 			} else {
-				m_pBuffer = (D3DObj*)UTIL_Realloc(m_pBuffer, sizeof(D3DObj) * m_size);
-				memset( m_pBuffer + oldsize, 0, sizeof(D3DObj) * (m_size - oldsize) );
+				pNewBuffer = (D3DObj*)UTIL_Realloc(m_pBuffer, sizeof(D3DObj) * newsize);
 			}
-			if (!m_pBuffer) return nullptr;
+			if (!pNewBuffer) return nullptr;
+			m_pBuffer = pNewBuffer;
+			memset( m_pBuffer + oldsize, 0, sizeof(D3DObj) * (newsize - oldsize) );
+			m_size = newsize;
 			m_pBuffer[objIdentifier-1].data.any = nullptr;
 		} else { //or overwrite existing
 			FreeObjectMemory(&m_pBuffer[objIdentifier-1]);
