@@ -341,6 +341,47 @@ med1_lm_0.tga  E4CB830A2C12431837D0937C2041DE0E87472847ED75764F2DE5AEC27D6341EF
 ```
 
 The modified files were preserved outside the repository as
-`*.phaseC-rebuilt-backup`; they are not required by QindieGL. Remaining Phase C
-work is limited to the intro/video path and post-effect alpha fidelity before
-the longer Phase D stability run.
+`*.phaseC-rebuilt-backup`; they are not required by QindieGL.
+
+### Intro video and fullscreen recovery
+
+The intro AVI is a 720x420 `GL_TEXTURE_RECTANGLE` upload. OpenGL rectangle
+coordinates are expressed in pixels, but the D3D9 2D texture used by the YAE
+compatibility path requires normalized coordinates. Fixed-function vertex-array
+and immediate-mode draws now scale S/T by the bound rectangle texture size.
+ARB fragment-program draws are deliberately excluded because the generated
+shader already applies its own `_rectScale` constant.
+
+The first complete-video test exposed a separate pre-existing fullscreen-reset
+failure. QindieGL retained the interface returned by `GetSwapChain(0)` while
+calling `IDirect3DDevice9::Reset`, causing `D3DERR_INVALIDCALL`; subsequent
+draws targeted the invalid device and a failed dynamic-buffer allocation could
+leave a dangling COM pointer. Reset now ends the active scene, releases and
+reacquires the implicit swap chain, recreates streaming resources, invalidates
+cached render state, and reapplies it. Dynamic vertex/index allocation failures
+also leave null, zero-sized slots and abort the affected draw safely.
+
+User validation confirmed all of the following in one normal New Game run:
+
+- the intro has a full image with correct orientation and synchronized audio;
+- the first level appears after the video;
+- control and menus work;
+- static textures and lightmaps remain correct;
+- no full-screen flashing triangles, hang, or crash occurs.
+
+A second run explicitly exercised `Alt+Tab` and return to the fullscreen game.
+The log recorded `Reset hr=0x00000000 S_OK`, the game remained fully usable,
+and the session summary reported:
+
+```text
+unsupported enums: none
+failed D3D calls: none
+device resets: 1
+ARB programs uploaded/compiled: 8/8
+ARB program compilation failures: 0
+peak VBO storage: 25175072 bytes
+```
+
+Phase C's basic world-rendering acceptance target is therefore complete for the
+reference level. The known pickup post-effect alpha mismatch is deferred as an
+advanced effect and does not block the Phase D stability run.

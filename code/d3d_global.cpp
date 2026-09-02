@@ -106,9 +106,33 @@ void D3DGlobal_Init( bool clearGlobals )
 		matrix_detect_configuration_reset();
 }
 
-void D3DGlobal_Reset()
+static void D3DGlobal_InvalidateStateAfterReset()
+{
+	D3DState.modelViewMatrixModified = TRUE;
+	D3DState.projectionMatrixModified = TRUE;
+	D3DState.TransformState.clippingModified = TRUE;
+	D3DState.TextureState.textureSamplerStateChanged = TRUE;
+	D3DState.TextureState.textureEnableChanged = TRUE;
+	D3DState.LightingState.currentMaterialModified = TRUE;
+	D3DState.LightingState.colorMaterialModified = TRUE;
+	for ( int stage = 0; stage < D3DGlobal.maxActiveTMU; ++stage ) {
+		D3DState.textureMatrixModified[stage] = TRUE;
+		D3DState.TextureState.textureEnvModeChanged[stage] = TRUE;
+		D3DState.TextureState.textureStateChanged[stage] = TRUE;
+		for ( int target = 0; target < D3D_TEXTARGET_MAX; ++target )
+			D3DState.TextureState.textureChanged[stage][target] = TRUE;
+	}
+}
+
+static bool D3DGlobal_Reset()
 {
 	D3DGlobal.skipCopyImage = 5;
+	if ( D3DGlobal.sceneBegan ) {
+		HRESULT endSceneResult = D3DGlobal.pDevice->EndScene();
+		if ( FAILED( endSceneResult ) )
+			QGL_DiagnosticsRecordD3DFailure( "IDirect3DDevice9::EndScene before Reset", endSceneResult );
+		D3DGlobal.sceneBegan = false;
+	}
 
 	if (D3DGlobal.pIMBuffer) {
 		delete D3DGlobal.pIMBuffer;
@@ -128,19 +152,44 @@ void D3DGlobal_Reset()
 	}
 
 	PBuffer_ReleaseResources();
+	// GetSwapChain adds a reference to the implicit swap chain.  D3D9 requires
+	// every such reference to be released before Reset; retaining this one made
+	// the fullscreen focus transition after YAE's AVI fail with INVALIDCALL.
+	if ( D3DGlobal.pSwapChain ) {
+		D3DGlobal.pSwapChain->Release();
+		D3DGlobal.pSwapChain = nullptr;
+	}
 
 	Sleep( 20 );
 	HRESULT resetResult = D3DGlobal.pDevice->Reset(&D3DGlobal.hPresentParams);
 	QGL_DiagnosticsRecordDeviceReset(resetResult);
+	logPrintfLevel( FAILED( resetResult ) ? QGL_LOG_ERROR : QGL_LOG_INFO,
+		"DEVICE_RESET", "Reset hr=0x%08X %s", resetResult,
+		DXGetErrorString( resetResult ) );
 	Sleep( 20 );
 	if (FAILED(resetResult)) {
 		QGL_SET_ERROR(resetResult);
+		D3DGlobal.deviceLost = true;
+		// Keep the CPU-side streaming objects alive so failed draw attempts can
+		// return GL errors instead of dereferencing null/dangling COM pointers.
+		D3DGlobal.pIMBuffer = new D3DIMBuffer;
+		D3DGlobal.pVABuffer = new D3DVABuffer;
+		return false;
 	}
 
+	HRESULT swapChainResult = D3DGlobal.pDevice->GetSwapChain( 0, &D3DGlobal.pSwapChain );
+	if ( FAILED( swapChainResult ) ) {
+		QGL_DiagnosticsRecordD3DFailure( "IDirect3DDevice9::GetSwapChain after Reset", swapChainResult );
+		D3DGlobal.pSwapChain = nullptr;
+	}
 	PBuffer_RecreateResources();
 
 	D3DGlobal.pIMBuffer = new D3DIMBuffer;
 	D3DGlobal.pVABuffer = new D3DVABuffer;
+	D3DGlobal.deviceLost = false;
+	D3DGlobal_InvalidateStateAfterReset();
+	D3DState_Apply( GL_ALL_ATTRIB_BITS );
+	return true;
 }
 
 void D3DGlobal_Cleanup( bool cleanupAll )
@@ -1430,22 +1479,7 @@ OPENGL_API BOOL WINAPI wrap_wglMakeCurrent(HDC hdc, HGLRC hglrc)
 				return FALSE;
 			}
 
-			HRESULT resetResult = D3DGlobal.pDevice->Reset(&D3DGlobal.hPresentParams);
-			QGL_DiagnosticsRecordDeviceReset(resetResult);
-			if (FAILED(resetResult)) {
-				QGL_SET_ERROR(resetResult);
-			}
-
-			if (D3DGlobal.pSystemMemRT) {
-				D3DGlobal.pSystemMemRT->Release();
-				D3DGlobal.pSystemMemRT = nullptr;
-			}
-			if (D3DGlobal.pSystemMemFB) {
-				D3DGlobal.pSystemMemFB->Release();
-				D3DGlobal.pSystemMemFB = nullptr;
-			}
-	
-			D3DState_Apply( GL_ALL_ATTRIB_BITS );
+			D3DGlobal_Reset();
 		}
 
 		if (!D3DGlobal.pDevice) {
@@ -1552,8 +1586,10 @@ OPENGL_API BOOL WINAPI wrap_wglSwapBuffers( HDC )
 		
 		if (D3DGlobal.vSync)
 			hr = D3DGlobal.pDevice->Present( nullptr, nullptr, nullptr, nullptr );
-		else
+		else if ( D3DGlobal.pSwapChain )
 			hr = D3DGlobal.pSwapChain->Present( nullptr, nullptr, nullptr, nullptr, D3DPRESENT_DONOTWAIT );
+		else
+			hr = D3DGlobal.pDevice->Present( nullptr, nullptr, nullptr, nullptr );
 
 		if (hr != D3DERR_WASSTILLDRAWING) {
 			if (hr == D3DERR_DEVICELOST) {

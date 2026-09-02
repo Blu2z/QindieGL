@@ -26,6 +26,7 @@
 #include "d3d_lists.hpp"
 #include "d3d_arb_program.hpp"
 #include "d3d_extension.hpp"
+#include "d3d_texture.hpp"
 
 namespace {
 	// Program 8 is YAE's full-screen pickup blur.  Keep a very small trace
@@ -158,14 +159,18 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 
 	if ( m_vbAllocSize[m_swapFrame] < m_vertexCount * fvfsz )
 	{
-		if ( m_pVertexBuffer[m_swapFrame] )
+		if ( m_pVertexBuffer[m_swapFrame] ) {
 			m_pVertexBuffer[m_swapFrame]->Release();
+			m_pVertexBuffer[m_swapFrame] = nullptr;
+		}
 
 		m_vbAllocSize[m_swapFrame] = QINDIEGL_MAX( c_IMBufferGrowSize, m_vertexCount ) * fvfsz;
 		hr = D3DGlobal.pDevice->CreateVertexBuffer( m_vbAllocSize[m_swapFrame], D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
 			0, D3DPOOL_DEFAULT, &m_pVertexBuffer[m_swapFrame], nullptr );
 		if ( FAILED( hr ) )
 		{
+			m_pVertexBuffer[m_swapFrame] = nullptr;
+			m_vbAllocSize[m_swapFrame] = 0;
 			QGL_SET_ERROR(hr);
 			return 0;
 		}
@@ -209,6 +214,11 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 			}
 			if ( m_samplerMask & ( 1 << j ) ) {
 				memcpy( dst, src->texCoord[j], sizeof(FLOAT)*numCoords );
+				float rectangleScale[2];
+				if ( D3DTex_GetFixedFunctionRectangleScale( j, rectangleScale ) ) {
+					if ( numCoords > 0 ) dst[0] *= rectangleScale[0];
+					if ( numCoords > 1 ) dst[1] *= rectangleScale[1];
+				}
 				dst += numCoords;
 			}
 		}

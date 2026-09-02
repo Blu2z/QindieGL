@@ -141,6 +141,26 @@ static bool D3DTex_IsRectangleTarget(GLenum target)
 	}
 }
 
+bool D3DTex_GetFixedFunctionRectangleScale( int stage, float scale[2] )
+{
+	if ( !scale || !D3DGlobal.settings.game.yaeFallbackCompatibility ||
+		D3DState.EnableState.fragmentProgramEnabled || stage < 0 ||
+		stage >= D3DGlobal.maxActiveTMU || !D3DState.EnableState.textureEnabled[stage] )
+		return false;
+
+	D3DTextureObject* texture =
+		D3DState.TextureState.currentTexture[stage][D3D_TEXTARGET_2D];
+	if ( !texture || !D3DTex_IsRectangleTarget( texture->GetTarget() ) ||
+		!texture->GetWidth() || !texture->GetHeight() )
+		return false;
+
+	scale[0] = 1.0f / texture->GetWidth();
+	scale[1] = 1.0f / texture->GetHeight();
+	PRINT_ONCE( "YAE_COMPAT: fixed-function RECT coordinates normalized for D3D9 texture %ux%u.\n",
+		texture->GetWidth(), texture->GetHeight() );
+	return true;
+}
+
 static bool D3DTex_ValidateRectangleTarget(GLenum target)
 {
 	if (!D3DTex_IsRectangleTarget(target)) {
