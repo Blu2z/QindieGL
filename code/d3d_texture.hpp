@@ -103,4 +103,10 @@ private:
 	DWORD					m_priority;
 };
 
+// D3D9 2D samplers use normalized coordinates, while
+// GL_TEXTURE_RECTANGLE uses pixel coordinates.  YAE's ARB fragment-program
+// path handles this in the generated shader; fixed-function draws must scale
+// their vertex coordinates instead.
+bool D3DTex_GetFixedFunctionRectangleScale( int stage, float scale[2] );
+
 #endif //QINDIEGL_D3D_TEXTURE_H

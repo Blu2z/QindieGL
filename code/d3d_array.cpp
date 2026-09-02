@@ -28,6 +28,7 @@
 #include "d3d_matrix_stack.hpp"
 #include "d3d_helpers.hpp"
 #include "d3d_arb_program.hpp"
+#include "d3d_texture.hpp"
 
 //!DO NOT UNCOMMENT THIS UNLESS YOU MAKE PERFORMANCE TESTS!
 //#define VA_USE_IMMEDIATE_MODE
@@ -252,15 +253,20 @@ void D3DVABuffer :: SetMinimumVertexBufferSize( int numVerts )
 	if (m_vbAllocSize[m_swapFrame] >= numVerts * m_vertexSize)
 		return;
 
-	if (m_pVertexBuffer[m_swapFrame])
+	if (m_pVertexBuffer[m_swapFrame]) {
 		m_pVertexBuffer[m_swapFrame]->Release();
+		m_pVertexBuffer[m_swapFrame] = nullptr;
+	}
 
 	m_vbAllocSize[m_swapFrame] = QINDIEGL_MAX( VABuffer_VB_Grow_Size, numVerts ) * m_vertexSize;
 	HRESULT hr = D3DGlobal.pDevice->CreateVertexBuffer( m_vbAllocSize[m_swapFrame] * sizeof(GLfloat), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 
 				 									    0, D3DPOOL_DEFAULT, &m_pVertexBuffer[m_swapFrame], nullptr );
 
-	if (FAILED(hr))
+	if (FAILED(hr)) {
+		m_pVertexBuffer[m_swapFrame] = nullptr;
+		m_vbAllocSize[m_swapFrame] = 0;
 		QGL_SET_ERROR(hr);
+	}
 }
 
 int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumIndex )
@@ -280,16 +286,21 @@ int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumInde
 	if (m_ibAllocSize[currentIndexBuffer][m_swapFrame] >= numIndices * m_indexSize)
 		return currentIndexBuffer;
 
-	if (m_pIndexBuffer[currentIndexBuffer][m_swapFrame])
+	if (m_pIndexBuffer[currentIndexBuffer][m_swapFrame]) {
 		m_pIndexBuffer[currentIndexBuffer][m_swapFrame]->Release();
+		m_pIndexBuffer[currentIndexBuffer][m_swapFrame] = nullptr;
+	}
 
 	m_ibAllocSize[currentIndexBuffer][m_swapFrame] = QINDIEGL_MAX( VABuffer_IB_Grow_Size, numIndices ) * m_indexSize;
 	HRESULT hr = D3DGlobal.pDevice->CreateIndexBuffer( m_ibAllocSize[currentIndexBuffer][m_swapFrame], D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 
 													   currentIndexBuffer ? D3DFMT_INDEX32 : D3DFMT_INDEX16,
 				 									   D3DPOOL_DEFAULT, &m_pIndexBuffer[currentIndexBuffer][m_swapFrame], nullptr );
 
-	if (FAILED(hr))
+	if (FAILED(hr)) {
+		m_pIndexBuffer[currentIndexBuffer][m_swapFrame] = nullptr;
+		m_ibAllocSize[currentIndexBuffer][m_swapFrame] = 0;
 		QGL_SET_ERROR(hr);
+	}
 
 	return currentIndexBuffer;
 }
@@ -298,29 +309,34 @@ void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords, cons
 {
 	if (!D3DState.EnableState.texGenEnabled[stage]) {
 		memcpy( out_texcoords, texcoords, sizeof(float)*num_coords );
-		return;
+	} else {
+		const float *in_coords = texcoords;
+		float *out_coords = out_texcoords;
+
+		GLenum currentGen( ~0u );
+		float tr_position[4];
+		float tr_normal[3];
+
+		for (int i = 0; i < num_coords; ++i, ++in_coords, ++out_coords) {
+			if (!(D3DState.EnableState.texGenEnabled[stage] & (1 << i))) {
+				*out_coords = *in_coords;
+			} else {
+				if (currentGen != D3DState.TextureState.TexGen[stage][i].mode) {
+					if (D3DState.TextureState.TexGen[stage][i].trVertex)
+						D3DState.TextureState.TexGen[stage][i].trVertex( position, tr_position );
+					if (D3DState.TextureState.TexGen[stage][i].trNormal)
+						D3DState.TextureState.TexGen[stage][i].trNormal( normal, tr_normal );
+					currentGen = D3DState.TextureState.TexGen[stage][i].mode;
+				}
+				D3DState.TextureState.TexGen[stage][i].func( stage, i, tr_position, tr_normal, out_coords );
+			}
+		}
 	}
 
-	const float *in_coords = texcoords;
-	float *out_coords = out_texcoords;
-
-	GLenum currentGen( ~0u );
-	float tr_position[4];
-	float tr_normal[3];
-
-	for (int i = 0; i < num_coords; ++i, ++in_coords, ++out_coords) {
-		if (!(D3DState.EnableState.texGenEnabled[stage] & (1 << i))) {
-			*out_coords = *in_coords;
-		} else {
-			if (currentGen != D3DState.TextureState.TexGen[stage][i].mode) {
-				if (D3DState.TextureState.TexGen[stage][i].trVertex)
-					D3DState.TextureState.TexGen[stage][i].trVertex( position, tr_position );
-				if (D3DState.TextureState.TexGen[stage][i].trNormal)
-					D3DState.TextureState.TexGen[stage][i].trNormal( normal, tr_normal );
-				currentGen = D3DState.TextureState.TexGen[stage][i].mode;
-			}
-			D3DState.TextureState.TexGen[stage][i].func( stage, i, tr_position, tr_normal, out_coords );
-		}
+	float rectangleScale[2];
+	if ( D3DTex_GetFixedFunctionRectangleScale( stage, rectangleScale ) ) {
+		if ( num_coords > 0 ) out_texcoords[0] *= rectangleScale[0];
+		if ( num_coords > 1 ) out_texcoords[1] *= rectangleScale[1];
 	}
 }
 
@@ -528,6 +544,9 @@ FAST_PATH_CHECK_ABORT:
 		const DWORD color = D3DState.CurrentState.currentColor;
 		const float* texp[FAST_PATH_SAMPLERS] = { 0 };
 		int tex_inc[FAST_PATH_SAMPLERS];
+		float texScale[FAST_PATH_SAMPLERS][2] = {
+			{ 1.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 1.0f }
+		};
 		for ( int j = 0; j < FAST_PATH_SAMPLERS; j++ )
 		{
 			if ( tex[j] == -1 )
@@ -537,6 +556,7 @@ FAST_PATH_CHECK_ABORT:
 			if (!texp[j]) qualify_for_fast_path = false;
 			tex_inc[j] = pVAInfo->stride ? pVAInfo->stride / sizeof(float) : pVAInfo->elementCount;
 			if (texp[j]) texp[j] += first * tex_inc[j];
+			D3DTex_GetFixedFunctionRectangleScale( tex[j], texScale[j] );
 		}
 
 		for (int i = 0; qualify_for_fast_path && i < count; ++i)
@@ -571,7 +591,8 @@ FAST_PATH_CHECK_ABORT:
 			{
 				if ( texp[j] )
 				{
-					dest[0] = texp[j][0]; dest[1] = texp[j][1];
+					dest[0] = texp[j][0] * texScale[j][0];
+					dest[1] = texp[j][1] * texScale[j][1];
 					texp[j] += tex_inc[j];
 					dest += 2;
 				}
@@ -792,6 +813,8 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 
 	//Set index buffer size
 	int currentIndexBuffer = SetMinimumIndexBufferSize( m_primitiveIndexCount, maxVertexIndex );
+	if ( !m_pIndexBuffer[currentIndexBuffer][m_swapFrame] )
+		return;
 
 	//Lock index buffer
 	GLvoid *pLockedIndices = nullptr;
