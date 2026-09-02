@@ -305,7 +305,9 @@ int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumInde
 	return currentIndexBuffer;
 }
 
-void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords, const float *position, const float *normal, int stage, float *out_texcoords )
+void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords,
+	const float *position, const float *normal, int stage,
+	const D3DXMATRIX *softwareTransform, float *out_texcoords )
 {
 	if (!D3DState.EnableState.texGenEnabled[stage]) {
 		memcpy( out_texcoords, texcoords, sizeof(float)*num_coords );
@@ -331,6 +333,13 @@ void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords, cons
 				D3DState.TextureState.TexGen[stage][i].func( stage, i, tr_position, tr_normal, out_coords );
 			}
 		}
+	}
+
+	if ( softwareTransform && num_coords >= 2 ) {
+		const float s = out_texcoords[0];
+		const float t = out_texcoords[1];
+		out_texcoords[0] = s * softwareTransform->_11 + t * softwareTransform->_21 + softwareTransform->_41;
+		out_texcoords[1] = s * softwareTransform->_12 + t * softwareTransform->_22 + softwareTransform->_42;
 	}
 
 	float rectangleScale[2];
@@ -378,6 +387,9 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	
 	int numSamplers = 0;
 	const int arbTexCoordCount = ARB_GetRequiredVertexTexCoordCount();
+	const D3DXMATRIX *softwareTransforms[MAX_D3D_TMU] = {};
+	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j )
+		softwareTransforms[j] = D3DState_GetSoftwareTextureTransform( j );
 	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
 		const bool arbSemanticRequired = j < arbTexCoordCount;
 		if (arbSemanticRequired || (D3DState.EnableState.textureEnabled[j] &&
@@ -591,8 +603,17 @@ FAST_PATH_CHECK_ABORT:
 			{
 				if ( texp[j] )
 				{
-					dest[0] = texp[j][0] * texScale[j][0];
-					dest[1] = texp[j][1] * texScale[j][1];
+					dest[0] = texp[j][0];
+					dest[1] = texp[j][1];
+					const D3DXMATRIX *transform = softwareTransforms[tex[j]];
+					if ( transform ) {
+						const float s = dest[0];
+						const float t = dest[1];
+						dest[0] = s * transform->_11 + t * transform->_21 + transform->_41;
+						dest[1] = s * transform->_12 + t * transform->_22 + transform->_42;
+					}
+					dest[0] *= texScale[j][0];
+					dest[1] *= texScale[j][1];
 					texp[j] += tex_inc[j];
 					dest += 2;
 				}
@@ -701,7 +722,7 @@ FAST_PATH_CHECK_ABORT:
 					if (VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j)) {
 						if (elemIndex >= D3DState.ClientVertexArrayState.texCoordInfo[j]._internal.compiledFirst &&
 							elemIndex <= D3DState.ClientVertexArrayState.texCoordInfo[j]._internal.compiledLast) {
-							SetupTexCoords( D3DGlobal.compiledVertexArray.compiledTexCoordData[j] + elemIndex*4, numCoords, vertexData, normalData, j, pLockedVertices );
+							SetupTexCoords( D3DGlobal.compiledVertexArray.compiledTexCoordData[j] + elemIndex*4, numCoords, vertexData, normalData, j, softwareTransforms[j], pLockedVertices );
 						} else {
 							GLfloat texcoord[4] = { 0, 0, 0, 1 };
 							D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.texCoordInfo[j], elemIndex, texcoord );
@@ -709,7 +730,7 @@ FAST_PATH_CHECK_ABORT:
 								texcoord[0] += D3DState.TransformState.texcoordFix[0];
 								texcoord[1] += D3DState.TransformState.texcoordFix[1];
 							}
-							SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, pLockedVertices );
+							SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, softwareTransforms[j], pLockedVertices );
 						}
 						pLockedVertices += numCoords;
 					} else if (D3DState.EnableState.texGenEnabled[j]) {
@@ -718,7 +739,7 @@ FAST_PATH_CHECK_ABORT:
 							texcoord[0] += D3DState.TransformState.texcoordFix[0];
 							texcoord[1] += D3DState.TransformState.texcoordFix[1];
 						}
-						SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, pLockedVertices );
+						SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, softwareTransforms[j], pLockedVertices );
 						pLockedVertices += numCoords;
 					} else if (arbSemanticRequired) {
 						for ( int coord = 0; coord < numCoords; ++coord )

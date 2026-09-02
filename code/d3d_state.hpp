@@ -136,6 +136,11 @@ typedef struct D3DState_s
 	} PolygonState;
 	struct {
 		RECT 			scissorRect;
+		GLint			glX;
+		GLint			glY;
+		GLsizei			glWidth;
+		GLsizei			glHeight;
+		DWORD			empty;
 	} ScissorState;
 	struct {
 		DWORD			stencilTestReference;
@@ -273,6 +278,7 @@ extern bool D3DState_SetMatrixMode();
 extern void D3DState_SetCullMode();
 extern void D3DState_SetDepthBias();
 extern void D3DState_AssureBeginScene();
+extern const D3DXMATRIX *D3DState_GetSoftwareTextureTransform( int stage );
 extern void D3DState_Check();
 
 extern OPENGL_API void WINAPI glEnableClientState( GLenum cap );

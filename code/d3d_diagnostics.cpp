@@ -714,6 +714,11 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 			gDiagnostics.debugMaxDrawCall);
 		return false;
 	}
+	if (D3DState.EnableState.scissorEnabled && D3DState.ScissorState.empty) {
+		++gDiagnostics.drawsSkipped;
+		logPrintfLevel(QGL_LOG_TRACE, "GL_DRAW", "draw fully rejected by empty scissor box");
+		return false;
+	}
 	return true;
 }
 

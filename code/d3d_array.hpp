@@ -39,7 +39,9 @@ public:
 protected:
 	void SetMinimumVertexBufferSize( GLsizei numVerts );
 	int  SetMinimumIndexBufferSize( GLsizei numIndices, GLuint maximumIndex );
-	void SetupTexCoords( const float *texcoords, int num_coords, const float *position, const float *normal, int stage, float *out_texcoords );
+	void SetupTexCoords( const float *texcoords, int num_coords, const float *position,
+		const float *normal, int stage, const D3DXMATRIX *softwareTransform,
+		float *out_texcoords );
 
 	inline void SetIndex( void *pDest, GLuint dstIndex, GLsizei srcIndex )
 	{

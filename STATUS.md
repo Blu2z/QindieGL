@@ -425,10 +425,52 @@ No texture allocation/recreation warning, skipped framebuffer copy,
 `GL_OUT_OF_MEMORY`, or new crash report occurred. Save loading, menus, and
 `Alt+Tab` all remained operational.
 
-Remaining observed rendering issues for follow-up:
+### Phase D compatibility polish: UI clipping and animated texture matrices
 
-- some menu/drop-down background quads extend outside their intended clipping
-  area;
-- materials which scroll their texture coordinates in native OpenGL currently
-  appear static;
+Two non-blocking rendering mismatches found during the stability pass are now
+fixed and user-validated.
+
+DS2 deliberately submits scissor boxes which may extend outside the current
+framebuffer. QindieGL previously clamped only the box origin while retaining its
+original width and height. That enlarged several menu clipping regions and could
+also pass an invalid rectangle to D3D9, leaving a stale scissor rectangle active.
+The wrapper now preserves the original OpenGL scissor state for `glGet`, clamps
+both rectangle edges for D3D9, rejects draws covered by an empty intersection,
+and restores the rectangle and enable state after attribute or device-state
+reapplication.
+
+The scrolling-material trace showed that DS2 updated an affine texture matrix
+every frame (the S translation advanced from approximately 85.68 to 86.40), but
+the visible fixed-function texture coordinates remained static. YAE's affine
+S/T transforms are now folded into copied vertex coordinates for both vertex
+arrays and immediate-mode draws. Complex matrices and ARB vertex-program paths
+continue to use their existing implementations, avoiding the unsafe
+`COUNT4|PROJECTED` state which previously caused screen-sized flashing
+triangles. Transform selection is cached once per texture stage and draw; an
+initial per-vertex classification restored the animation but reduced frame rate
+from 40-60 FPS to 8-20 FPS and was replaced before this checkpoint.
+
+The final validating run confirmed:
+
+- the affected material scrolls;
+- static textures and lightmaps remain correct;
+- no flashing triangles are present;
+- menu clipping is correct;
+- performance returned to its previous 40-60 FPS range.
+
+Its clean shutdown summary reported:
+
+```text
+frames: 4824
+draw calls: 2602605
+failed D3D calls: none
+device resets: 1
+ARB programs uploaded/compiled: 8/8
+ARB program compilation failures: 0
+VBOs created: 234
+peak VBO storage: 39924880 bytes
+```
+
+Remaining observed rendering issue for follow-up:
+
 - the pickup post-effect works but lacks the original translucent appearance.

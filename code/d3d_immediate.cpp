@@ -184,6 +184,10 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 		return 0;
 	}
 
+	const D3DXMATRIX *softwareTransforms[MAX_D3D_TMU] = {};
+	for ( int stage = 0; stage < D3DGlobal.maxActiveTMU; ++stage )
+		softwareTransforms[stage] = D3DState_GetSoftwareTextureTransform( stage );
+
 	for ( int i = 0; i < m_vertexCount; ++i ) {
 		if ( m_bXYZW == false ) /* D3DFVF_XYZ */ {
 			memcpy( dst, src->position, sizeof(FLOAT)*3 );
@@ -214,6 +218,13 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 			}
 			if ( m_samplerMask & ( 1 << j ) ) {
 				memcpy( dst, src->texCoord[j], sizeof(FLOAT)*numCoords );
+				const D3DXMATRIX *transform = softwareTransforms[j];
+				if ( transform && numCoords >= 2 ) {
+					const float s = dst[0];
+					const float t = dst[1];
+					dst[0] = s * transform->_11 + t * transform->_21 + transform->_41;
+					dst[1] = s * transform->_12 + t * transform->_22 + transform->_42;
+				}
 				float rectangleScale[2];
 				if ( D3DTex_GetFixedFunctionRectangleScale( j, rectangleScale ) ) {
 					if ( numCoords > 0 ) dst[0] *= rectangleScale[0];

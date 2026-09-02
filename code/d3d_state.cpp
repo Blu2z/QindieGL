@@ -456,6 +456,26 @@ static void D3DState_SetTextureEnv( int stage, int sampler, eTexTypeInternal int
 		D3DGlobal.pDevice->SetSamplerState( sampler, D3DSAMP_MIPMAPLODBIAS, UTIL_FloatToDword(D3DState.TextureState.textureLodBias[stage])  );
 }
 
+const D3DXMATRIX *D3DState_GetSoftwareTextureTransform( int stage )
+{
+	if ( !D3DGlobal.settings.game.yaeFallbackCompatibility ||
+		D3DState.EnableState.vertexProgramEnabled || stage < 0 ||
+		stage >= D3DGlobal.maxActiveTMU )
+		return nullptr;
+
+	D3DStateMatrix& matrix = D3DGlobal.textureMatrixStack[stage]->top();
+	if ( matrix.is_identity() )
+		return nullptr;
+	const D3DXMATRIX& m = *static_cast<const D3DXMATRIX *>( matrix );
+	const float epsilon = 0.00001f;
+	const bool affine2D = fabsf( m._13 ) <= epsilon && fabsf( m._14 ) <= epsilon &&
+		fabsf( m._23 ) <= epsilon && fabsf( m._24 ) <= epsilon &&
+		fabsf( m._31 ) <= epsilon && fabsf( m._32 ) <= epsilon &&
+		fabsf( m._33 - 1.0f ) <= epsilon && fabsf( m._34 ) <= epsilon &&
+		fabsf( m._43 ) <= epsilon && fabsf( m._44 - 1.0f ) <= epsilon;
+	return affine2D ? &m : nullptr;
+}
+
 void D3DState_SetTexture()
 {
 	bool textureMatrixChanged = false;
@@ -478,13 +498,13 @@ void D3DState_SetTexture()
 
 		D3DState.textureMatrixModified[i] = false;
 		D3DStateMatrix& mat = D3DGlobal.textureMatrixStack[i]->top();
-		const bool stageTransformEnabled = !mat.is_identity();
+		const bool stageTransformEnabled = !mat.is_identity() &&
+			!D3DState_GetSoftwareTextureTransform( i );
 
-		// YAE only uses affine 2D texture matrices in this path.  Requesting a
-		// projected COUNT4 result makes D3D consume/divide by components that are
-		// not present in its ordinary float2 streams; the resulting undefined q
-		// manifested as very large, intermittently flashing textured triangles.
-		// COUNT2 applies the affine S/T transform without changing the vertex FVF.
+		// Affine S/T transforms are folded into YAE's copied vertex data above.
+		// More complex fixed-function matrices remain on D3D's COUNT2 path.
+		// COUNT4|PROJECTED must not be used with YAE's ordinary float2 streams: its
+		// undefined q previously produced intermittent screen-sized triangles.
 		hr = D3DGlobal.pDevice->SetTextureStageState( currentSampler,
 			D3DTSS_TEXTURETRANSFORMFLAGS,
 			stageTransformEnabled ? D3DTTFF_COUNT2 : D3DTTFF_DISABLE );
@@ -709,6 +729,7 @@ void D3DState_Apply( GLbitfield mask )
 		D3DGlobal.pDevice->SetRenderState(D3DRS_LIGHTING, D3DState.EnableState.lightingEnabled);
 		D3DGlobal.pDevice->SetRenderState(D3DRS_DITHERENABLE, D3DState.EnableState.ditherEnabled);
 		D3DGlobal.pDevice->SetRenderState(D3DRS_NORMALIZENORMALS, D3DState.EnableState.normalizeEnabled);
+		D3DGlobal.pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, D3DState.EnableState.scissorEnabled);
 		if (!(mask & GL_POLYGON_BIT)) {
 			D3DState_SetCullMode();
 			D3DState_SetDepthBias();
@@ -723,6 +744,14 @@ void D3DState_Apply( GLbitfield mask )
 	if (mask & GL_TEXTURE_BIT) {
 		D3DState_SetTexture();
 		D3DGlobal.pDevice->SetRenderState( D3DRS_TEXTUREFACTOR, D3DState.TextureState.textureEnvColor );
+	}
+	if (mask & GL_SCISSOR_BIT) {
+		HRESULT hr = D3DGlobal.pDevice->SetScissorRect(&D3DState.ScissorState.scissorRect);
+		if (FAILED(hr)) {
+			QGL_DiagnosticsRecordD3DFailure("IDirect3DDevice9::SetScissorRect", hr);
+			QGL_SET_ERROR(hr);
+		}
+		D3DState_SetRenderState(D3DRS_SCISSORTESTENABLE, D3DState.EnableState.scissorEnabled);
 	}
 	if (mask & GL_TRANSFORM_BIT) {
 		D3DGlobal.pDevice->SetRenderState(D3DRS_NORMALIZENORMALS, D3DState.EnableState.normalizeEnabled);
@@ -916,6 +945,15 @@ void D3DState_SetDefaults()
 	}
 
 	D3DGlobal.pDevice->GetViewport( &D3DState.viewport );
+	D3DState.ScissorState.glX = 0;
+	D3DState.ScissorState.glY = 0;
+	D3DState.ScissorState.glWidth = D3DGlobal.hCurrentMode.Width;
+	D3DState.ScissorState.glHeight = D3DGlobal.hCurrentMode.Height;
+	D3DState.ScissorState.empty = FALSE;
+	D3DState.ScissorState.scissorRect.left = 0;
+	D3DState.ScissorState.scissorRect.top = 0;
+	D3DState.ScissorState.scissorRect.right = D3DGlobal.hCurrentMode.Width;
+	D3DState.ScissorState.scissorRect.bottom = D3DGlobal.hCurrentMode.Height;
 
 	D3DState_Apply( GL_ALL_ATTRIB_BITS );
 	

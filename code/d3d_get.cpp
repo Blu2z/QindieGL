@@ -442,10 +442,10 @@ template<typename T> static void glGet( GLenum pname, T *params )
 		params[1] = (T)D3DState.viewport.MaxZ;
 		return;
 	case GL_SCISSOR_BOX:
-		params[0] = (T)D3DState.ScissorState.scissorRect.left;
-		params[1] = (T)(D3DGlobal.hCurrentMode.Height - D3DState.ScissorState.scissorRect.bottom);
-		params[2] = (T)(D3DState.ScissorState.scissorRect.right - D3DState.ScissorState.scissorRect.left);
-		params[3] = (T)(D3DState.ScissorState.scissorRect.bottom - D3DState.ScissorState.scissorRect.top);
+		params[0] = (T)D3DState.ScissorState.glX;
+		params[1] = (T)D3DState.ScissorState.glY;
+		params[2] = (T)D3DState.ScissorState.glWidth;
+		params[3] = (T)D3DState.ScissorState.glHeight;
 		return;		
 
 	case GL_CURRENT_NORMAL:
