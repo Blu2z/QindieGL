@@ -514,7 +514,52 @@ remain present, menu clipping is correct, `Alt+Tab` works, and performance is
 The validating session reached 16,160 frames and 7,759,954 draws. It exposed a
 separate stability follow-up after multiple area loads: fourteen late 512x512
 managed-texture allocations returned `E_OUTOFMEMORY` while the 32-bit process
-had about 1,089 MiB committed (839 MiB private). The failure is handled safely
-and caused no visible corruption or crash in this run, but its growth source
-must be identified before considering the no-runaway-memory part of Phase D
-fully revalidated with the new visibility path.
+had about 1,089 MiB committed (839 MiB private). The failure was handled safely
+and caused no visible corruption or crash in that run.
+
+### Phase D multi-location address-space fix
+
+Texture-resource counters and `VirtualQuery` address-space snapshots established
+that the allocation failures were not a QindieGL texture leak. At the first
+failed 2048x2048 lightmap allocation, live D3D textures accounted for an
+estimated 130 MiB, but the non-LAA process had only 145 MiB total address space
+free and its largest contiguous block was 15 MiB. The requested X8R8G8B8 atlas
+requires 16 MiB. A later attempt had only a 12 MiB largest block. The remaining
+address space was split between committed memory and reservations owned by the
+game, D3D runtime/driver, and interception modules.
+
+The retail `YOU_ARE_EMPTY.EXE` is a 32-bit PE image without the
+`IMAGE_FILE_LARGE_ADDRESS_AWARE` flag. Its executable header was patched with
+Visual Studio `editbin /LARGEADDRESSAWARE`; this raises the user virtual-address
+limit from 2 GiB to 4 GiB on 64-bit Windows without changing game code. The
+original executable was preserved beside it as
+`YOU_ARE_EMPTY.EXE.pre-laa-backup`.
+
+Hashes for this test installation are:
+
+```text
+original/backup SHA-256  18FAB62992049C7C15BF67A353136EEC077B45D789788D7640D75AFE7943E5E3
+LAA-patched SHA-256      D98D40CFA518B9103E5B2620FF74C6E1DAADEAC8CF1E3AEBE0DB0B8C40C6432C
+```
+
+The user then loaded five locations consecutively, including returning to an
+earlier location. Lightmaps remained present and correctly oriented throughout;
+textures, UI, 60 FPS operation, and `Alt+Tab` also remained correct. The clean
+shutdown summary reported:
+
+```text
+frames: 48584
+draw calls: 22510476
+failed D3D calls: none
+device resets: 0
+VBOs created: 1017
+peak VBO storage: 57862990 bytes
+texture allocation failures: none
+```
+
+At the final recorded atlas upload, the LAA process still had approximately
+1,857 MiB free with a 1,759 MiB largest contiguous block. Live texture storage
+was estimated at 260 MiB (288 MiB peak), and process commitment had fallen from
+its previous-location peak, so the run showed no runaway wrapper allocation.
+Phase D is revalidated with the real occlusion path. The NVIDIA overlay not
+appearing over gameplay is a newly observed low-priority compatibility issue.

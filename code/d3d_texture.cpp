@@ -36,6 +36,96 @@
 // TODO: S3TC-compressed textures
 //==================================================================================
 
+namespace {
+	uint64_t gD3DTextureLiveBytes = 0;
+	uint64_t gD3DTexturePeakBytes = 0;
+	uint64_t gD3DTextureCreates = 0;
+	uint64_t gD3DTextureReleases = 0;
+	unsigned int gD3DTextureLiveResources = 0;
+
+	uint64_t D3DTex_LevelBytes( D3DFORMAT format, UINT width, UINT height, UINT depth )
+	{
+		if ( format == D3DFMT_DXT1 )
+			return static_cast<uint64_t>( ( width + 3 ) / 4 ) *
+				static_cast<uint64_t>( ( height + 3 ) / 4 ) * depth * 8;
+		if ( format == D3DFMT_DXT2 || format == D3DFMT_DXT3 ||
+			format == D3DFMT_DXT4 || format == D3DFMT_DXT5 )
+			return static_cast<uint64_t>( ( width + 3 ) / 4 ) *
+				static_cast<uint64_t>( ( height + 3 ) / 4 ) * depth * 16;
+
+		unsigned int bytesPerPixel = 4;
+		switch ( format ) {
+		case D3DFMT_A8:
+		case D3DFMT_L8:
+		case D3DFMT_P8:
+			bytesPerPixel = 1;
+			break;
+		case D3DFMT_R5G6B5:
+		case D3DFMT_X1R5G5B5:
+		case D3DFMT_A1R5G5B5:
+		case D3DFMT_A4R4G4B4:
+		case D3DFMT_A8L8:
+		case D3DFMT_V8U8:
+		case D3DFMT_L6V5U5:
+		case D3DFMT_D16:
+		case D3DFMT_D16_LOCKABLE:
+		case D3DFMT_D15S1:
+			bytesPerPixel = 2;
+			break;
+		case D3DFMT_R8G8B8:
+			bytesPerPixel = 3;
+			break;
+		default:
+			break;
+		}
+		return static_cast<uint64_t>( width ) * height * depth * bytesPerPixel;
+	}
+
+	uint64_t D3DTex_EstimateResourceBytes( LPDIRECT3DBASETEXTURE9 texture,
+		GLenum target )
+	{
+		if ( !texture ) return 0;
+		uint64_t bytes = 0;
+		const DWORD levels = texture->GetLevelCount();
+		if ( target == GL_TEXTURE_3D_EXT ) {
+			LPDIRECT3DVOLUMETEXTURE9 volume =
+				static_cast<LPDIRECT3DVOLUMETEXTURE9>( texture );
+			for ( DWORD level = 0; level < levels; ++level ) {
+				D3DVOLUME_DESC desc = {};
+				if ( SUCCEEDED( volume->GetLevelDesc( level, &desc ) ) )
+					bytes += D3DTex_LevelBytes( desc.Format, desc.Width, desc.Height, desc.Depth );
+			}
+		} else if ( target == GL_TEXTURE_CUBE_MAP_ARB ) {
+			LPDIRECT3DCUBETEXTURE9 cube =
+				static_cast<LPDIRECT3DCUBETEXTURE9>( texture );
+			for ( DWORD level = 0; level < levels; ++level ) {
+				D3DSURFACE_DESC desc = {};
+				if ( SUCCEEDED( cube->GetLevelDesc( level, &desc ) ) )
+					bytes += 6 * D3DTex_LevelBytes( desc.Format, desc.Width, desc.Height, 1 );
+			}
+		} else {
+			LPDIRECT3DTEXTURE9 image = static_cast<LPDIRECT3DTEXTURE9>( texture );
+			for ( DWORD level = 0; level < levels; ++level ) {
+				D3DSURFACE_DESC desc = {};
+				if ( SUCCEEDED( image->GetLevelDesc( level, &desc ) ) )
+					bytes += D3DTex_LevelBytes( desc.Format, desc.Width, desc.Height, 1 );
+			}
+		}
+		return bytes;
+	}
+
+	void D3DTex_LogResourceStats( QGLLogLevel level, const char *context )
+	{
+		logPrintfLevel( level, "TEXTURE_MEMORY",
+			"context=%s liveResources=%u liveEstimated=%lluMB peakEstimated=%lluMB creates=%llu releases=%llu",
+			context ? context : "unknown", gD3DTextureLiveResources,
+			static_cast<unsigned long long>( gD3DTextureLiveBytes / ( 1024 * 1024 ) ),
+			static_cast<unsigned long long>( gD3DTexturePeakBytes / ( 1024 * 1024 ) ),
+			static_cast<unsigned long long>( gD3DTextureCreates ),
+			static_cast<unsigned long long>( gD3DTextureReleases ) );
+	}
+}
+
 D3DTextureObject :: D3DTextureObject( GLuint gl_index )
 {
 	m_pD3DTexture = nullptr;
@@ -62,6 +152,7 @@ D3DTextureObject :: D3DTextureObject( GLuint gl_index )
 	m_priority = 0;
 	m_lodBias = 0;
 	m_glIndex = gl_index;
+	m_estimatedBytes = 0;
 }
 
 D3DTextureObject :: ~D3DTextureObject()
@@ -141,10 +232,13 @@ static bool D3DTex_IsRectangleTarget(GLenum target)
 	}
 }
 
-static void D3DTex_LogProcessAddressSpace()
+static void D3DTex_LogProcessAddressSpace( QGLLogLevel level, const char *context )
 {
 	SIZE_T committed = 0;
 	SIZE_T privateCommitted = 0;
+	SIZE_T reserved = 0;
+	SIZE_T freeBytes = 0;
+	SIZE_T largestFree = 0;
 	BYTE *address = nullptr;
 	MEMORY_BASIC_INFORMATION memory = {};
 	while ( VirtualQuery( address, &memory, sizeof( memory ) ) == sizeof( memory ) ) {
@@ -152,17 +246,38 @@ static void D3DTex_LogProcessAddressSpace()
 			committed += memory.RegionSize;
 			if ( memory.Type == MEM_PRIVATE )
 				privateCommitted += memory.RegionSize;
+		} else if ( memory.State == MEM_RESERVE ) {
+			reserved += memory.RegionSize;
+		} else if ( memory.State == MEM_FREE ) {
+			freeBytes += memory.RegionSize;
+			if ( memory.RegionSize > largestFree ) largestFree = memory.RegionSize;
 		}
 		const uintptr_t current = reinterpret_cast<uintptr_t>( address );
 		const uintptr_t next = reinterpret_cast<uintptr_t>( memory.BaseAddress ) + memory.RegionSize;
 		if ( next <= current ) break;
 		address = reinterpret_cast<BYTE *>( next );
 	}
-	logPrintfLevel( QGL_LOG_ERROR, "PROCESS_MEMORY",
-		"committed=%uMB private=%uMB pointerBits=%u",
+	const HMODULE image = GetModuleHandle( nullptr );
+	bool largeAddressAware = false;
+	if ( image ) {
+		const IMAGE_DOS_HEADER *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>( image );
+		if ( dos->e_magic == IMAGE_DOS_SIGNATURE ) {
+			const IMAGE_NT_HEADERS *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(
+				reinterpret_cast<const BYTE *>( image ) + dos->e_lfanew );
+			largeAddressAware = nt->Signature == IMAGE_NT_SIGNATURE &&
+				( nt->FileHeader.Characteristics & IMAGE_FILE_LARGE_ADDRESS_AWARE ) != 0;
+		}
+	}
+	logPrintfLevel( level, "PROCESS_MEMORY",
+		"context=%s committed=%uMB private=%uMB reserved=%uMB free=%uMB largestFree=%uMB pointerBits=%u largeAddressAware=%u",
+		context ? context : "unknown",
 		static_cast<unsigned int>( committed / ( 1024 * 1024 ) ),
 		static_cast<unsigned int>( privateCommitted / ( 1024 * 1024 ) ),
-		static_cast<unsigned int>( sizeof( void * ) * 8 ) );
+		static_cast<unsigned int>( reserved / ( 1024 * 1024 ) ),
+		static_cast<unsigned int>( freeBytes / ( 1024 * 1024 ) ),
+		static_cast<unsigned int>( largestFree / ( 1024 * 1024 ) ),
+		static_cast<unsigned int>( sizeof( void * ) * 8 ),
+		largeAddressAware ? 1u : 0u );
 }
 
 bool D3DTex_GetFixedFunctionRectangleScale( int stage, float scale[2] )
@@ -267,6 +382,11 @@ void D3DTextureObject :: FreeD3DTexture()
 		}
 		m_pD3DTexture->Release();
 		m_pD3DTexture = nullptr;
+		gD3DTextureLiveBytes = gD3DTextureLiveBytes >= m_estimatedBytes ?
+			gD3DTextureLiveBytes - m_estimatedBytes : 0;
+		m_estimatedBytes = 0;
+		if ( gD3DTextureLiveResources ) --gD3DTextureLiveResources;
+		++gD3DTextureReleases;
 	}
 }
 
@@ -327,6 +447,14 @@ HRESULT D3DTextureObject :: CreateD3DTexture( GLenum target, GLsizei width, GLsi
 		hr = D3DGlobal.pDevice->CreateTexture(width, height, mipmaps ? 0 : 1, usage, format, pool, &m_pD3DTexture, NULL);
 		if (m_pD3DTexture) m_pD3DTexture->SetPriority( m_priority );
 	}
+	if ( SUCCEEDED( hr ) && m_pD3DBaseTexture ) {
+		m_estimatedBytes = D3DTex_EstimateResourceBytes( m_pD3DBaseTexture, target );
+		gD3DTextureLiveBytes += m_estimatedBytes;
+		if ( gD3DTextureLiveBytes > gD3DTexturePeakBytes )
+			gD3DTexturePeakBytes = gD3DTextureLiveBytes;
+		++gD3DTextureLiveResources;
+		++gD3DTextureCreates;
+	}
 
 	return hr;
 }
@@ -335,6 +463,7 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 {
 	if (!m_pD3DBaseTexture) return E_FAIL;
 	if (m_mipmaps == mipmaps) return S_OK;
+	const uint64_t oldEstimatedBytes = m_estimatedBytes;
 
 	if (m_target == GL_TEXTURE_3D_EXT) {
 		//logPrintf("RecreateD3DTexture: %i x %i x %i x %s (mipmaps = %s)\n", m_width, m_height, m_depth, D3DGlobal_FormatToString(m_format), mipmaps ? "true" : "false" );
@@ -448,6 +577,14 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 	}
 
 
+	gD3DTextureLiveBytes = gD3DTextureLiveBytes >= oldEstimatedBytes ?
+		gD3DTextureLiveBytes - oldEstimatedBytes : 0;
+	m_estimatedBytes = D3DTex_EstimateResourceBytes( m_pD3DBaseTexture, m_target );
+	gD3DTextureLiveBytes += m_estimatedBytes;
+	if ( gD3DTextureLiveBytes > gD3DTexturePeakBytes )
+		gD3DTexturePeakBytes = gD3DTextureLiveBytes;
+	++gD3DTextureCreates;
+	++gD3DTextureReleases;
 	m_mipmaps = mipmaps;
 	return S_OK;
 }
@@ -593,13 +730,15 @@ HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint
 		D3DGlobal.settings.game.yaeFallbackCompatibility && level == 0 && depth == 1 &&
 		m_target == GL_TEXTURE_2D && width == 4096 && height == 4096 &&
 		internalformat == GL_RGBA8 && format == GL_BGRA_EXT && type == GL_UNSIGNED_BYTE;
+	const bool yaeAuthoredLightmapAtlas =
+		D3DGlobal.settings.game.yaeFallbackCompatibility && level == 0 && depth == 1 &&
+		m_target == GL_TEXTURE_2D && width == 2048 && height == 2048 &&
+		internalformat == GL_RGB8 && format == GL_BGR_EXT && type == GL_UNSIGNED_BYTE;
 	if ( yaeRuntimeLightmapAtlas )
 		logPrintfLevel( QGL_LOG_INFO, "YAE_LIGHTMAP",
 			"vertically reflecting runtime atlas id=%u size=%dx%d format=0x%X",
 			m_glIndex, width, height, format );
-	else if ( D3DGlobal.settings.game.yaeFallbackCompatibility && level == 0 && depth == 1 &&
-		m_target == GL_TEXTURE_2D && width == 2048 && height == 2048 &&
-		internalformat == GL_RGB8 && format == GL_BGR_EXT && type == GL_UNSIGNED_BYTE )
+	else if ( yaeAuthoredLightmapAtlas )
 		logPrintfLevel( QGL_LOG_INFO, "YAE_LIGHTMAP",
 			"preserving authored atlas row order id=%u size=%dx%d format=0x%X",
 			m_glIndex, width, height, format );
@@ -622,6 +761,10 @@ HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint
 		hr = m_pD3DCubeTexture->UnlockRect( (D3DCUBEMAP_FACES)cubeface, level );
 	} else {
 		hr = m_pD3DTexture->UnlockRect( level );
+	}
+	if ( SUCCEEDED( hr ) && ( yaeRuntimeLightmapAtlas || yaeAuthoredLightmapAtlas ) ) {
+		D3DTex_LogResourceStats( QGL_LOG_INFO, "lightmap-atlas" );
+		D3DTex_LogProcessAddressSpace( QGL_LOG_INFO, "lightmap-atlas" );
 	}
 
 	return hr;
@@ -1239,7 +1382,8 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 				logPrintf("ERROR: Texture creation failed: id=%u target=0x%X level=%d size=%dx%dx%d internal=0x%X d3d=%s hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, width, height, depth, internalformat,
 					D3DGlobal_FormatToString(d3dFormat), hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
-				D3DTex_LogProcessAddressSpace();
+				D3DTex_LogResourceStats( QGL_LOG_ERROR, "texture-create-failure" );
+				D3DTex_LogProcessAddressSpace( QGL_LOG_ERROR, "texture-create-failure" );
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1261,7 +1405,8 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 				logPrintf("ERROR: Texture mip-chain recreation failed: id=%u target=0x%X level=%d baseSize=%ux%ux%u internal=0x%X hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, pTexture->GetWidth(), pTexture->GetHeight(), pTexture->GetDepth(),
 					internalformat, hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
-				D3DTex_LogProcessAddressSpace();
+				D3DTex_LogResourceStats( QGL_LOG_ERROR, "texture-recreate-failure" );
+				D3DTex_LogProcessAddressSpace( QGL_LOG_ERROR, "texture-recreate-failure" );
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1375,7 +1520,8 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 				logPrintf("ERROR: Compressed texture creation failed: id=%u target=0x%X level=%d size=%dx%dx%d internal=0x%X d3d=%s hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, width, height, depth, internalformat,
 					D3DGlobal_FormatToString(d3dFormat), hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
-				D3DTex_LogProcessAddressSpace();
+				D3DTex_LogResourceStats( QGL_LOG_ERROR, "compressed-texture-create-failure" );
+				D3DTex_LogProcessAddressSpace( QGL_LOG_ERROR, "compressed-texture-create-failure" );
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1397,7 +1543,8 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 				logPrintf("ERROR: Compressed texture mip-chain recreation failed: id=%u target=0x%X level=%d baseSize=%ux%ux%u internal=0x%X hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, pTexture->GetWidth(), pTexture->GetHeight(), pTexture->GetDepth(),
 					internalformat, hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
-				D3DTex_LogProcessAddressSpace();
+				D3DTex_LogResourceStats( QGL_LOG_ERROR, "compressed-texture-recreate-failure" );
+				D3DTex_LogProcessAddressSpace( QGL_LOG_ERROR, "compressed-texture-recreate-failure" );
 				QGL_SET_ERROR(hr);
 				return;
 			}
