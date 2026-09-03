@@ -101,6 +101,7 @@ private:
 	int						m_dstbytes;
 	D3DCOLOR				m_borderColor;
 	DWORD					m_priority;
+	uint64_t				m_estimatedBytes;
 };
 
 // D3D9 2D samplers use normalized coordinates, while
