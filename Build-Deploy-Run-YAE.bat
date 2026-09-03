@@ -8,6 +8,7 @@ set "BUILT_DLL=%REPO%bin\ReleaseNoRemixMods\opengl32.dll"
 set "BUILT_INI=%REPO%bin\ReleaseNoRemixMods\QindieGL.ini"
 set "TARGET_DLL=%GAME%\QindieGL-traced.dll"
 set "TARGET_INI=%GAME%\QindieGL.ini"
+set "RUNTIME_GLI=%REPO%tools\glintercept\gliConfig.runtime.ini"
 set "GAME_EXE=%GAME%\YOU_ARE_EMPTY.exe"
 
 if not exist "%GAME_EXE%" (
@@ -76,6 +77,7 @@ if errorlevel 1 (
 )
 
 if exist "%BUILT_INI%" copy /Y "%BUILT_INI%" "%TARGET_INI%" >NUL
+if exist "%RUNTIME_GLI%" copy /Y "%RUNTIME_GLI%" "%GAME%\gliConfig.ini" >NUL
 
 echo Launching You Are Empty...
 start "" /D "%GAME%" "%GAME_EXE%"

@@ -151,6 +151,7 @@ static bool D3DGlobal_Reset()
 		D3DGlobal.pSystemMemFB = nullptr;
 	}
 
+	D3DExtension_ReleaseQueryResources();
 	PBuffer_ReleaseResources();
 	// GetSwapChain adds a reference to the implicit swap chain.  D3D9 requires
 	// every such reference to be released before Reset; retaining this one made
@@ -200,6 +201,7 @@ void D3DGlobal_Cleanup( bool cleanupAll )
 
 	D3DDisplayList_Cleanup();
 	ARB_Cleanup();
+	D3DExtension_CleanupQueries();
 	PBuffer_Cleanup();
 
 #ifndef QINDIEGLSRC_NO_REMIX
@@ -861,6 +863,14 @@ static bool D3DGlobal_SetupPresentParams( int width, int height, int bpp, BOOL w
 {
 	// clear present params to NULL
 	memset (&D3DGlobal.hPresentParams, 0, sizeof (D3DPRESENT_PARAMETERS));
+	if ( D3DGlobal.settings.game.yaeFallbackCompatibility && !windowed ) {
+		// YAE's borderless WS_POPUP already covers the monitor. Keeping D3D9 in
+		// windowed presentation mode avoids exclusive-mode focus churn after the
+		// intro/level transition and lets Alt+Tab expose the desktop immediately.
+		windowed = TRUE;
+		logPrintfLevel( QGL_LOG_INFO, "YAE_PRESENT",
+			"using borderless-windowed D3D9 presentation for %dx%d", width, height );
+	}
 
 	logPrintf("SetupPresentParams: %i x %i x %i (%s)\n", width, height, bpp, windowed ? "windowed" : "fullscreen" );
 

@@ -474,3 +474,47 @@ peak VBO storage: 39924880 bytes
 Remaining observed rendering issue for follow-up:
 
 - the pickup post-effect works but lacks the original translucent appearance.
+
+### Phase C visibility follow-up and fullscreen presentation
+
+The remaining short-distance geometry disappearance was caused by the original
+`GL_ARB_occlusion_query` compatibility stubs. They always returned one passed
+sample, which is not a conservative result for DS2's visibility system and led
+the engine to cull nearby static geometry incorrectly. QindieGL now maps query
+objects to D3D9 occlusion queries, implements availability and blocking-result
+semantics, and recreates the default-pool query resources safely after a device
+reset. During device loss an unresolved query is conservatively treated as
+visible so focus changes cannot introduce a transient over-cull.
+
+YAE now uses D3D9 windowed presentation behind its existing full-monitor popup
+window. This preserves the game's borderless-fullscreen appearance while
+allowing `Alt+Tab` to expose other applications reliably. Draw submission is
+also suppressed while the device is lost rather than touching invalid D3D9
+streaming resources.
+
+The temporary full GLIntercept configuration used for diagnosis performed an
+error check and function trace after every GL call. At YAE's draw-call rate that
+reduced performance from roughly 40-60 FPS to 8-30 FPS. Normal launches now
+install `tools/glintercept/gliConfig.runtime.ini`, which retains the QindieGL
+structured log but disables per-call interception logs and injected error
+checks. Routine display-list messages were moved to debug level for the same
+reason.
+
+Two distinct lightmap upload paths were observed and are intentionally kept
+separate:
+
+- runtime-built 4096x4096 RGBA/BGRA atlases are vertically reflected;
+- authored 2048x2048 RGB/BGR atlases preserve their source row order.
+
+The user validated the combined result across two locations: geometry no
+longer disappears, static/dynamic textures and correctly oriented lightmaps
+remain present, menu clipping is correct, `Alt+Tab` works, and performance is
+40-60 FPS depending on the location. No flashing triangles were observed.
+
+The validating session reached 16,160 frames and 7,759,954 draws. It exposed a
+separate stability follow-up after multiple area loads: fourteen late 512x512
+managed-texture allocations returned `E_OUTOFMEMORY` while the 32-bit process
+had about 1,089 MiB committed (839 MiB private). The failure is handled safely
+and caused no visible corruption or crash in this run, but its growth source
+must be identified before considering the no-runaway-memory part of Phase D
+fully revalidated with the new visibility path.

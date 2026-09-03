@@ -183,6 +183,8 @@ bool D3DState_SetMatrixMode()
 
 void D3DState_AssureBeginScene()
 {
+	if ( D3DGlobal.deviceLost || !D3DGlobal.pDevice )
+		return;
 	if (!D3DGlobal.sceneBegan) {
 		HRESULT hr = D3DGlobal.pDevice->BeginScene();
 		if (FAILED(hr)) {

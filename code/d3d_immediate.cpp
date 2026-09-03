@@ -254,6 +254,12 @@ void D3DIMBuffer :: End( bool recordDraw )
 {
 	if ( !m_vertexCount || !m_bBegan ) 
 		return;
+	if ( D3DGlobal.deviceLost ) {
+		m_bBegan = false;
+		m_vertexCount = 0;
+		m_passedVertexCount = 0;
+		return;
+	}
 
 	if (recordDraw && !QGL_DiagnosticsBeginDraw("glBegin/glEnd", m_primitiveType,
 		m_passedVertexCount, 0, 0, nullptr)) {
@@ -1544,8 +1550,10 @@ OPENGL_API void WINAPI glVertex4sv( const GLshort *v )
 OPENGL_API void WINAPI glBegin( GLenum mode )
 {
 	DL_RECORD_1( glBegin, mode );
-	D3DState_Check( );
-	D3DState_AssureBeginScene( );
+	if ( !D3DGlobal.deviceLost ) {
+		D3DState_Check( );
+		D3DState_AssureBeginScene( );
+	}
 	assert( D3DGlobal.pIMBuffer != NULL );
 	D3DGlobal.pIMBuffer->Begin( mode );
 }
@@ -1572,6 +1580,7 @@ template<typename T> inline void D3D_Rect( T x1, T y1, T x2, T y2 )
 		} );
 		if ( !gDLExecute ) return;
 	}
+	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check( );
 	D3DState_AssureBeginScene( );
 	assert( D3DGlobal.pIMBuffer != NULL );
