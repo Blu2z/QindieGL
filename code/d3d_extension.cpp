@@ -671,81 +671,352 @@ OPENGL_API void WINAPI glGetVertexAttribPointervARB( GLuint, GLenum, GLvoid **po
 }
 
 //=========================================
-// GL_ARB_occlusion_query stubs
+// GL_ARB_occlusion_query
 //-----------------------------------------
-// Accept calls silently; queries always
-// report "result available" with 1 sample.
+// D3D9 occlusion queries provide the result DS2 needs: the number of fragments
+// which passed depth/stencil testing. Query names survive a device Reset while
+// their default-pool D3D resources are recreated lazily on the next Begin.
 //=========================================
 
 namespace {
+	struct OccQueryState {
+		LPDIRECT3DQUERY9 query;
+		bool objectCreated;
+		bool pending;
+		bool resultReady;
+		bool bypassed;
+		DWORD result;
+
+		OccQueryState() : query( nullptr ), objectCreated( false ), pending( false ),
+			resultReady( false ), bypassed( false ), result( 0 ) {}
+	};
+
 	static GLuint gOccQueryNextID = 1;
-	static std::set<GLuint> gOccQueryIDs;
+	static std::map<GLuint, OccQueryState> gOccQueries;
 	static GLuint gOccQueryActive = 0;
+	static int gOccQuerySupported = -1;
+	static unsigned int gOccQueryResultLogs = 0;
+	static unsigned int gOccQueryWaitLogs = 0;
+
+	DWORD ConservativeOccQueryResult()
+	{
+		const unsigned __int64 pixels =
+			static_cast<unsigned __int64>( D3DGlobal.hCurrentMode.Width ) *
+			static_cast<unsigned __int64>( D3DGlobal.hCurrentMode.Height );
+		return pixels > 0xFFFFFFFFui64 ? 0xFFFFFFFFu :
+			( pixels ? static_cast<DWORD>( pixels ) : 1u );
+	}
+
+	void ResolveOccQueryAsVisible( OccQueryState& state )
+	{
+		state.result = ConservativeOccQueryResult();
+		state.pending = false;
+		state.resultReady = true;
+		state.bypassed = false;
+	}
+
+	bool OccQuerySupported()
+	{
+		if ( gOccQuerySupported >= 0 )
+			return gOccQuerySupported != 0;
+		if ( !D3DGlobal.pDevice )
+			return false;
+
+		LPDIRECT3DQUERY9 probe = nullptr;
+		const HRESULT hr = D3DGlobal.pDevice->CreateQuery( D3DQUERYTYPE_OCCLUSION, &probe );
+		if ( probe ) probe->Release();
+		gOccQuerySupported = SUCCEEDED( hr ) ? 1 : 0;
+		logPrintfLevel( SUCCEEDED( hr ) ? QGL_LOG_INFO : QGL_LOG_WARN,
+			"OCCLUSION_QUERY", "D3D9 support=%u hr=0x%08X %s",
+			gOccQuerySupported, hr, DXGetErrorString( hr ) );
+		return gOccQuerySupported != 0;
+	}
+
+	OccQueryState *FindOccQueryObject( GLuint id )
+	{
+		auto found = gOccQueries.find( id );
+		if ( found == gOccQueries.end() || !found->second.objectCreated ) {
+			QGL_SET_ERROR( E_INVALID_OPERATION );
+			return nullptr;
+		}
+		return &found->second;
+	}
+
+	bool EnsureOccQueryResource( OccQueryState& state )
+	{
+		if ( state.query )
+			return true;
+		if ( D3DGlobal.deviceLost )
+			return false;
+		if ( !OccQuerySupported() ) {
+			QGL_SET_ERROR( E_FAIL );
+			return false;
+		}
+		const HRESULT hr = D3DGlobal.pDevice->CreateQuery(
+			D3DQUERYTYPE_OCCLUSION, &state.query );
+		if ( FAILED( hr ) || !state.query ) {
+			QGL_DiagnosticsRecordD3DFailure( "IDirect3DDevice9::CreateQuery(OCCLUSION)", hr );
+			state.query = nullptr;
+			QGL_SET_ERROR( hr );
+			return false;
+		}
+		return true;
+	}
+
+	bool ResolveOccQuery( GLuint id, OccQueryState& state, bool wait )
+	{
+		if ( state.resultReady )
+			return true;
+		if ( D3DGlobal.deviceLost ) {
+			ResolveOccQueryAsVisible( state );
+			return true;
+		}
+		if ( !state.pending || !state.query )
+			return false;
+
+		bool flushing = false;
+		for ( ;; ) {
+			DWORD result = 0;
+			const HRESULT hr = state.query->GetData( &result, sizeof( result ),
+				flushing ? D3DGETDATA_FLUSH : 0 );
+			if ( hr == S_OK ) {
+				state.result = result;
+				state.pending = false;
+				state.resultReady = true;
+				if ( D3DGlobal.settings.game.yaeFallbackCompatibility &&
+					gOccQueryResultLogs++ < 32 ) {
+					logPrintfLevel( QGL_LOG_DEBUG, "YAE_OCCLUSION_QUERY",
+						"sample=%u frame=%llu draw=%llu id=%u pixels=%u",
+						gOccQueryResultLogs,
+						static_cast<unsigned long long>( QGL_DiagnosticsGetFrameId() ),
+						static_cast<unsigned long long>( QGL_DiagnosticsGetDrawId() ),
+						id, result );
+				}
+				return true;
+			}
+			if ( hr != S_FALSE ) {
+				if ( hr == D3DERR_DEVICELOST ) {
+					D3DGlobal.deviceLost = true;
+					ResolveOccQueryAsVisible( state );
+					return true;
+				}
+				QGL_DiagnosticsRecordD3DFailure( "IDirect3DQuery9::GetData(OCCLUSION)", hr );
+				QGL_SET_ERROR( hr );
+				return false;
+			}
+			if ( !wait || D3DGlobal.deviceLost )
+				return false;
+			if ( !flushing ) {
+				flushing = true;
+				if ( D3DGlobal.settings.game.yaeFallbackCompatibility &&
+					gOccQueryWaitLogs++ < 32 ) {
+					logPrintfLevel( QGL_LOG_INFO, "YAE_OCCLUSION_WAIT",
+						"sample=%u frame=%llu draw=%llu id=%u",
+						gOccQueryWaitLogs,
+						static_cast<unsigned long long>( QGL_DiagnosticsGetFrameId() ),
+						static_cast<unsigned long long>( QGL_DiagnosticsGetDrawId() ), id );
+				}
+			}
+			Sleep( 0 );
+		}
+	}
 }
 
 OPENGL_API void WINAPI glGenQueriesARB( GLsizei n, GLuint *ids )
 {
-	D3DExtension_RecordStubInvocation("glGenQueriesARB");
-	if (!ids || n <= 0) return;
-	for (GLsizei i = 0; i < n; ++i) {
-		GLuint id = gOccQueryNextID++;
-		gOccQueryIDs.insert(id);
+	if ( n < 0 ) {
+		QGL_SET_ERROR( E_INVALIDARG );
+		return;
+	}
+	if ( !ids || n == 0 ) return;
+	for ( GLsizei i = 0; i < n; ++i ) {
+		while ( !gOccQueryNextID || gOccQueries.find( gOccQueryNextID ) != gOccQueries.end() )
+			++gOccQueryNextID;
+		const GLuint id = gOccQueryNextID++;
+		gOccQueries.insert( std::make_pair( id, OccQueryState() ) );
 		ids[i] = id;
 	}
 }
+
 OPENGL_API void WINAPI glDeleteQueriesARB( GLsizei n, const GLuint *ids )
 {
-	D3DExtension_RecordStubInvocation("glDeleteQueriesARB");
-	if (!ids) return;
-	for (GLsizei i = 0; i < n; ++i) {
-		gOccQueryIDs.erase(ids[i]);
-		if (gOccQueryActive == ids[i]) gOccQueryActive = 0;
+	if ( n < 0 ) {
+		QGL_SET_ERROR( E_INVALIDARG );
+		return;
+	}
+	if ( !ids || n == 0 ) return;
+	for ( GLsizei i = 0; i < n; ++i ) {
+		auto found = gOccQueries.find( ids[i] );
+		if ( found == gOccQueries.end() ) continue;
+		if ( gOccQueryActive == ids[i] ) {
+			QGL_SET_ERROR( E_INVALID_OPERATION );
+			continue;
+		}
+		if ( found->second.query ) found->second.query->Release();
+		gOccQueries.erase( found );
 	}
 }
+
 OPENGL_API GLboolean WINAPI glIsQueryARB( GLuint id )
 {
-	D3DExtension_RecordStubInvocation("glIsQueryARB");
-	return (gOccQueryIDs.find(id) != gOccQueryIDs.end()) ? GL_TRUE : GL_FALSE;
+	auto found = gOccQueries.find( id );
+	return (found != gOccQueries.end() && found->second.objectCreated) ? GL_TRUE : GL_FALSE;
 }
-OPENGL_API void WINAPI glBeginQueryARB( GLenum, GLuint id )
+
+OPENGL_API void WINAPI glBeginQueryARB( GLenum target, GLuint id )
 {
-	D3DExtension_RecordStubInvocation("glBeginQueryARB");
+	if ( target != GL_SAMPLES_PASSED_ARB ) {
+		QGL_SET_ERROR( E_INVALID_ENUM );
+		return;
+	}
+	if ( gOccQueryActive ) {
+		QGL_SET_ERROR( E_INVALID_OPERATION );
+		return;
+	}
+	auto found = gOccQueries.find( id );
+	if ( !id || found == gOccQueries.end() ) {
+		QGL_SET_ERROR( E_INVALID_OPERATION );
+		return;
+	}
+	OccQueryState& state = found->second;
+	state.objectCreated = true;
+	if ( D3DGlobal.deviceLost ) {
+		state.pending = false;
+		state.resultReady = false;
+		state.bypassed = true;
+		gOccQueryActive = id;
+		return;
+	}
+	if ( !EnsureOccQueryResource( state ) ) return;
+	D3DState_AssureBeginScene();
+	const HRESULT hr = state.query->Issue( D3DISSUE_BEGIN );
+	if ( FAILED( hr ) ) {
+		if ( hr == D3DERR_DEVICELOST ) {
+			D3DGlobal.deviceLost = true;
+			state.pending = false;
+			state.resultReady = false;
+			state.bypassed = true;
+			gOccQueryActive = id;
+			return;
+		}
+		QGL_DiagnosticsRecordD3DFailure( "IDirect3DQuery9::Issue(BEGIN)", hr );
+		QGL_SET_ERROR( hr );
+		return;
+	}
+	state.pending = false;
+	state.resultReady = false;
+	state.bypassed = false;
 	gOccQueryActive = id;
 }
-OPENGL_API void WINAPI glEndQueryARB( GLenum )
+
+OPENGL_API void WINAPI glEndQueryARB( GLenum target )
 {
-	D3DExtension_RecordStubInvocation("glEndQueryARB");
+	if ( target != GL_SAMPLES_PASSED_ARB ) {
+		QGL_SET_ERROR( E_INVALID_ENUM );
+		return;
+	}
+	if ( !gOccQueryActive ) {
+		QGL_SET_ERROR( E_INVALID_OPERATION );
+		return;
+	}
+	OccQueryState& state = gOccQueries[gOccQueryActive];
+	if ( state.bypassed || D3DGlobal.deviceLost ) {
+		ResolveOccQueryAsVisible( state );
+		gOccQueryActive = 0;
+		return;
+	}
+	const HRESULT hr = state.query ? state.query->Issue( D3DISSUE_END ) : E_FAIL;
+	if ( FAILED( hr ) ) {
+		if ( hr == D3DERR_DEVICELOST ) {
+			D3DGlobal.deviceLost = true;
+			ResolveOccQueryAsVisible( state );
+			gOccQueryActive = 0;
+			return;
+		}
+		QGL_DiagnosticsRecordD3DFailure( "IDirect3DQuery9::Issue(END)", hr );
+		QGL_SET_ERROR( hr );
+		gOccQueryActive = 0;
+		return;
+	}
+	state.pending = true;
+	state.resultReady = false;
+	state.bypassed = false;
 	gOccQueryActive = 0;
 }
-OPENGL_API void WINAPI glGetQueryivARB( GLenum, GLenum pname, GLint *params )
+
+OPENGL_API void WINAPI glGetQueryivARB( GLenum target, GLenum pname, GLint *params )
 {
-	D3DExtension_RecordStubInvocation("glGetQueryivARB");
-	if (!params) return;
-	switch (pname) {
+	if ( !params ) return;
+	if ( target != GL_SAMPLES_PASSED_ARB ) {
+		QGL_SET_ERROR( E_INVALID_ENUM );
+		return;
+	}
+	switch ( pname ) {
 	case GL_QUERY_COUNTER_BITS_ARB: params[0] = 32; break;
-	case 0x8865 /*GL_CURRENT_QUERY_ARB*/: params[0] = gOccQueryActive; break;
-	default: params[0] = 0; break;
+	case GL_CURRENT_QUERY_ARB: params[0] = gOccQueryActive; break;
+	default: QGL_SET_ERROR( E_INVALID_ENUM ); break;
 	}
 }
-OPENGL_API void WINAPI glGetQueryObjectivARB( GLuint, GLenum pname, GLint *params )
+
+OPENGL_API void WINAPI glGetQueryObjectivARB( GLuint id, GLenum pname, GLint *params )
 {
-	D3DExtension_RecordStubInvocation("glGetQueryObjectivARB");
-	if (!params) return;
-	switch (pname) {
-	case GL_QUERY_RESULT_ARB: params[0] = 1; break; // always 1 sample passed
-	case GL_QUERY_RESULT_AVAILABLE_ARB: params[0] = GL_TRUE; break;
-	default: params[0] = 0; break;
+	if ( !params ) return;
+	OccQueryState *state = FindOccQueryObject( id );
+	if ( !state || gOccQueryActive == id ) return;
+	switch ( pname ) {
+	case GL_QUERY_RESULT_ARB:
+		if ( ResolveOccQuery( id, *state, true ) )
+			params[0] = state->result > 0x7FFFFFFFu ? 0x7FFFFFFF : static_cast<GLint>( state->result );
+		break;
+	case GL_QUERY_RESULT_AVAILABLE_ARB:
+		params[0] = ResolveOccQuery( id, *state, false ) ? GL_TRUE : GL_FALSE;
+		break;
+	default: QGL_SET_ERROR( E_INVALID_ENUM ); break;
 	}
 }
-OPENGL_API void WINAPI glGetQueryObjectuivARB( GLuint, GLenum pname, GLuint *params )
+
+OPENGL_API void WINAPI glGetQueryObjectuivARB( GLuint id, GLenum pname, GLuint *params )
 {
-	D3DExtension_RecordStubInvocation("glGetQueryObjectuivARB");
-	if (!params) return;
-	switch (pname) {
-	case GL_QUERY_RESULT_ARB: params[0] = 1; break;
-	case GL_QUERY_RESULT_AVAILABLE_ARB: params[0] = GL_TRUE; break;
-	default: params[0] = 0; break;
+	if ( !params ) return;
+	OccQueryState *state = FindOccQueryObject( id );
+	if ( !state || gOccQueryActive == id ) return;
+	switch ( pname ) {
+	case GL_QUERY_RESULT_ARB:
+		if ( ResolveOccQuery( id, *state, true ) ) params[0] = state->result;
+		break;
+	case GL_QUERY_RESULT_AVAILABLE_ARB:
+		params[0] = ResolveOccQuery( id, *state, false ) ? GL_TRUE : GL_FALSE;
+		break;
+	default: QGL_SET_ERROR( E_INVALID_ENUM ); break;
 	}
+}
+
+void D3DExtension_ReleaseQueryResources()
+{
+	for ( auto& pair : gOccQueries ) {
+		OccQueryState& state = pair.second;
+		if ( state.query ) {
+			state.query->Release();
+			state.query = nullptr;
+		}
+		if ( state.pending ) {
+			// A Reset invalidates this one unresolved result. Keep its conservative
+			// visible fallback rather than allowing transient over-culling.
+			ResolveOccQueryAsVisible( state );
+		}
+		state.bypassed = false;
+	}
+	gOccQueryActive = 0;
+}
+
+void D3DExtension_CleanupQueries()
+{
+	D3DExtension_ReleaseQueryResources();
+	gOccQueries.clear();
+	gOccQueryNextID = 1;
+	gOccQuerySupported = -1;
+	gOccQueryResultLogs = 0;
+	gOccQueryWaitLogs = 0;
 }
 
 //=========================================
@@ -1298,8 +1569,8 @@ void D3DExtension_BuildExtensionsString()
 	//for idtech3 games that pass normal pointer when this is present
 	ExtensionBuf.AddExtension( "GL_ATI_pn_triangles" );
 
-	// Occlusion query - we stub it (always report visible)
-	ExtensionBuf.AddExtension( "GL_ARB_occlusion_query" );
+	if ( OccQuerySupported() )
+		ExtensionBuf.AddExtension( "GL_ARB_occlusion_query" );
 
 	// Point parameters
 	ExtensionBuf.AddExtension( "GL_ARB_point_parameters" );
@@ -1363,8 +1634,7 @@ namespace {
 	{
 		if (!name || !extname)
 			return false;
-		if (!strcmp(extname, "GL_ARB_occlusion_query")
-			|| !strcmp(extname, "GL_ARB_point_parameters")
+		if (!strcmp(extname, "GL_ARB_point_parameters")
 			|| !strcmp(extname, "GL_EXT_point_parameters")
 			|| !strcmp(extname, "GL_ATI_pn_triangles"))
 			return true;

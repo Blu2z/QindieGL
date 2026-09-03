@@ -1524,12 +1524,14 @@ static void internal_DrawElements( const char *api, GLenum mode, GLuint start, G
 
 OPENGL_API void WINAPI glDrawArrays( GLenum mode, GLint first, GLsizei count )
 {
+	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
 	internal_DrawArrays( "glDrawArrays", mode, first, count );
 }
 OPENGL_API void WINAPI glDrawElements( GLenum mode, GLsizei count, GLenum type, const GLvoid *indices )
 {
+	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
 	internal_DrawElements( "glDrawElements", mode, ~0u, 0, count, type, indices );
@@ -1537,6 +1539,7 @@ OPENGL_API void WINAPI glDrawElements( GLenum mode, GLsizei count, GLenum type, 
 
 OPENGL_API void WINAPI glDrawRangeElements( GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices )
 {
+	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
 	internal_DrawElements( "glDrawRangeElements", mode, start, end, count, type, indices );
@@ -1544,6 +1547,7 @@ OPENGL_API void WINAPI glDrawRangeElements( GLenum mode, GLuint start, GLuint en
 
 OPENGL_API void WINAPI glMultiDrawArrays( GLenum mode, const GLint *first, const GLsizei *count, GLsizei primcount )
 {
+	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
 	for (int i = 0; i < primcount; ++i)
@@ -1552,6 +1556,7 @@ OPENGL_API void WINAPI glMultiDrawArrays( GLenum mode, const GLint *first, const
 
 OPENGL_API void WINAPI glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const GLvoid **indices, GLsizei primcount )
 {
+	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
 	for (int i = 0; i < primcount; ++i)

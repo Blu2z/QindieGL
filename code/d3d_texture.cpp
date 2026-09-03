@@ -141,6 +141,30 @@ static bool D3DTex_IsRectangleTarget(GLenum target)
 	}
 }
 
+static void D3DTex_LogProcessAddressSpace()
+{
+	SIZE_T committed = 0;
+	SIZE_T privateCommitted = 0;
+	BYTE *address = nullptr;
+	MEMORY_BASIC_INFORMATION memory = {};
+	while ( VirtualQuery( address, &memory, sizeof( memory ) ) == sizeof( memory ) ) {
+		if ( memory.State == MEM_COMMIT ) {
+			committed += memory.RegionSize;
+			if ( memory.Type == MEM_PRIVATE )
+				privateCommitted += memory.RegionSize;
+		}
+		const uintptr_t current = reinterpret_cast<uintptr_t>( address );
+		const uintptr_t next = reinterpret_cast<uintptr_t>( memory.BaseAddress ) + memory.RegionSize;
+		if ( next <= current ) break;
+		address = reinterpret_cast<BYTE *>( next );
+	}
+	logPrintfLevel( QGL_LOG_ERROR, "PROCESS_MEMORY",
+		"committed=%uMB private=%uMB pointerBits=%u",
+		static_cast<unsigned int>( committed / ( 1024 * 1024 ) ),
+		static_cast<unsigned int>( privateCommitted / ( 1024 * 1024 ) ),
+		static_cast<unsigned int>( sizeof( void * ) * 8 ) );
+}
+
 bool D3DTex_GetFixedFunctionRectangleScale( int stage, float scale[2] )
 {
 	if ( !scale || !D3DGlobal.settings.game.yaeFallbackCompatibility ||
@@ -560,17 +584,25 @@ HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint
 		pitch2 = 0;
 	}
 
-	// YAE builds its uncompressed 4096x4096 lightmap atlas at runtime.  Unlike
+	// YAE builds its 4096x4096 RGBA lightmap atlas at runtime. Unlike
 	// authored textures (whose asset UV convention already matches this wrapper),
 	// the atlas rows follow OpenGL's lower-left upload convention.  D3D samples
 	// row zero at the upper edge, so preserve the GL image by reflecting its rows
 	// while uploading this one compatibility texture.
 	const bool yaeRuntimeLightmapAtlas =
 		D3DGlobal.settings.game.yaeFallbackCompatibility && level == 0 && depth == 1 &&
-		width == 4096 && height == 4096 && internalformat == GL_RGBA8 &&
-		format == GL_BGRA_EXT && type == GL_UNSIGNED_BYTE;
+		m_target == GL_TEXTURE_2D && width == 4096 && height == 4096 &&
+		internalformat == GL_RGBA8 && format == GL_BGRA_EXT && type == GL_UNSIGNED_BYTE;
 	if ( yaeRuntimeLightmapAtlas )
-		PRINT_ONCE( "YAE_COMPAT: vertically reflecting the runtime 4096x4096 lightmap atlas.\n" );
+		logPrintfLevel( QGL_LOG_INFO, "YAE_LIGHTMAP",
+			"vertically reflecting runtime atlas id=%u size=%dx%d format=0x%X",
+			m_glIndex, width, height, format );
+	else if ( D3DGlobal.settings.game.yaeFallbackCompatibility && level == 0 && depth == 1 &&
+		m_target == GL_TEXTURE_2D && width == 2048 && height == 2048 &&
+		internalformat == GL_RGB8 && format == GL_BGR_EXT && type == GL_UNSIGNED_BYTE )
+		logPrintfLevel( QGL_LOG_INFO, "YAE_LIGHTMAP",
+			"preserving authored atlas row order id=%u size=%dx%d format=0x%X",
+			m_glIndex, width, height, format );
 	hr = D3DPixels_Unpack( width, height, depth, pitch, pitch2, dstdata, m_dstbytes,
 		m_internalFormat, yaeRuntimeLightmapAtlas, format, type, pixels );
 	if (FAILED(hr)) {
@@ -1207,6 +1239,7 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 				logPrintf("ERROR: Texture creation failed: id=%u target=0x%X level=%d size=%dx%dx%d internal=0x%X d3d=%s hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, width, height, depth, internalformat,
 					D3DGlobal_FormatToString(d3dFormat), hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
+				D3DTex_LogProcessAddressSpace();
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1228,6 +1261,7 @@ static void D3DTex_LoadImage(GLenum target, GLint level, GLint internalformat, G
 				logPrintf("ERROR: Texture mip-chain recreation failed: id=%u target=0x%X level=%d baseSize=%ux%ux%u internal=0x%X hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, pTexture->GetWidth(), pTexture->GetHeight(), pTexture->GetDepth(),
 					internalformat, hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
+				D3DTex_LogProcessAddressSpace();
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1293,7 +1327,9 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 		logPrintf("WARNING: S3TC texture compression is not supported\n");
 		return;
 	}
-	if ((width % 4) || (height % 4)) {
+	// S3TC mip tails legitimately use 2xN, 1xN, Nx2 and Nx1 logical sizes;
+	// D3D still stores one complete 4x4 block for those levels.
+	if ((width > 2 && width % 4) || (height > 2 && height % 4)) {
 		QGL_SET_ERROR(E_INVALID_OPERATION);
 		return;
 	}
@@ -1339,6 +1375,7 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 				logPrintf("ERROR: Compressed texture creation failed: id=%u target=0x%X level=%d size=%dx%dx%d internal=0x%X d3d=%s hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, width, height, depth, internalformat,
 					D3DGlobal_FormatToString(d3dFormat), hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
+				D3DTex_LogProcessAddressSpace();
 				QGL_SET_ERROR(hr);
 				return;
 			}
@@ -1360,6 +1397,7 @@ static void D3DTex_LoadCompressedImage(GLenum target, GLint level, GLint interna
 				logPrintf("ERROR: Compressed texture mip-chain recreation failed: id=%u target=0x%X level=%d baseSize=%ux%ux%u internal=0x%X hr=0x%08X (%s) availableTextureMem=%u\n",
 					pTexture->GetGLIndex(), target, level, pTexture->GetWidth(), pTexture->GetHeight(), pTexture->GetDepth(),
 					internalformat, hr, DXGetErrorString(hr), D3DGlobal.pDevice->GetAvailableTextureMem());
+				D3DTex_LogProcessAddressSpace();
 				QGL_SET_ERROR(hr);
 				return;
 			}

@@ -90,7 +90,8 @@ OPENGL_API void WINAPI glNewList( GLuint list, GLenum mode )
 	gDLRecording = true;
 	gDLExecute = ( mode == GL_COMPILE_AND_EXECUTE );
 
-	logPrintf( "glNewList(%u, %s)\n", list, gDLExecute ? "GL_COMPILE_AND_EXECUTE" : "GL_COMPILE" );
+	logPrintfLevel( QGL_LOG_DEBUG, "DISPLAY_LIST", "glNewList(%u, %s)",
+		list, gDLExecute ? "GL_COMPILE_AND_EXECUTE" : "GL_COMPILE" );
 }
 
 OPENGL_API void WINAPI glEndList()
@@ -101,7 +102,8 @@ OPENGL_API void WINAPI glEndList()
 		return;
 	}
 
-	logPrintf( "glEndList: %d commands recorded\n", (int)gDLCurrent->commands.size() );
+	logPrintfLevel( QGL_LOG_DEBUG, "DISPLAY_LIST", "glEndList: %d commands recorded",
+		(int)gDLCurrent->commands.size() );
 
 	gDLRecording = false;
 	gDLExecute = false;

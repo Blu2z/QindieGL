@@ -212,6 +212,8 @@ extern OPENGL_API void WINAPI glEndQueryARB( GLenum target );
 extern OPENGL_API void WINAPI glGetQueryivARB( GLenum target, GLenum pname, GLint *params );
 extern OPENGL_API void WINAPI glGetQueryObjectivARB( GLuint id, GLenum pname, GLint *params );
 extern OPENGL_API void WINAPI glGetQueryObjectuivARB( GLuint id, GLenum pname, GLuint *params );
+void D3DExtension_ReleaseQueryResources();
+void D3DExtension_CleanupQueries();
 
 // ARB_point_parameters
 extern OPENGL_API void WINAPI glPointParameterfARB( GLenum pname, GLfloat param );
