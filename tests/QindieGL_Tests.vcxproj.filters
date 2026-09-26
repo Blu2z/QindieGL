@@ -21,6 +21,9 @@
     <ClCompile Include="camera_split_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="context_lifetime_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="framebuffer_copy_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

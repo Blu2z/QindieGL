@@ -289,6 +289,7 @@ namespace {
 	static char gProjectionState[160] = "unavailable";
 	static std::map<std::string, uint64_t> gD3DFailures;
 	static std::map<std::string, uint64_t> gUnsupportedEnums;
+	static std::map<std::string, uint64_t> gCallsWithoutContext;
 	static std::set<uint32_t> gYAEWorldDrawStates;
 	static std::set<GLuint> gYAEDumpedTextures;
 	static unsigned int gYAEPostEffectDraws = 0;
@@ -1648,6 +1649,7 @@ void QGL_DiagnosticsInitialize()
 	strcpy_s(gProjectionState, "unavailable");
 	gD3DFailures.clear();
 	gUnsupportedEnums.clear();
+	gCallsWithoutContext.clear();
 	gYAEWorldDrawStates.clear();
 	gYAEDumpedTextures.clear();
 	gPreviousExceptionFilter = SetUnhandledExceptionFilter(QGL_UnhandledExceptionFilter);
@@ -1972,6 +1974,12 @@ void QGL_DiagnosticsRecordD3DFailure( const char *call, long result )
 	logPrintfLevel(QGL_LOG_ERROR, "D3D_ERROR", "%s", key);
 }
 
+void QGL_DiagnosticsRecordCallWithoutContext( const char *api )
+{
+	if (gCallsWithoutContext[api]++ == 0)
+		logPrintfLevel(QGL_LOG_INFO, "GL_NO_CONTEXT", "%s called without a context; ignored", api);
+}
+
 void QGL_DiagnosticsRecordDeviceReset( long result )
 {
 	++gDiagnostics.deviceResets;
@@ -2101,6 +2109,8 @@ void QGL_DiagnosticsDumpSessionSummary()
 	DumpCountMap("none", gUnsupportedEnums);
 	logPrintf("Failed D3D calls:\n");
 	DumpCountMap("none", gD3DFailures);
+	logPrintf("GL calls without a context (ignored):\n");
+	DumpCountMap("none", gCallsWithoutContext);
 	logPrintf("Device resets: %llu\n", static_cast<unsigned long long>(gDiagnostics.deviceResets));
 	logPrintf("PBuffers created: %llu\n", static_cast<unsigned long long>(gDiagnostics.pBuffersCreated));
 	logPrintf("ARB programs uploaded: %llu\n", static_cast<unsigned long long>(gDiagnostics.arbProgramsUploaded));

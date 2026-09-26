@@ -34,6 +34,9 @@ extern void do_projection_tests( bool projectionFix );
 extern void do_camera_split_tests();
 extern void compare_camera_split_frames( const std::string &withoutSplit, const std::string &withSplit );
 extern void check_camera_split_log( const std::string &logPath, bool split );
+extern void prepare_calls_without_context();
+extern void do_calls_without_context_tests();
+extern void check_calls_without_context_log( const std::string &logPath );
 
 namespace {
 
@@ -195,6 +198,7 @@ int RunGLChild( const char *dll, const char *configurationName )
 		do_framebuffer_copy_tests();
 		do_vbo_tests();
 		do_multitexture_tests();
+		prepare_calls_without_context();
 		break;
 	case MODE_NO_BUFFER_OBJECTS:
 		do_extension_availability_tests(false);
@@ -204,6 +208,9 @@ int RunGLChild( const char *dll, const char *configurationName )
 		break;
 	}
 	Harness_Shutdown();
+	// DS2 deletes textures after wglDeleteContext; a crash fails this child.
+	if (configuration->mode == MODE_BUFFER_OBJECTS)
+		do_calls_without_context_tests();
 
 	printf("[%s] %d/%d checks passed\n", configurationName, tests_ok, tests_total);
 	return tests_total - tests_ok;
@@ -248,6 +255,7 @@ int main( int argc, char **argv )
 		check_camera_split_log(root + "yae-camera-split\\QindieGL.log", true);
 		compare_camera_split_frames(root + "yae-profile\\camera_split_frame.bin",
 			root + "yae-camera-split\\camera_split_frame.bin");
+		check_calls_without_context_log(root + "yae-profile\\QindieGL.log");
 	}
 
 	printf("Tests results: %d/%d\n", tests_ok, tests_total);

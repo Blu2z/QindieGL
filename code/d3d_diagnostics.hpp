@@ -37,6 +37,8 @@ void QGL_DiagnosticsEndFrame( long presentResult );
 
 void QGL_DiagnosticsRecordEvent( bool d3dEvent, const char *category, const char *fmt, ... );
 void QGL_DiagnosticsRecordD3DFailure( const char *call, long result );
+// A GL call ignored because no context exists (see glDeleteTextures).
+void QGL_DiagnosticsRecordCallWithoutContext( const char *api );
 void QGL_DiagnosticsRecordDeviceReset( long result );
 void QGL_DiagnosticsRecordPBufferCreated();
 void QGL_DiagnosticsRecordARBProgramUpload( bool compiled, bool failed );
