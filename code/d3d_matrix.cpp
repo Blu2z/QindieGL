@@ -104,7 +104,8 @@ static void RecordModelviewOp( int op, const GLfloat *m16, GLfloat x = 0, GLfloa
 //----------------------------------------------------------------------------------
 // DS2 never loads a camera matrix: each view starts with glLoadIdentity and one
 // glMultMatrixf(camera) at modelview stack depth 0, and objects follow as
-// glPushMatrix + glMultMatrixf(object). With yae_camera_split the first transform
+// glPushMatrix + glMultMatrixf(object). The tracking records how the depth-0
+// matrix was built (view diagnostics). With yae_camera_split the first transform
 // at depth 0 after a reset goes to the view stack (D3DTS_VIEW) and every other
 // transform to the model stack (D3DTS_WORLD), so WORLD * VIEW stays the GL
 // modelview. Without it the model stack receives every transform, as before.
@@ -112,7 +113,11 @@ static void RecordModelviewOp( int op, const GLfloat *m16, GLfloat x = 0, GLfloa
 namespace {
 	struct CameraTracking
 	{
+		unsigned int generation;
+		int depth0Transforms;
+		bool depth0Loaded;
 		bool viewPending;	// yae_camera_split: the next depth-0 transform is the view
+		bool eyeSpace[D3D_MAX_MATRIX_STACK_DEPTH];
 	};
 	CameraTracking gCameraTracking = {};
 }
@@ -122,12 +127,26 @@ void D3DMatrix_ResetCameraTracking()
 	memset( &gCameraTracking, 0, sizeof(gCameraTracking) );
 }
 
+void D3DMatrix_GetCameraTrackInfo( D3DCameraTrackInfo *info )
+{
+	const int depth = D3DGlobal.modelviewMatrixStack ? D3DGlobal.modelviewMatrixStack->stack_depth() : 0;
+	info->generation = gCameraTracking.generation;
+	info->depth0Transforms = gCameraTracking.depth0Transforms;
+	info->depth0Loaded = gCameraTracking.depth0Loaded;
+	info->eyeSpace = gCameraTracking.eyeSpace[depth];
+}
+
 // glLoadIdentity or glLoadMatrix on the modelview. Returns true at depth 0.
 static bool CameraTrackReset( bool loaded )
 {
 	const int depth = D3DGlobal.modelviewMatrixStack->stack_depth();
-	if( depth > 0 )
+	if( depth > 0 ) {
+		gCameraTracking.eyeSpace[depth] = true;
 		return false;
+	}
+	++gCameraTracking.generation;
+	gCameraTracking.depth0Transforms = loaded ? 1 : 0;
+	gCameraTracking.depth0Loaded = loaded;
 	gCameraTracking.viewPending = !loaded && D3DGlobal.settings.game.yaeCameraSplit;
 	return true;
 }
@@ -136,6 +155,7 @@ static bool CameraTrackReset( bool loaded )
 static void CameraSplitMultiply( const GLfloat *m )
 {
 	if( D3DGlobal.modelviewMatrixStack->stack_depth() == 0 ) {
+		++gCameraTracking.depth0Transforms;
 		if( gCameraTracking.viewPending ) {
 			gCameraTracking.viewPending = false;
 			D3DGlobal.viewMatrixStack->multiply( m );
@@ -491,6 +511,10 @@ OPENGL_API void WINAPI glPushMatrix( void )
 	{
 		D3DGlobal.modelMatrixStack->push( );
 		D3DGlobal.viewMatrixStack->push( );
+		if( SUCCEEDED( hr ) ) {
+			const int depth = D3DState.currentMatrixStack->stack_depth();
+			gCameraTracking.eyeSpace[depth] = gCameraTracking.eyeSpace[depth - 1];
+		}
 	}
 }
 OPENGL_API void WINAPI glRotatef( GLfloat angle, GLfloat x, GLfloat y, GLfloat z )

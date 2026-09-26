@@ -320,8 +320,10 @@ void do_camera_split_tests()
 	gl.Lightfv(GL_LIGHT1, GL_DIFFUSE, black);
 }
 
-// Runs in the parent. With the split, the first camera D3D receives is the
-// silhouette light view.
+// Runs in the parent. The census does not depend on the split: the sky is a
+// rotation-only camera with the main camera's rotation, the world camera
+// covers depth-0 and object draws, and the second camera is another view.
+// With the split, the first camera D3D receives is the silhouette light view.
 void check_camera_split_log( const std::string &logPath, bool split )
 {
 	std::string log;
@@ -332,6 +334,12 @@ void check_camera_split_log( const std::string &logPath, bool split )
 		while ((read = fread(buffer, 1, sizeof(buffer), file)) > 0) log.append(buffer, read);
 		fclose(file);
 	}
+	const char *patterns[] = {
+		"\"P2.0-300 rot\" frames=1 draws=1 (depth0 0, objects 1, eye-space 0) segments: =0 ~1 !0 ?0",
+		"\"P2.0-300 rigid\" frames=1 draws=5 (depth0 4, objects 1, eye-space 0) segments: =1 ~0 !1 ?0",
+	};
+	for (const char *pattern : patterns)
+		CHECK(log.find(pattern) != std::string::npos, "%s: camera census contains %s", logPath.c_str(), pattern);
 	const char *view = "[CAMERA_SPLIT] first camera sent as D3DTS_VIEW: pos=(3.0,-2.0,1.0)";
 	if (split)
 		CHECK(log.find(view) != std::string::npos, "%s: contains %s", logPath.c_str(), view);
