@@ -36,6 +36,7 @@ OPENGL_API void WINAPI glClear( GLbitfield mask )
 		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
+	QGL_DiagnosticsCaptureClear( mask );
 	DWORD clearMask = 0;
 	if (mask & GL_COLOR_BUFFER_BIT) clearMask |= D3DCLEAR_TARGET;
 	if (mask & GL_DEPTH_BUFFER_BIT) clearMask |= D3DCLEAR_ZBUFFER;

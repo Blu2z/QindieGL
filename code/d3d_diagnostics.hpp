@@ -50,6 +50,7 @@ void QGL_DiagnosticsSetRenderTarget( const char *name );
 // framebuffer before and the texture after every glCopyTex* call, the
 // framebuffer after draws sampling such a texture, and the final frame.
 void QGL_DiagnosticsConfigureCapture( int frame );
+void QGL_DiagnosticsCaptureClear( unsigned int mask );
 void QGL_DiagnosticsCaptureCopy( bool afterCopy, unsigned int target, int level, int xoffset, int yoffset,
 	int x, int y, int width, int height );
 
