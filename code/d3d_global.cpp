@@ -1632,9 +1632,6 @@ OPENGL_API BOOL WINAPI wrap_wglSwapBuffers( HDC )
 		keypress_frame_ended();
 	}
 
-	if (D3DGlobal.pVABuffer)
-		D3DGlobal.pVABuffer->ResetSwapFrame();
-
 	//logPrintf("----- swap buffers -----\n\n");
 	return TRUE;
 }
