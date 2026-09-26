@@ -131,6 +131,39 @@ void do_texture_projection_tests()
 	DrawAndCheck("texgen S/T with an affine texture matrix (s - 0.5)", true);
 	End(texture);
 
+	// Fixed-function vertex processing feeding an ARB fragment program: the
+	// program receives the full (s,t,r,q) and divides with TXP itself, like
+	// You Are Empty's soft shadow. Only profiles exposing ARB programs run it.
+	if (gl.GenProgramsARB && gl.BindProgramARB && gl.ProgramStringARB && gl.DeleteProgramsARB) {
+		static const char source[] =
+			"!!ARBfp1.0\n"
+			"TXP result.color, fragment.texcoord[0], texture[0], 2D;\n"
+			"END\n";
+		GLuint program = 0;
+		gl.GenProgramsARB(1, &program);
+		gl.BindProgramARB(GL_FRAGMENT_PROGRAM_ARB, program);
+		gl.ProgramStringARB(GL_FRAGMENT_PROGRAM_ARB, GL_PROGRAM_FORMAT_ASCII_ARB,
+			static_cast<GLsizei>(sizeof(source) - 1), source);
+
+		const struct { const char *label; bool generateQ; const float *matrix; bool centreRed; } cases[] = {
+			{ "fragment program TXP, texgen S/T", false, nullptr, false },
+			{ "fragment program TXP, texgen S/T/Q, q = 2", true, nullptr, true },
+			{ "fragment program TXP, projective texture matrix", false, scaleQ, true },
+			{ "fragment program TXP, affine texture matrix", false, translateS, true },
+		};
+		for (const auto &test : cases) {
+			texture = Begin();
+			EnableTexGen(test.generateQ);
+			LoadTextureMatrix(test.matrix);
+			gl.Enable(GL_FRAGMENT_PROGRAM_ARB);
+			DrawAndCheck(test.label, test.centreRed);
+			gl.Disable(GL_FRAGMENT_PROGRAM_ARB);
+			End(texture);
+		}
+		gl.BindProgramARB(GL_FRAGMENT_PROGRAM_ARB, 0);
+		gl.DeleteProgramsARB(1, &program);
+	}
+
 	// Texture coordinate array (the fast copy path would write only S and T).
 	const float texcoords[8] = { -0.1f, 0.5f, 1.9f, 0.5f, -0.1f, 0.5f, 1.9f, 0.5f };
 	texture = Begin();

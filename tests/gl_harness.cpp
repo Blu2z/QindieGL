@@ -152,6 +152,10 @@ bool Harness_Init( const char *dllPath, int width, int height, std::string &erro
 	LoadExtension(gl.ActiveTextureARB, "glActiveTextureARB");
 	LoadExtension(gl.SecondaryColorPointerEXT, "glSecondaryColorPointerEXT");
 	LoadExtension(gl.MultiTexCoord4sdARB, "glMultiTexCoord4sdARB");
+	LoadExtension(gl.GenProgramsARB, "glGenProgramsARB");
+	LoadExtension(gl.BindProgramARB, "glBindProgramARB");
+	LoadExtension(gl.ProgramStringARB, "glProgramStringARB");
+	LoadExtension(gl.DeleteProgramsARB, "glDeleteProgramsARB");
 
 	gl.Viewport(0, 0, g_width, g_height);
 	return true;
