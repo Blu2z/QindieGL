@@ -395,16 +395,39 @@ static void D3DState_SetLight()
 			}
 		}
 		if (D3DGlobal.settings.game.yaeCameraSplit && !D3DState.ViewTransformState.identity) {
-			// GL light state is in eye space; D3D expects world space.
+			// GL light state is in eye space; D3D expects world space. A light given
+			// under the current camera uses the world coordinates recorded with it:
+			// the way back through the inverse view changes their last bits whenever
+			// the camera moves, and RTX Remix, which tells game lights apart by their
+			// exact position, then takes every lamp for a moving light.
+			const auto &lighting = D3DState.LightingState;
+			D3DCameraTrackInfo camera;
+			D3DMatrix_GetCameraTrackInfo( &camera );
+			const bool worldPosition = camera.generation && lighting.lightWorldPositionCamera[i] == camera.generation;
+			const bool worldDirection = camera.generation && lighting.lightWorldDirectionCamera[i] == camera.generation;
 			const D3DXMATRIX &eyeToWorld = D3DState.ViewTransformState.inverse;
 			D3DXVECTOR3 world;
-			if (dl.Type != D3DLIGHT_POINT) {
+			if (dl.Type == D3DLIGHT_DIRECTIONAL && worldPosition) {
+				dl.Direction = lighting.lightWorldPosition[i];
+			} else if (dl.Type == D3DLIGHT_SPOT && worldDirection) {
+				dl.Direction = lighting.lightWorldDirection[i];
+			} else if (dl.Type != D3DLIGHT_POINT) {
 				D3DXVec3TransformNormal( &world, static_cast<const D3DXVECTOR3 *>(&dl.Direction), &eyeToWorld );
 				dl.Direction = world;
 			}
 			if (dl.Type != D3DLIGHT_DIRECTIONAL) {
-				D3DXVec3TransformCoord( &world, static_cast<const D3DXVECTOR3 *>(&dl.Position), &eyeToWorld );
-				dl.Position = world;
+				if (worldPosition) {
+					dl.Position = lighting.lightWorldPosition[i];
+					static bool reported = false;
+					if (!reported) {
+						reported = true;
+						logPrintfLevel(QGL_LOG_INFO, "CAMERA_SPLIT", "first light sent at the world position it was given: bits %08lX %08lX %08lX",
+							UTIL_FloatToDword(dl.Position.x), UTIL_FloatToDword(dl.Position.y), UTIL_FloatToDword(dl.Position.z));
+					}
+				} else {
+					D3DXVec3TransformCoord( &world, static_cast<const D3DXVECTOR3 *>(&dl.Position), &eyeToWorld );
+					dl.Position = world;
+				}
 			}
 		}
 
@@ -1002,6 +1025,9 @@ void D3DState_SetDefaults()
 		D3DState.LightingState.lightSpotCutoff[i] = 180.0f;
 		D3DState.LightingState.lightSpotExponent[i] = 0.0f;
 		D3DState.LightingState.lightDirection[i] = D3DXVECTOR3(0.0f, 0.0f, -1.0f);
+		// The defaults are given in eye space.
+		D3DState.LightingState.lightWorldPositionCamera[i] = 0;
+		D3DState.LightingState.lightWorldDirectionCamera[i] = 0;
 		D3DState.LightingState.lightAttenuation[i].x = 1.0f;
 		D3DState.LightingState.lightAttenuation[i].y = 0.0f;
 		D3DState.LightingState.lightAttenuation[i].z = 0.0f;
