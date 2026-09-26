@@ -1217,6 +1217,40 @@ namespace {
 			}
 		}
 		if (involved) {
+			// GL combiner state and what D3D9 actually received for this draw.
+			for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
+				if (!D3DState.EnableState.textureEnabled[unit]) continue;
+				const auto &c = D3DState.TextureState.TextureCombineState[unit];
+				fprintf(gCapture.file,
+					"    t%d GL env=0x%X rgb op=0x%X args=(0x%X,0x%X,0x%X) operands=(0x%X,0x%X,0x%X) scale=%u"
+					" alpha op=0x%X args=(0x%X,0x%X,0x%X) operands=(0x%X,0x%X,0x%X) scale=%u\n",
+					unit, c.envMode, c.colorOp, c.colorArg1, c.colorArg2, c.colorArg3,
+					c.colorOperand1, c.colorOperand2, c.colorOperand3, c.colorScale,
+					c.alphaOp, c.alphaArg1, c.alphaArg2, c.alphaArg3,
+					c.alphaOperand1, c.alphaOperand2, c.alphaOperand3, c.alphaScale);
+			}
+			for (DWORD stage = 0; stage < 4; ++stage) {
+				DWORD v[9] = {};
+				const D3DTEXTURESTAGESTATETYPE types[9] = { D3DTSS_COLOROP, D3DTSS_COLORARG1, D3DTSS_COLORARG2,
+					D3DTSS_COLORARG0, D3DTSS_ALPHAOP, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_TEXCOORDINDEX,
+					D3DTSS_TEXTURETRANSFORMFLAGS };
+				for (int i = 0; i < 9; ++i)
+					D3DGlobal.pDevice->GetTextureStageState(stage, types[i], &v[i]);
+				fprintf(gCapture.file,
+					"    D3D stage %lu colorop=%lu args=(0x%lX,0x%lX,0x%lX) alphaop=%lu args=(0x%lX,0x%lX) texcoordindex=%lu transform=0x%lX\n",
+					stage, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+				if (v[0] == D3DTOP_DISABLE) break;
+			}
+			DWORD rs[10] = {};
+			const D3DRENDERSTATETYPE renderStates[10] = { D3DRS_ALPHATESTENABLE, D3DRS_ALPHAFUNC, D3DRS_ALPHAREF,
+				D3DRS_ZENABLE, D3DRS_ZFUNC, D3DRS_ZWRITEENABLE, D3DRS_ALPHABLENDENABLE, D3DRS_SRCBLEND,
+				D3DRS_DESTBLEND, D3DRS_COLORWRITEENABLE };
+			for (int i = 0; i < 10; ++i)
+				D3DGlobal.pDevice->GetRenderState(renderStates[i], &rs[i]);
+			fprintf(gCapture.file,
+				"    D3D alphatest=%lu func=%lu ref=%lu z=%lu func=%lu write=%lu blend=%lu src=%lu dst=%lu colorwrite=0x%lX\n",
+				rs[0], rs[1], rs[2], rs[3], rs[4], rs[5], rs[6], rs[7], rs[8], rs[9]);
+
 			char name[48];
 			sprintf_s(name, "before_draw_%04llu", static_cast<unsigned long long>(gDiagnostics.drawId));
 			CaptureShot(name);
@@ -1631,6 +1665,19 @@ void QGL_DiagnosticsBeginPresent()
 void QGL_DiagnosticsConfigureCapture( int frame )
 {
 	gCapture.configuredFrame = frame;
+}
+
+void QGL_DiagnosticsCaptureClear( unsigned int mask )
+{
+	if (!gCapture.active)
+		return;
+	const DWORD color = D3DState.ColorBufferState.clearColor;
+	const RECT &scissor = D3DState.ScissorState.scissorRect;
+	fprintf(gCapture.file,
+		"CLEAR after D%04llu: mask=0x%X color ARGB=0x%08X depth=%g stencil=%lu colorMask=0x%lX scissor=%lu (%ld,%ld)-(%ld,%ld)\n",
+		static_cast<unsigned long long>(gDiagnostics.drawId), mask, color, D3DState.DepthBufferState.clearDepth,
+		D3DState.StencilBufferState.clearStencil, D3DState.ColorBufferState.colorWriteMask,
+		D3DState.EnableState.scissorEnabled, scissor.left, scissor.top, scissor.right, scissor.bottom);
 }
 
 void QGL_DiagnosticsCaptureCopy( bool afterCopy, unsigned int target, int level, int xoffset, int yoffset,
