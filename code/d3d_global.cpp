@@ -114,6 +114,7 @@ static void D3DGlobal_InvalidateStateAfterReset()
 {
 	D3DState.modelViewMatrixModified = TRUE;
 	D3DState.projectionMatrixModified = TRUE;
+	D3DState.ViewTransformState.valid = false;
 	D3DState.TransformState.clippingModified = TRUE;
 	D3DState.TextureState.textureSamplerStateChanged = TRUE;
 	D3DState.TextureState.textureEnableChanged = TRUE;
@@ -1077,6 +1078,8 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 	D3DGlobal.settings.game.yaeCompileARBPrograms = D3DGlobal_ReadGameConf( "yae_compile_arb_programs" );
 	D3DGlobal.settings.game.yaeEyeDistanceFog = D3DGlobal.settings.game.yaeFallbackCompatibility &&
 		D3DGlobal_ReadGameConf( "yae_eye_distance_fog" );
+	D3DGlobal.settings.game.yaeCameraSplit = D3DGlobal.settings.game.yaeFallbackCompatibility &&
+		D3DGlobal_ReadGameConf( "yae_camera_split" );
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility) {
 		// DS2 rejects the hardware before honoring use_shaders=0 unless both ARB
 		// program families are present. Phase B used the non-rendering stub; the

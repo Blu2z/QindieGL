@@ -81,4 +81,7 @@ private:
 	D3DStateMatrix	m_Stack[D3D_MAX_MATRIX_STACK_DEPTH];
 };
 
+// Camera tracking of the modelview for yae_camera_split (d3d_matrix.cpp).
+void D3DMatrix_ResetCameraTracking();
+
 #endif //QINDIEGL_D3D_MATRIX_STACK_H

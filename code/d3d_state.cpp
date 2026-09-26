@@ -198,6 +198,40 @@ void D3DState_AssureBeginScene()
 	}
 }
 
+// yae_camera_split: the view reaches D3D as D3DTS_VIEW (see d3d_matrix.cpp).
+// D3D keeps lights and clip planes in world space while QindieGL keeps them in
+// eye space (GL semantics), so a new view re-sends them relative to it.
+static HRESULT D3DState_SetSplitView()
+{
+	const D3DXMATRIX &view = *static_cast<const D3DXMATRIX *>(D3DGlobal.viewMatrixStack->top());
+	auto &sent = D3DState.ViewTransformState;
+	if (sent.valid && !memcmp(&view, &sent.matrix, sizeof(view)))
+		return S_OK;
+
+	HRESULT hr = D3DGlobal.pDevice->SetTransform(D3DTS_VIEW, &view);
+	if (FAILED(hr))
+		return hr;
+	sent.matrix = view;
+	sent.valid = true;
+	sent.identity = D3DXMatrixIsIdentity(&view) != FALSE;
+	if (!sent.identity && !D3DXMatrixInverse(&sent.inverse, nullptr, &view)) {
+		PRINT_ONCE("WARNING: yae_camera_split: singular view matrix, lights and clip planes stay in eye space\n");
+		sent.identity = true;
+	}
+	static bool reported = false;
+	if (!sent.identity && !reported) {
+		reported = true;
+		logPrintfLevel(QGL_LOG_INFO, "CAMERA_SPLIT", "first camera sent as D3DTS_VIEW: pos=(%.1f,%.1f,%.1f) fwd=(%.3f,%.3f,%.3f)",
+			sent.inverse._41, sent.inverse._42, sent.inverse._43, -sent.inverse._31, -sent.inverse._32, -sent.inverse._33);
+	}
+	for (int i = 0; i < IMPL_MAX_LIGHTS; ++i)
+		D3DState.LightingState.lightModified[i] = TRUE;
+	for (int i = 0; i < IMPL_MAX_CLIP_PLANES; ++i)
+		D3DState.TransformState.clipPlaneModified[i] = TRUE;
+	D3DState.TransformState.clippingModified = TRUE;
+	return S_OK;
+}
+
 static void D3DState_SetTransform()
 {
 	HRESULT hr;
@@ -207,7 +241,18 @@ static void D3DState_SetTransform()
 	if (D3DState.modelViewMatrixModified) {
 		D3DState.modelViewMatrixModified = false;
 		static bool prev_dectection_enabled = false;
-		if (!matrix_detect_is_detection_enabled())
+		if (D3DGlobal.settings.game.yaeCameraSplit)
+		{
+			// WORLD * VIEW is the GL modelview; the inherited detection is not used.
+			hr = D3DGlobal.pDevice->SetTransform(D3DTS_WORLD, D3DGlobal.modelMatrixStack->top());
+			if (SUCCEEDED(hr))
+				hr = D3DState_SetSplitView();
+			if (FAILED(hr)) {
+				QGL_SET_ERROR(hr);
+				return;
+			}
+		}
+		else if (!matrix_detect_is_detection_enabled())
 		{
 			hr = D3DGlobal.pDevice->SetTransform( D3DTS_WORLD, D3DGlobal.modelviewMatrixStack->top() );
 			if (FAILED(hr)) {
@@ -283,7 +328,15 @@ static void D3DState_SetTransform()
 		for (int i = 0; i < IMPL_MAX_CLIP_PLANES; ++i) {
 			if (D3DState.TransformState.clipPlaneModified[i]) {
 				D3DState.TransformState.clipPlaneModified[i] = FALSE;
-				hr = D3DGlobal.pDevice->SetClipPlane( i, D3DState.TransformState.clipPlane[i] );
+				D3DXPLANE plane( D3DState.TransformState.clipPlane[i] );
+				if (D3DGlobal.settings.game.yaeCameraSplit && !D3DState.ViewTransformState.identity) {
+					// Eye space to world space: planes transform by the transposed view.
+					D3DXMATRIX viewTranspose;
+					D3DXMatrixTranspose( &viewTranspose, &D3DState.ViewTransformState.matrix );
+					const D3DXPLANE eyePlane( plane );
+					D3DXPlaneTransform( &plane, &eyePlane, &viewTranspose );
+				}
+				hr = D3DGlobal.pDevice->SetClipPlane( i, plane );
 				if (FAILED(hr)) {
 					QGL_SET_ERROR(hr);
 					return;
@@ -339,6 +392,19 @@ static void D3DState_SetLight()
 					dl.Theta = 0.0f;
 					dl.Falloff = exponent * logf(cosMiddle) / logf(d3dMiddle);
 				}
+			}
+		}
+		if (D3DGlobal.settings.game.yaeCameraSplit && !D3DState.ViewTransformState.identity) {
+			// GL light state is in eye space; D3D expects world space.
+			const D3DXMATRIX &eyeToWorld = D3DState.ViewTransformState.inverse;
+			D3DXVECTOR3 world;
+			if (dl.Type != D3DLIGHT_POINT) {
+				D3DXVec3TransformNormal( &world, static_cast<const D3DXVECTOR3 *>(&dl.Direction), &eyeToWorld );
+				dl.Direction = world;
+			}
+			if (dl.Type != D3DLIGHT_DIRECTIONAL) {
+				D3DXVec3TransformCoord( &world, static_cast<const D3DXVECTOR3 *>(&dl.Position), &eyeToWorld );
+				dl.Position = world;
 			}
 		}
 
@@ -853,6 +919,7 @@ void D3DState_SetDefaults()
 	D3DStateClientCopyMask = 0;
 	memset( &D3DStateCopy, 0, sizeof(D3DStateCopy) );
 	memset( &D3DState, 0, sizeof(D3DState) );
+	D3DMatrix_ResetCameraTracking();
 
 	D3DState.ColorBufferState.clearColor = D3DCOLOR_ARGB(0,0,0,0);
 	D3DState.DepthBufferState.clearDepth = 1.0f;
