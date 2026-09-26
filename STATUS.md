@@ -811,4 +811,7 @@ framebuffer copies.
 
 Remaining cost: vertex conversion/upload, 1.5 ms per frame on average and
 2.3 ms in the heaviest location, re-copies VBO contents on every draw. Keeping
-static VBOs in D3D9 vertex buffers would remove most of it.
+static VBOs in D3D9 vertex buffers would remove most of it, but it is deferred:
+the heaviest location already uses under half of a 60 Hz frame, and RTX Remix
+accepts streamed geometry. Revisit only if Remix profiling shows the vertex
+copying as a bottleneck. Optimization is closed; `VSync` is back to 1.
