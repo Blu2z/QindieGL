@@ -188,10 +188,15 @@ OPENGL_API void WINAPI glBindProgramARB( GLenum target, GLuint program )
 		// Auto-create if not existing (per spec)
 		gARBProgramIDs.insert(program);
 	}
-	if (target == GL_VERTEX_PROGRAM_ARB)
-		gARBBoundVertexProgram = program;
-	else if (target == GL_FRAGMENT_PROGRAM_ARB)
-		gARBBoundFragmentProgram = program;
+	GLuint *binding = target == GL_VERTEX_PROGRAM_ARB ? &gARBBoundVertexProgram :
+		target == GL_FRAGMENT_PROGRAM_ARB ? &gARBBoundFragmentProgram : nullptr;
+	if (binding && *binding != program) {
+		*binding = program;
+		// The texture coordinates a program reads decide their routing
+		// (D3DState_SetTexture). DS2 rebinds the same program around every
+		// parameter write, so only an actual change is flagged.
+		D3DState.TextureState.textureSamplerStateChanged = TRUE;
+	}
 	QGL_DiagnosticsRecordProgramOp('B', target, program, -1, nullptr);
 }
 

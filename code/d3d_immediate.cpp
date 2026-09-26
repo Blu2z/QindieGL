@@ -218,6 +218,7 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 		for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
 			int numCoords = 4;
 			if ( D3DState.TextureState.transformEnabled == FALSE && !projectiveStages[j] &&
+				!D3DState_IsFragmentProgramTexCoordStage( j ) &&
 				!( j >= arbTexCoordCount && D3DState.EnableState.texGenEnabled[j] ) )
 			{
 				numCoords = (DWORD( D3DState.CurrentState.isSet.bits.texcoord ) >> (j * 2)) & 0x3;
@@ -341,7 +342,7 @@ void D3DIMBuffer :: End( bool recordDraw )
 				(DWORD( D3DState.CurrentState.isSet.bits.texcoord ) >> (i * 2)) & 0x3;
 			// Projective and texgen stages carry all four coordinates (texgen fills
 			// them per vertex; see D3DState_IsProjectiveTextureStage).
-			if ( D3DState_IsProjectiveTextureStage( i ) ||
+			if ( D3DState_IsProjectiveTextureStage( i ) || D3DState_IsFragmentProgramTexCoordStage( i ) ||
 				( i >= arbTexCoordCount && D3DState.EnableState.texGenEnabled[i] ) )
 				numCoordsX = 3;
 			switch ( numCoordsX )
