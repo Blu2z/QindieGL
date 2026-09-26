@@ -1459,14 +1459,11 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 			std::string coord = "(" + s0 + ")" + coordSwiz;
 			if ( inst.texTarget == "RECT" ) {
 				char scale[64]; sprintf( scale, "_rectScale%d", inst.texUnit );
-				// OpenGL rectangle coordinates use the framebuffer's lower-left
-				// origin.  CopyTextureSubLevel preserves the captured image in the
-				// D3D texture, whose sampling origin is upper-left, so normalize X
-				// directly and reflect Y around the texture height.  Without this,
-				// YAE's full-screen pickup effect displays the captured scene upside
-				// down and reads as an opaque replacement rather than a screen blur.
-				coord = "float2((" + coord + ").x * " + scale + ".x, "
-					"1.0 - (" + coord + ").y * " + scale + ".y)";
+				// Rectangle coordinates are in texels. Uploads and framebuffer
+				// copies both store GL row 0 as the D3D texture's first row, so
+				// only normalization is needed; the fixed-function path does the
+				// same (D3DTex_GetFixedFunctionRectangleScale).
+				coord = "(" + coord + ") * " + scale;
 			}
 			std::string fetch = texFn + "(" + buf + ", " + coord + ")";
 			hlsl << "\t" << dst << " = " << MaybeSaturate( ApplyResultMaskHLSL( fetch, inst.dst.swizzle ), inst.saturate ) << ";\n";

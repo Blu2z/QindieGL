@@ -487,7 +487,7 @@ const D3DXMATRIX *D3DState_GetSoftwareTextureTransform( int stage )
 		stage >= D3DGlobal.maxActiveTMU )
 		return nullptr;
 	// Those stages apply the full matrix instead (D3DState_GetProjectiveTextureTransform).
-	if ( D3DState_IsFragmentProgramTexCoordStage( stage ) )
+	if ( D3DState_IsFragmentProgramTexCoordStage( stage ) || D3DState_IsProjectiveTextureStage( stage ) )
 		return nullptr;
 
 	D3DStateMatrix& matrix = D3DGlobal.textureMatrixStack[stage]->top();

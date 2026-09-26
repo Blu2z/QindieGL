@@ -27,6 +27,12 @@
     <ClCompile Include="texgen.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="rectangle_texture_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="shadow_receiver_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="texture_projection_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

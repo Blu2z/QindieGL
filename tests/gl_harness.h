@@ -49,6 +49,17 @@ struct GLApi
 	decltype(&::glDepthMask) DepthMask;
 	decltype(&::glTexGeni) TexGeni;
 	decltype(&::glTexGenfv) TexGenfv;
+	decltype(&::glCopyTexSubImage2D) CopyTexSubImage2D;
+	decltype(&::glTexImage1D) TexImage1D;
+	decltype(&::glTexEnvi) TexEnvi;
+	decltype(&::glColor4f) Color4f;
+	decltype(&::glBlendFunc) BlendFunc;
+	decltype(&::glAlphaFunc) AlphaFunc;
+	decltype(&::glDepthFunc) DepthFunc;
+	decltype(&::glPolygonOffset) PolygonOffset;
+	decltype(&::glFrustum) Frustum;
+	decltype(&::glTranslatef) Translatef;
+	decltype(&::glScalef) Scalef;
 
 	PFNGLBINDBUFFERARBPROC BindBufferARB;
 	PFNGLGENBUFFERSARBPROC GenBuffersARB;

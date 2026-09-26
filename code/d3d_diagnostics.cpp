@@ -537,12 +537,22 @@ namespace {
 		}
 	}
 
+	// DS2's screen-space effects (pickup blur, filters) are the fragment
+	// programs sampling a rectangle texture. Program ids vary between runs.
+	bool IsRectangleFragmentProgramBound()
+	{
+		const ARBCompiledProgram *fp = ARB_GetCompiledProgram(ARB_GetBoundFragmentProgram());
+		if (!fp) return false;
+		for (const auto &target : fp->parsed.texTargetPerUnit)
+			if (target.second == "RECT") return true;
+		return false;
+	}
+
 	void TraceYAEPostEffectDraw( const char *api, unsigned int mode, int count, int first,
 		unsigned int indexType, const void *indices )
 	{
-		if (!D3DGlobal.settings.game.yaeFallbackCompatibility ||
-			!D3DState.EnableState.fragmentProgramEnabled ||
-			ARB_GetBoundFragmentProgram() != 8 || gYAEPostEffectDraws >= 96)
+		if (!D3DGlobal.settings.game.yaeFallbackCompatibility || gYAEPostEffectDraws >= 96 ||
+			!D3DState.EnableState.fragmentProgramEnabled || !IsRectangleFragmentProgramBound())
 			return;
 
 		++gYAEPostEffectDraws;
@@ -1812,7 +1822,7 @@ void QGL_DiagnosticsAfterDraw()
 	}
 
 	if (gYAEPostEffectAfterDumped || !D3DGlobal.settings.game.yaeFallbackCompatibility ||
-		!D3DState.EnableState.fragmentProgramEnabled || ARB_GetBoundFragmentProgram() != 8)
+		!D3DState.EnableState.fragmentProgramEnabled || !IsRectangleFragmentProgramBound())
 		return;
 
 	gYAEPostEffectAfterDumped = true;
