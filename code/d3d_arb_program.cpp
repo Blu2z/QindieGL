@@ -42,6 +42,21 @@ static std::map<GLuint, ARBCompiledProgram*> gARBCompiledPrograms;
 static bool gARBShadersActive = false;
 static bool gARBVertexShaderActive = false;
 static bool gARBPixelShaderActive = false;
+static bool gARBFogSuppressed = false;
+
+// Disables D3D fixed-function fog while a ps_2_x fragment program build draws
+// (set every time, since glEnable(GL_FOG) may have re-enabled it meanwhile),
+// and restores the GL fog state afterwards.
+static void ARB_SuppressFixedFunctionFog( bool suppress )
+{
+	if ( suppress ) {
+		D3DGlobal.pDevice->SetRenderState( D3DRS_FOGENABLE, FALSE );
+		gARBFogSuppressed = true;
+	} else if ( gARBFogSuppressed ) {
+		D3DGlobal.pDevice->SetRenderState( D3DRS_FOGENABLE, D3DState.EnableState.fogEnabled );
+		gARBFogSuppressed = false;
+	}
+}
 
 static uint32_t HashARBProgram( const char* data, size_t length )
 {
@@ -1639,6 +1654,36 @@ bool ARB_CompileProgram( GLuint programId, GLenum target, const char* source, in
 		return false;
 	}
 
+	// Direct3D 9 pairs ps_3_0 only with vs_3_0. Fragment programs also run with
+	// fixed-function vertex processing (You Are Empty's soft shadows and post
+	// effects), where a ps_3_0 shader receives undefined texture coordinates.
+	// Build a ps_2_x variant for those draws when the program fits.
+	if ( target == GL_FRAGMENT_PROGRAM_ARB && !strcmp( profile, "ps_3_0" ) ) {
+		static const char *const fixedFunctionProfiles[] = { "ps_2_0", "ps_2_b", "ps_2_a" };
+		for ( const char *fixedProfile : fixedFunctionProfiles ) {
+			ID3DXBuffer* fixedBuffer = nullptr;
+			ID3DXBuffer* fixedErrors = nullptr;
+			LPD3DXCONSTANTTABLE fixedTable = nullptr;
+			HRESULT fixedResult = D3DXCompileShader( hlslSource.c_str(), (UINT)hlslSource.size(), NULL, NULL,
+				"main", fixedProfile, 0, &fixedBuffer, &fixedErrors, &fixedTable );
+			if ( fixedErrors ) fixedErrors->Release();
+			if ( SUCCEEDED( fixedResult ) )
+				fixedResult = D3DGlobal.pDevice->CreatePixelShader(
+					(DWORD*)fixedBuffer->GetBufferPointer(), &prog->psFixedFunction );
+			if ( fixedBuffer ) fixedBuffer->Release();
+			if ( SUCCEEDED( fixedResult ) && prog->psFixedFunction ) {
+				prog->constantsFixedFunction = fixedTable;
+				logPrintf( "ARB_CompileProgram: program %u also built as %s for fixed-function vertex draws\n",
+					programId, fixedProfile );
+				break;
+			}
+			if ( fixedTable ) fixedTable->Release();
+		}
+		if ( !prog->psFixedFunction )
+			logPrintf( "ARB_CompileProgram: program %u has no ps_2_x build; draws without a vertex program use ps_3_0\n",
+				programId );
+	}
+
 	gARBCompiledPrograms[programId] = prog;
 	logPrintf( "ARB_CompileProgram: SUCCESS for program %u (%s)\n", programId, profile );
 	return true;
@@ -1689,12 +1734,12 @@ static void GetGLMatrix( const ARBParsedProgram::MatrixRef& mr, D3DXMATRIX& out 
 }
 
 // Set constants for a compiled program
-static void SetProgramConstants( ARBCompiledProgram* prog, bool isVS )
+static void SetProgramConstants( ARBCompiledProgram* prog, bool isVS, LPD3DXCONSTANTTABLE table = nullptr )
 {
-	if ( !prog || !prog->constants ) return;
+	LPD3DXCONSTANTTABLE ct = table ? table : ( prog ? prog->constants : nullptr );
+	if ( !prog || !ct ) return;
 
 	LPDIRECT3DDEVICE9 dev = D3DGlobal.pDevice;
-	LPD3DXCONSTANTTABLE ct = prog->constants;
 	const ARBParsedProgram& p = prog->parsed;
 
 	// Env params
@@ -1835,7 +1880,7 @@ int ARB_GetRequiredVertexTexCoordCount()
 	return required;
 }
 
-static void SetProgramTextures( ARBCompiledProgram* fp )
+static void SetProgramTextures( ARBCompiledProgram* fp, LPD3DXCONSTANTTABLE table )
 {
 	if ( !fp || !D3DGlobal.pDevice ) return;
 	for ( int unit : fp->parsed.usedTexUnits ) {
@@ -1851,16 +1896,16 @@ static void SetProgramTextures( ARBCompiledProgram* fp )
 		D3DGlobal.pDevice->SetTexture( unit, texture ? texture->GetD3DTexture() : nullptr );
 		if ( !texture ) continue;
 		if ( targetIt != fp->parsed.texTargetPerUnit.end() && targetIt->second == "RECT" &&
-			fp->constants ) {
+			table ) {
 			char constantName[64];
 			sprintf_s( constantName, "_rectScale%d", unit );
-			D3DXHANDLE scaleHandle = fp->constants->GetConstantByName( nullptr, constantName );
+			D3DXHANDLE scaleHandle = table->GetConstantByName( nullptr, constantName );
 			if ( scaleHandle ) {
 				const float rectangleScale[2] = {
 					texture->GetWidth() ? 1.0f / texture->GetWidth() : 1.0f,
 					texture->GetHeight() ? 1.0f / texture->GetHeight() : 1.0f
 				};
-				fp->constants->SetFloatArray( D3DGlobal.pDevice, scaleHandle, rectangleScale, 2 );
+				table->SetFloatArray( D3DGlobal.pDevice, scaleHandle, rectangleScale, 2 );
 				PRINT_ONCE( "YAE_COMPAT: ARB RECT coordinates normalized for D3D9 texture %ux%u.\n",
 					texture->GetWidth(), texture->GetHeight() );
 			}
@@ -1910,13 +1955,20 @@ bool ARB_ActivateShaders()
 		GLuint fpId = ARB_GetBoundFragmentProgram();
 		ARBCompiledProgram* fp = ARB_GetCompiledProgram( fpId );
 		if ( fp && fp->ps ) {
-			SetProgramTextures( fp );
-			dev->SetPixelShader( fp->ps );
-			SetProgramConstants( fp, false );
+			// Without a vertex shader use the ps_2_x build (see ARB_CompileProgram).
+			const bool fixedFunctionBuild = !gARBVertexShaderActive && fp->psFixedFunction;
+			LPD3DXCONSTANTTABLE table = fixedFunctionBuild ? fp->constantsFixedFunction : fp->constants;
+			SetProgramTextures( fp, table );
+			dev->SetPixelShader( fixedFunctionBuild ? fp->psFixedFunction : fp->ps );
+			SetProgramConstants( fp, false, table );
+			// D3D applies fixed-function fog after a ps_2_x shader; GL does not fog
+			// fragment program output unless the program requests a fog option.
+			ARB_SuppressFixedFunctionFog( fixedFunctionBuild && !fp->parsed.fogOption );
 			activated = true;
 			gARBPixelShaderActive = true;
 		} else {
 			dev->SetPixelShader( nullptr );
+			ARB_SuppressFixedFunctionFog( false );
 			gARBPixelShaderActive = false;
 		}
 	} else {
@@ -1925,6 +1977,7 @@ bool ARB_ActivateShaders()
 			D3DState.TextureState.textureEnableChanged = TRUE;
 		}
 		dev->SetPixelShader( nullptr );
+		ARB_SuppressFixedFunctionFog( false );
 		gARBPixelShaderActive = false;
 	}
 
@@ -1940,6 +1993,7 @@ void ARB_DeactivateShaders()
 	if ( !dev ) return;
 
 	dev->SetPixelShader( nullptr );
+	ARB_SuppressFixedFunctionFog( false );
 	if ( D3DGlobal.settings.game.orthovertexshader && D3DGlobal_IsOrthoProjection() ) {
 		dev->SetVertexShader( D3DGlobal.orthoShaders.vs );
 		D3DGlobal.orthoShaders.constants->SetMatrix( dev, "projectionMatrix", D3DGlobal.projectionMatrixStack->top() );
