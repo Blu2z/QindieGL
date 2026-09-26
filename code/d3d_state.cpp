@@ -500,6 +500,36 @@ const D3DXMATRIX *D3DState_GetSoftwareTextureTransform( int stage )
 	return affine2D ? &m : nullptr;
 }
 
+// GL divides S, T and R by Q per fragment. A stage is projective when that Q
+// can differ from 1: a generated Q coordinate, or a texture matrix whose
+// fourth row (D3D column _14.._44) is not (0,0,0,1). Such stages carry four
+// coordinates with the matrix already applied, and D3D divides by the fourth
+// one (COUNT4|PROJECTED). Every stream feeding such a stage must therefore
+// write four coordinates; see D3DVABuffer::Lock and D3DIMBuffer.
+bool D3DState_IsProjectiveTextureStage( int stage )
+{
+	if ( D3DState.EnableState.vertexProgramEnabled || stage < 0 || stage >= D3DGlobal.maxActiveTMU )
+		return false;
+	if ( D3DState.EnableState.texGenEnabled[stage] & ( 1 << 3 ) )
+		return true;
+	D3DStateMatrix& matrix = D3DGlobal.textureMatrixStack[stage]->top();
+	if ( matrix.is_identity() )
+		return false;
+	const D3DXMATRIX& m = *static_cast<const D3DXMATRIX *>( matrix );
+	const float epsilon = 0.00001f;
+	return fabsf( m._14 ) > epsilon || fabsf( m._24 ) > epsilon ||
+		fabsf( m._34 ) > epsilon || fabsf( m._44 - 1.0f ) > epsilon;
+}
+
+// The matrix a projective stage applies on the CPU, or null when identity.
+const D3DXMATRIX *D3DState_GetProjectiveTextureTransform( int stage )
+{
+	if ( !D3DState_IsProjectiveTextureStage( stage ) )
+		return nullptr;
+	D3DStateMatrix& matrix = D3DGlobal.textureMatrixStack[stage]->top();
+	return matrix.is_identity() ? nullptr : static_cast<const D3DXMATRIX *>( matrix );
+}
+
 void D3DState_SetTexture()
 {
 	bool textureMatrixChanged = false;
@@ -522,23 +552,30 @@ void D3DState_SetTexture()
 
 		D3DState.textureMatrixModified[i] = false;
 		D3DStateMatrix& mat = D3DGlobal.textureMatrixStack[i]->top();
-		const bool stageTransformEnabled = !mat.is_identity() &&
+		const bool projectiveStage = D3DState_IsProjectiveTextureStage( i );
+		const bool stageTransformEnabled = !projectiveStage && !mat.is_identity() &&
 			!D3DState_GetSoftwareTextureTransform( i );
 
 		// Affine S/T transforms are folded into YAE's copied vertex data above.
-		// More complex fixed-function matrices remain on D3D's COUNT2 path.
-		// COUNT4|PROJECTED must not be used with YAE's ordinary float2 streams: its
-		// undefined q previously produced intermittent screen-sized triangles.
+		// Projective stages (see D3DState_IsProjectiveTextureStage) receive four
+		// coordinates with the matrix applied and only need D3D's division by q.
+		// Other matrices remain on D3D's COUNT2 path: COUNT4|PROJECTED on an
+		// ordinary float2 stream reads an undefined q and previously produced
+		// intermittent screen-sized triangles.
 		hr = D3DGlobal.pDevice->SetTextureStageState( currentSampler,
 			D3DTSS_TEXTURETRANSFORMFLAGS,
+			projectiveStage ? ( D3DTTFF_COUNT4 | D3DTTFF_PROJECTED ) :
 			stageTransformEnabled ? D3DTTFF_COUNT2 : D3DTTFF_DISABLE );
 		if (FAILED(hr)) {
 			QGL_SET_ERROR(hr);
 			break;
 		}
-		if (stageTransformEnabled) {
+		if (stageTransformEnabled || projectiveStage) {
+			D3DXMATRIX identity;
+			D3DXMatrixIdentity( &identity );
 			hr = D3DGlobal.pDevice->SetTransform(
-				(D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + currentSampler), mat );
+				(D3DTRANSFORMSTATETYPE)(D3DTS_TEXTURE0 + currentSampler),
+				projectiveStage ? &identity : static_cast<const D3DXMATRIX *>( mat ) );
 			if (FAILED(hr)) {
 				QGL_SET_ERROR(hr);
 				break;
@@ -1321,6 +1358,8 @@ static void D3DState_EnableDisableState( GLenum cap, DWORD value )
 	case GL_TEXTURE_GEN_Q:
 		if (value) D3DState.EnableState.texGenEnabled[D3DState.TextureState.currentTMU] |= (1 << 3);
 		else D3DState.EnableState.texGenEnabled[D3DState.TextureState.currentTMU] &= ~(1 << 3);
+		// A generated Q makes the stage projective (D3DState_IsProjectiveTextureStage).
+		D3DState.TextureState.textureSamplerStateChanged = TRUE;
 		break;
 	case GL_CLIP_PLANE0:
 	case GL_CLIP_PLANE1:

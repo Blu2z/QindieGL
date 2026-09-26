@@ -406,7 +406,7 @@ int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumInde
 
 void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords,
 	const float *position, const float *normal, int stage,
-	const D3DXMATRIX *softwareTransform, float *out_texcoords )
+	const D3DXMATRIX *softwareTransform, const D3DXMATRIX *projectiveTransform, float *out_texcoords )
 {
 	if (!D3DState.EnableState.texGenEnabled[stage]) {
 		memcpy( out_texcoords, texcoords, sizeof(float)*num_coords );
@@ -439,6 +439,12 @@ void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords,
 		const float t = out_texcoords[1];
 		out_texcoords[0] = s * softwareTransform->_11 + t * softwareTransform->_21 + softwareTransform->_41;
 		out_texcoords[1] = s * softwareTransform->_12 + t * softwareTransform->_22 + softwareTransform->_42;
+	}
+	// Projective stage: the full GL texture matrix; D3D divides by q per pixel.
+	if ( projectiveTransform && num_coords == 4 ) {
+		D3DXVECTOR4 transformed;
+		D3DXVec4Transform( &transformed, reinterpret_cast<const D3DXVECTOR4 *>( out_texcoords ), projectiveTransform );
+		memcpy( out_texcoords, &transformed, sizeof(float) * 4 );
 	}
 
 	float rectangleScale[2];
@@ -493,6 +499,13 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	const D3DXMATRIX *softwareTransforms[MAX_D3D_TMU] = {};
 	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j )
 		softwareTransforms[j] = D3DState_GetSoftwareTextureTransform( j );
+	// Projective stages need all four coordinates (D3DState_IsProjectiveTextureStage).
+	bool projectiveStages[MAX_D3D_TMU] = {};
+	const D3DXMATRIX *projectiveTransforms[MAX_D3D_TMU] = {};
+	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
+		projectiveStages[j] = D3DState_IsProjectiveTextureStage( j );
+		projectiveTransforms[j] = D3DState_GetProjectiveTextureTransform( j );
+	}
 	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
 		const bool arbSemanticRequired = j < arbTexCoordCount;
 		if (arbSemanticRequired || (D3DState.EnableState.textureEnabled[j] &&
@@ -506,6 +519,13 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 			{
 				numCoords = 4;
 			}
+			// Generated coordinates without an array: carry all four (GL fills the
+			// rest from the current texture coordinate). A stale or zero array size
+			// here previously mismatched the FVF and the written vertex data.
+			if ( ( projectiveStages[j] || ( D3DState.EnableState.texGenEnabled[j] &&
+				!VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j) ) ) &&
+				!arbSemanticRequired )
+				numCoords = 4;
 			m_vertexSize += numCoords;
 			switch (numCoords)
 			{
@@ -609,6 +629,12 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 			{
 				if (D3DState.EnableState.texGenEnabled[j])
 				{
+					fast_path_abort_reason = __LINE__;
+					goto FAST_PATH_CHECK_ABORT;
+				}
+				if (projectiveStages[j])
+				{
+					// The fast path writes two coordinates; projective stages need four.
 					fast_path_abort_reason = __LINE__;
 					goto FAST_PATH_CHECK_ABORT;
 				}
@@ -822,10 +848,14 @@ FAST_PATH_CHECK_ABORT:
 					{
 						numCoords = 4;
 					}
+					if ( ( projectiveStages[j] || ( D3DState.EnableState.texGenEnabled[j] &&
+						!VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j) ) ) &&
+						!arbSemanticRequired )
+						numCoords = 4;
 					if (VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j)) {
 						if (elemIndex >= D3DState.ClientVertexArrayState.texCoordInfo[j]._internal.compiledFirst &&
 							elemIndex <= D3DState.ClientVertexArrayState.texCoordInfo[j]._internal.compiledLast) {
-							SetupTexCoords( D3DGlobal.compiledVertexArray.compiledTexCoordData[j] + elemIndex*4, numCoords, vertexData, normalData, j, softwareTransforms[j], pLockedVertices );
+							SetupTexCoords( D3DGlobal.compiledVertexArray.compiledTexCoordData[j] + elemIndex*4, numCoords, vertexData, normalData, j, softwareTransforms[j], projectiveTransforms[j], pLockedVertices );
 						} else {
 							GLfloat texcoord[4] = { 0, 0, 0, 1 };
 							D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.texCoordInfo[j], elemIndex, texcoord );
@@ -833,7 +863,7 @@ FAST_PATH_CHECK_ABORT:
 								texcoord[0] += D3DState.TransformState.texcoordFix[0];
 								texcoord[1] += D3DState.TransformState.texcoordFix[1];
 							}
-							SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, softwareTransforms[j], pLockedVertices );
+							SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, softwareTransforms[j], projectiveTransforms[j], pLockedVertices );
 						}
 						pLockedVertices += numCoords;
 					} else if (D3DState.EnableState.texGenEnabled[j]) {
@@ -842,7 +872,7 @@ FAST_PATH_CHECK_ABORT:
 							texcoord[0] += D3DState.TransformState.texcoordFix[0];
 							texcoord[1] += D3DState.TransformState.texcoordFix[1];
 						}
-						SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, softwareTransforms[j], pLockedVertices );
+						SetupTexCoords( texcoord, numCoords, vertexData, normalData, j, softwareTransforms[j], projectiveTransforms[j], pLockedVertices );
 						pLockedVertices += numCoords;
 					} else if (arbSemanticRequired) {
 						for ( int coord = 0; coord < numCoords; ++coord )

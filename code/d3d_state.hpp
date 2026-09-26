@@ -279,6 +279,8 @@ extern void D3DState_SetCullMode();
 extern void D3DState_SetDepthBias();
 extern void D3DState_AssureBeginScene();
 extern const D3DXMATRIX *D3DState_GetSoftwareTextureTransform( int stage );
+extern bool D3DState_IsProjectiveTextureStage( int stage );
+extern const D3DXMATRIX *D3DState_GetProjectiveTextureTransform( int stage );
 extern void D3DState_Check();
 
 extern OPENGL_API void WINAPI glEnableClientState( GLenum cap );
