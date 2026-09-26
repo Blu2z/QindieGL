@@ -59,28 +59,64 @@ namespace {
 	static GLuint gARBBoundFragmentProgram = 0;
 	static DWORD gARBVertexProgramEnabled = 0;
 	static DWORD gARBFragmentProgramEnabled = 0;
+	static const int ARB_MAX_ENV_PARAMS = 256;
+	static const int ARB_MAX_LOCAL_PARAMS = 256;
 
-	// Per-program stored source (for future compilation)
+	// Program local parameters are object state in ARB_program, not global state
+	// for the vertex/fragment target.  YAE relies on this when alternating its
+	// rigid and skinned material programs: bone palettes, camera position and
+	// material constants must survive a bind to another program.
 	struct ARBProgramData {
 		GLenum target; // GL_VERTEX_PROGRAM_ARB or GL_FRAGMENT_PROGRAM_ARB
 		std::string source;
+		GLfloat localParams[ARB_MAX_LOCAL_PARAMS][4];
+		// Diagnostics only: frame+1 (0 = never written) and draw of the last write.
+		uint32_t localWriteFrame[ARB_MAX_LOCAL_PARAMS];
+		uint32_t localWriteDraw[ARB_MAX_LOCAL_PARAMS];
+
+		ARBProgramData() : target( 0 ) {
+			memset( localParams, 0, sizeof( localParams ) );
+			memset( localWriteFrame, 0, sizeof( localWriteFrame ) );
+			memset( localWriteDraw, 0, sizeof( localWriteDraw ) );
+		}
 	};
 	static std::map<GLuint, ARBProgramData> gARBProgramStore;
 
 	// Parameter storage
-	static const int ARB_MAX_ENV_PARAMS = 256;
-	static const int ARB_MAX_LOCAL_PARAMS = 256;
 	static GLfloat gARBEnvParamsVP[ARB_MAX_ENV_PARAMS][4];
 	static GLfloat gARBEnvParamsFP[ARB_MAX_ENV_PARAMS][4];
-	static GLfloat gARBLocalParamsVP[ARB_MAX_LOCAL_PARAMS][4];
-	static GLfloat gARBLocalParamsFP[ARB_MAX_LOCAL_PARAMS][4];
+	static GLfloat gARBDefaultLocalParamsVP[ARB_MAX_LOCAL_PARAMS][4];
+	static GLfloat gARBDefaultLocalParamsFP[ARB_MAX_LOCAL_PARAMS][4];
 
 
 	GLfloat (*ARB_LocalParams_Internal( GLenum target ))[4] {
-		return (target == GL_VERTEX_PROGRAM_ARB) ? gARBLocalParamsVP : gARBLocalParamsFP;
+		GLuint bound = ( target == GL_VERTEX_PROGRAM_ARB ) ?
+			gARBBoundVertexProgram : gARBBoundFragmentProgram;
+		if ( bound ) {
+			ARBProgramData& data = gARBProgramStore[bound];
+			if ( !data.target ) data.target = target;
+			return data.localParams;
+		}
+		return ( target == GL_VERTEX_PROGRAM_ARB ) ?
+			gARBDefaultLocalParamsVP : gARBDefaultLocalParamsFP;
 	}
 	GLfloat (*ARB_EnvParams_Internal( GLenum target ))[4] {
 		return (target == GL_VERTEX_PROGRAM_ARB) ? gARBEnvParamsVP : gARBEnvParamsFP;
+	}
+
+	// Diagnostics: stamp the bound program object's local parameter and record
+	// the write in the YAE program-history ring.
+	void ARB_NoteLocalWrite( GLenum target, GLuint index )
+	{
+		GLuint bound = ( target == GL_VERTEX_PROGRAM_ARB ) ?
+			gARBBoundVertexProgram : gARBBoundFragmentProgram;
+		GLfloat (*p)[4] = ARB_LocalParams_Internal( target );
+		QGL_DiagnosticsRecordProgramOp( 'L', target, bound, (int)index, p[index] );
+		if ( bound ) {
+			ARBProgramData& data = gARBProgramStore[bound];
+			data.localWriteFrame[index] = (uint32_t)QGL_DiagnosticsGetFrameId() + 1;
+			data.localWriteDraw[index] = (uint32_t)QGL_DiagnosticsGetDrawId();
+		}
 	}
 }
 
@@ -89,6 +125,20 @@ GLfloat (*ARB_EnvParams( GLenum target ))[4] { return ARB_EnvParams_Internal( ta
 GLfloat (*ARB_LocalParams( GLenum target ))[4] { return ARB_LocalParams_Internal( target ); }
 GLuint ARB_GetBoundVertexProgram() { return gARBBoundVertexProgram; }
 GLuint ARB_GetBoundFragmentProgram() { return gARBBoundFragmentProgram; }
+
+// Diagnostics: last write of a local parameter of the bound program object.
+bool ARB_GetLocalWriteStamp( GLenum target, GLuint index, uint64_t *frame, uint64_t *draw )
+{
+	GLuint bound = ( target == GL_VERTEX_PROGRAM_ARB ) ?
+		gARBBoundVertexProgram : gARBBoundFragmentProgram;
+	auto it = gARBProgramStore.find( bound );
+	if ( !bound || index >= ARB_MAX_LOCAL_PARAMS || it == gARBProgramStore.end() ||
+		!it->second.localWriteFrame[index] )
+		return false;
+	*frame = it->second.localWriteFrame[index] - 1;
+	*draw = it->second.localWriteDraw[index];
+	return true;
+}
 
 #define RECORD_ARB_PROGRAM_STUB() \
 	do { if (D3DGlobal.settings.enableARBProgramsStub) D3DExtension_RecordStubInvocation(__FUNCTION__); } while (0)
@@ -142,6 +192,7 @@ OPENGL_API void WINAPI glBindProgramARB( GLenum target, GLuint program )
 		gARBBoundVertexProgram = program;
 	else if (target == GL_FRAGMENT_PROGRAM_ARB)
 		gARBBoundFragmentProgram = program;
+	QGL_DiagnosticsRecordProgramOp('B', target, program, -1, nullptr);
 }
 
 OPENGL_API void WINAPI glDeleteProgramsARB( GLsizei n, const GLuint *programs )
@@ -211,6 +262,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4dARB( GLenum target, GLuint index
 	if (index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = (GLfloat)x; p[index][1] = (GLfloat)y; p[index][2] = (GLfloat)z; p[index][3] = (GLfloat)w;
+		ARB_NoteLocalWrite(target, index);
 	}
 }
 
@@ -220,6 +272,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4dvARB( GLenum target, GLuint inde
 	if (v && index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = (GLfloat)v[0]; p[index][1] = (GLfloat)v[1]; p[index][2] = (GLfloat)v[2]; p[index][3] = (GLfloat)v[3];
+		ARB_NoteLocalWrite(target, index);
 	}
 }
 
@@ -229,6 +282,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4fARB( GLenum target, GLuint index
 	if (index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = x; p[index][1] = y; p[index][2] = z; p[index][3] = w;
+		ARB_NoteLocalWrite(target, index);
 	}
 }
 
@@ -238,6 +292,7 @@ OPENGL_API void WINAPI glProgramLocalParameter4fvARB( GLenum target, GLuint inde
 	if (v && index < ARB_MAX_LOCAL_PARAMS) {
 		GLfloat (*p)[4] = ARB_LocalParams(target);
 		p[index][0] = v[0]; p[index][1] = v[1]; p[index][2] = v[2]; p[index][3] = v[3];
+		ARB_NoteLocalWrite(target, index);
 	}
 }
 
@@ -1069,13 +1124,16 @@ static glext_entry_point_t glext_EntryPoints[] =
 
 	//GL_ARB_vertex_buffer_object
 	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBindBuffer, -1 ),
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glDeleteBuffersARB, -1 ),
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGenBuffersARB, -1 ),
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glIsBufferARB, -1 ),
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBufferDataARB, -1 ),
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGetBufferSubDataARB, -1 ),
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glMapBufferARB, -1 ),
-	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glUnmapBufferARB, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glDeleteBuffers, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGenBuffers, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glIsBuffer, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBufferData, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glBufferSubData, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGetBufferSubData, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGetBufferParameteriv, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glGetBufferPointerv, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glMapBuffer, -1 ),
+	GL_EXT_ENTRY_POINT( "ARB", "vertex_buffer_object", glUnmapBuffer, -1 ),
 
 	//GL_ARB_multitexture
 	GL_EXT_ENTRY_POINT( "ARB", "multitexture", glActiveTexture, -1 ),

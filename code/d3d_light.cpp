@@ -73,10 +73,15 @@ OPENGL_API void WINAPI glGetLightfv( GLenum light, GLenum pname, GLfloat *params
 		params[3] = D3DState.LightingState.lightColorSpecular[lightIndex].a;
 		break;
 	case GL_POSITION:
-		params[0] = D3DState.LightingState.lightPosition[lightIndex].x;
-		params[1] = D3DState.LightingState.lightPosition[lightIndex].y;
-		params[2] = D3DState.LightingState.lightPosition[lightIndex].z;
-		params[3] =( D3DState.LightingState.lightType[lightIndex] == D3DLIGHT_DIRECTIONAL ) ? 0.0f : 1.0f;
+		{
+			// Directional lights store the negated eye-space direction for D3D.
+			const bool directional = D3DState.LightingState.lightType[lightIndex] == D3DLIGHT_DIRECTIONAL;
+			const float sign = directional ? -1.0f : 1.0f;
+			params[0] = sign * D3DState.LightingState.lightPosition[lightIndex].x;
+			params[1] = sign * D3DState.LightingState.lightPosition[lightIndex].y;
+			params[2] = sign * D3DState.LightingState.lightPosition[lightIndex].z;
+			params[3] = directional ? 0.0f : 1.0f;
+		}
 		break;
 	case GL_SPOT_DIRECTION:
 		params[0] = D3DState.LightingState.lightDirection[lightIndex].x;
@@ -145,6 +150,18 @@ OPENGL_API void WINAPI glLightModeliv( GLenum pname, const GLint *params )
 	fparams[3] =( GLfloat )params[3];
 	glLightModelfv( pname, fparams );
 }
+// D3DState_SetLight uploads a light to D3D only when it is marked modified.
+static void MarkLightModified( int lightIndex )
+{
+	D3DState.LightingState.lightModified[lightIndex] = TRUE;
+	static bool reported = false;
+	if ( !reported ) {
+		reported = true;
+		logPrintfLevel( QGL_LOG_INFO, "GL_LIGHTING",
+			"application sets fixed-function light parameters (first: GL_LIGHT%d)", lightIndex );
+	}
+}
+
 OPENGL_API void WINAPI glLightf( GLenum light, GLenum pname, GLfloat param )
 {
 	DL_RECORD_3( glLightf, light, pname, param );
@@ -176,6 +193,7 @@ OPENGL_API void WINAPI glLightf( GLenum light, GLenum pname, GLfloat param )
 		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
+	MarkLightModified( lightIndex );
 }
 OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *params )
 {
@@ -263,6 +281,7 @@ OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *par
 		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
+	MarkLightModified( lightIndex );
 }
 OPENGL_API void WINAPI glLighti( GLenum light, GLenum pname, GLint param )
 {

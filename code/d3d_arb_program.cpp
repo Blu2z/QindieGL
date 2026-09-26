@@ -188,13 +188,36 @@ static ARBOperand ParseOperand( const std::string& token )
 		}
 	}
 
-	// Parse array index: name[n]
+	// Parse array index: name[n] or name[A0.x + n].  ARB vertex programs use
+	// relative constant addressing for matrix-palette skinning.  atoi() used to
+	// turn the latter into index zero, which silently replaced every bone row
+	// with the first literal PARAM binding.
 	size_t bracket = t.find( '[' );
 	if ( bracket != std::string::npos ) {
 		size_t close = t.find( ']', bracket );
 		if ( close != std::string::npos ) {
-			std::string idxStr = t.substr( bracket + 1, close - bracket - 1 );
-			op.arrayIndex = atoi( idxStr.c_str() );
+			std::string idxStr = TrimString( t.substr( bracket + 1, close - bracket - 1 ) );
+			size_t registerEnd = 0;
+			if ( !idxStr.empty() && ( isalpha( (unsigned char)idxStr[0] ) || idxStr[0] == '_' ) ) {
+				while ( registerEnd < idxStr.size() &&
+					( isalnum( (unsigned char)idxStr[registerEnd] ) || idxStr[registerEnd] == '_' ) )
+					++registerEnd;
+				op.relativeRegister = idxStr.substr( 0, registerEnd );
+				if ( registerEnd + 1 < idxStr.size() && idxStr[registerEnd] == '.' &&
+					idxStr[registerEnd + 1] == 'x' )
+					registerEnd += 2;
+				std::string offset = TrimString( idxStr.substr( registerEnd ) );
+				int sign = 1;
+				if ( !offset.empty() && ( offset[0] == '+' || offset[0] == '-' ) ) {
+					if ( offset[0] == '-' ) sign = -1;
+					offset = TrimString( offset.substr( 1 ) );
+				}
+				op.relativeOffset = offset.empty() ? 0 : sign * atoi( offset.c_str() );
+				op.relativeIndex = !op.relativeRegister.empty();
+				op.arrayIndex = op.relativeOffset;
+			} else {
+				op.arrayIndex = atoi( idxStr.c_str() );
+			}
 			std::string rest = ( close + 1 < t.size() ) ? t.substr( close + 1 ) : "";
 			t = t.substr( 0, bracket ) + rest;
 			// Check for second array index (e.g. after ".row" or ".texture")
@@ -857,6 +880,21 @@ static std::string ResolveOperandHLSL( const ARBOperand& op, const ARBParsedProg
 	auto pit = p.paramMap.find( op.name );
 	if ( pit != p.paramMap.end() ) {
 		const auto& bindings = pit->second;
+		if ( op.relativeIndex ) {
+			int offset = op.relativeOffset;
+			if ( offset >= 0 && offset < (int)bindings.size() ) {
+				const ARBParamBinding& pb = bindings[offset];
+				const char* arrayName = nullptr;
+				if ( pb.type == PARAM_ENV ) arrayName = "_env";
+				else if ( pb.type == PARAM_LOCAL ) arrayName = "_local";
+				if ( arrayName ) {
+					char buf[96];
+					sprintf( buf, "%s[%s + %d]", arrayName,
+						op.relativeRegister.c_str(), pb.index );
+					return buf;
+				}
+			}
+		}
 		int idx = ( op.arrayIndex >= 0 ) ? op.arrayIndex : 0;
 		if ( idx < (int)bindings.size() ) {
 			const ARBParamBinding& pb = bindings[idx];
@@ -1101,6 +1139,22 @@ static std::string MaybeSaturate( const std::string& expr, bool sat )
 	return sat ? ( "saturate(" + expr + ")" ) : expr;
 }
 
+// Texture coordinate sets written by a vertex program (result.texcoord[n]).
+static std::set<int> CollectOutputTexCoords( const ARBParsedProgram& p )
+{
+	std::set<int> outTexCoords;
+	for ( auto& inst : p.instructions ) {
+		std::string dstName = inst.dst.name;
+		auto oit = p.outputMap.find( dstName );
+		if ( oit != p.outputMap.end() ) dstName = oit->second;
+		if ( dstName.find( "result.texcoord" ) != std::string::npos ) {
+			int idx = inst.dst.arrayIndex >= 0 ? inst.dst.arrayIndex : 0;
+			outTexCoords.insert( idx );
+		}
+	}
+	return outTexCoords;
+}
+
 std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 {
 	std::ostringstream hlsl;
@@ -1125,6 +1179,8 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 		// transpose conventions leaking into state.matrix.*.row[n].
 		hlsl << "float4 " << MatrixConstName( mr ) << "[4];\n";
 	}
+	if ( isVP && p.eyeDistanceTexCoord5 )
+		hlsl << "float4 _yaeInvProjection[4];\n";
 
 	// State param constants (material, lights, fog, lightmodel)
 	// Generate named float4 constants for each unique state param
@@ -1184,17 +1240,7 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 		hlsl << "\tfloat4 color : COLOR0;\n";
 		if ( p.outputsColor2 ) hlsl << "\tfloat4 color2 : COLOR1;\n";
 		// Output texcoords
-		std::set<int> outTexCoords;
-		for ( auto& inst : p.instructions ) {
-			std::string dstName = inst.dst.name;
-			auto oit = p.outputMap.find( dstName );
-			if ( oit != p.outputMap.end() ) dstName = oit->second;
-			if ( dstName.find( "result.texcoord" ) != std::string::npos ) {
-				int idx = inst.dst.arrayIndex >= 0 ? inst.dst.arrayIndex : 0;
-				outTexCoords.insert( idx );
-			}
-		}
-		for ( int tc : outTexCoords ) {
+		for ( int tc : CollectOutputTexCoords( p ) ) {
 			hlsl << "\tfloat4 texcoord" << tc << " : TEXCOORD" << tc << ";\n";
 		}
 		if ( p.outputsFog ) hlsl << "\tfloat fogcoord : FOG;\n";
@@ -1454,6 +1500,19 @@ std::string ARB_GenerateHLSL( const ARBParsedProgram& p )
 		}
 	}
 
+	if ( isVP && p.eyeDistanceTexCoord5 ) {
+		// See ARB_CompileProgram. Recover the eye-space position from the final
+		// clip position and give TEXCOORD5 that length, keeping its direction.
+		hlsl << "\n\t// YAE_COMPAT yae_eye_distance_fog\n";
+		hlsl << "\tfloat4 _yaeEye = float4(dot(o.position, _yaeInvProjection[0]), "
+			 << "dot(o.position, _yaeInvProjection[1]), "
+			 << "dot(o.position, _yaeInvProjection[2]), "
+			 << "dot(o.position, _yaeInvProjection[3]));\n";
+		hlsl << "\tfloat _yaeToEyeLength = length(o.texcoord5.xyz);\n";
+		hlsl << "\tif (_yaeToEyeLength > 0.0)\n";
+		hlsl << "\t\to.texcoord5.xyz *= length(_yaeEye.xyz / _yaeEye.w) / _yaeToEyeLength;\n";
+	}
+
 	//--------------------------------------------------------------
 	// Return
 	//--------------------------------------------------------------
@@ -1486,6 +1545,21 @@ bool ARB_CompileProgram( GLuint programId, GLenum target, const char* source, in
 	if ( !ARB_ParseProgram( source, length, target, parsed ) ) {
 		errorString = "Failed to parse ARB program";
 		return false;
+	}
+
+	// YAE_COMPAT (yae_eye_distance_fog, opt-in, deliberately deviates from native).
+	// DS2's rigid and skinned material VPs write camera_pos_ws - inst_matrix * pos
+	// to TEXCOORD5, and every DS2 fragment program reading TEXCOORD5 uses only its
+	// length, as the linear fog distance. For weapons attached to a bone, DS2
+	// supplies the owner's inst_matrix without the (scaled) bone transform that
+	// it multiplies into the modelview, so the length is thousands of units and
+	// the fog saturates to its blue-green colour. The native NVIDIA driver renders
+	// the same blue weapon. For every consistent draw the length already equals
+	// the eye-space distance, so rescaling to that distance leaves them unchanged.
+	if ( target == GL_VERTEX_PROGRAM_ARB && D3DGlobal.settings.game.yaeEyeDistanceFog &&
+		CollectOutputTexCoords( parsed ).count( 5 ) ) {
+		parsed.eyeDistanceTexCoord5 = true;
+		logPrintf( "YAE_COMPAT: program %u TEXCOORD5 uses the eye-space fog distance.\n", programId );
 	}
 
 	// Generate HLSL
@@ -1664,6 +1738,22 @@ static void SetProgramConstants( ARBCompiledProgram* prog, bool isVS )
 		}
 	}
 
+	if ( isVS && p.eyeDistanceTexCoord5 ) {
+		// The inverse of the projection used for state.matrix.mvp maps the
+		// program's clip position back to eye space. Same row layout as above.
+		D3DXHANDLE h = ct->GetConstantByName( nullptr, "_yaeInvProjection" );
+		if ( h ) {
+			ARBParsedProgram::MatrixRef inverseProjection = { "projection", 0, true, false, false };
+			D3DXMATRIX mat;
+			GetGLMatrix( inverseProjection, mat );
+			float rows[16];
+			for ( int row = 0; row < 4; ++row )
+				for ( int column = 0; column < 4; ++column )
+					rows[row * 4 + column] = mat.m[column][row];
+			ct->SetFloatArray( dev, h, rows, 16 );
+		}
+	}
+
 	// State params (material, lights, fog, lightmodel)
 	for ( auto& paramPair : p.paramMap ) {
 		for ( size_t bi = 0; bi < paramPair.second.size(); ++bi ) {
@@ -1719,16 +1809,28 @@ extern GLuint ARB_GetBoundFragmentProgram();
 
 int ARB_GetRequiredVertexTexCoordCount()
 {
-	int required = 0;
+	// A programmable vertex shader consumes only its own declared inputs.  A
+	// fragment shader's texcoord usage describes vertex-shader outputs, not extra
+	// entries in the source vertex declaration.  Folding both sets together made
+	// YAE's skinned viewmodels use TEXCOORD0..5 even though their vertex program
+	// reads only TEXCOORD0..2.  Apart from wasting bandwidth, that produces a
+	// source declaration containing inputs which do not belong to the translated
+	// vertex program.
 	if ( D3DState.EnableState.vertexProgramEnabled ) {
 		ARBCompiledProgram* vp = ARB_GetCompiledProgram( ARB_GetBoundVertexProgram() );
-		if ( vp && vp->target == GL_VERTEX_PROGRAM_ARB && !vp->parsed.usedTexCoords.empty() )
-			required = *vp->parsed.usedTexCoords.rbegin() + 1;
+		if ( vp && vp->target == GL_VERTEX_PROGRAM_ARB && vp->vs ) {
+			if ( vp->parsed.usedTexCoords.empty() ) return 0;
+			return *vp->parsed.usedTexCoords.rbegin() + 1;
+		}
 	}
+
+	// With the fixed-function vertex pipeline, make enough source coordinates
+	// available for the programmable fragment stage.
+	int required = 0;
 	if ( D3DState.EnableState.fragmentProgramEnabled ) {
 		ARBCompiledProgram* fp = ARB_GetCompiledProgram( ARB_GetBoundFragmentProgram() );
 		if ( fp && fp->target == GL_FRAGMENT_PROGRAM_ARB && !fp->parsed.usedTexCoords.empty() )
-			required = std::max( required, *fp->parsed.usedTexCoords.rbegin() + 1 );
+			required = *fp->parsed.usedTexCoords.rbegin() + 1;
 	}
 	return required;
 }

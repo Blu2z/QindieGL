@@ -24,6 +24,7 @@
 #include "d3d_utils.hpp"
 #include "d3d_immediate.hpp"
 #include "d3d_array.hpp"
+#include "d3d_buffer.hpp"
 #include "d3d_object.hpp"
 #include "d3d_extension.hpp"
 #include "d3d_texture.hpp"
@@ -198,6 +199,8 @@ void D3DGlobal_Cleanup( bool cleanupAll )
 	logPrintf("--- Cleanup( %s ) ---\n", cleanupAll ? "all" : "partial" );
 	if (cleanupAll)
 		QGL_DiagnosticsDumpSessionSummary();
+	if (cleanupAll)
+		D3DBuffer_Cleanup();
 
 	D3DDisplayList_Cleanup();
 	ARB_Cleanup();
@@ -1065,6 +1068,8 @@ OPENGL_API HGLRC WINAPI wrap_wglCreateContext( HDC hdc )
 	D3DGlobal.settings.game.orthoskipuntextureddraws = D3DGlobal_ReadGameConf( "orthoskipuntextureddraws" );
 	D3DGlobal.settings.game.yaeFallbackCompatibility = D3DGlobal_ReadGameConf( "yae_fallback_compatibility" );
 	D3DGlobal.settings.game.yaeCompileARBPrograms = D3DGlobal_ReadGameConf( "yae_compile_arb_programs" );
+	D3DGlobal.settings.game.yaeEyeDistanceFog = D3DGlobal.settings.game.yaeFallbackCompatibility &&
+		D3DGlobal_ReadGameConf( "yae_eye_distance_fog" );
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility) {
 		// DS2 rejects the hardware before honoring use_shaders=0 unless both ARB
 		// program families are present. Phase B used the non-rendering stub; the
@@ -1592,6 +1597,7 @@ OPENGL_API BOOL WINAPI wrap_wglSwapBuffers( HDC )
 		rmx_frame_end();
 #endif
 
+		QGL_DiagnosticsBeginPresent();
 		HRESULT hr;
 		
 		if (D3DGlobal.vSync)

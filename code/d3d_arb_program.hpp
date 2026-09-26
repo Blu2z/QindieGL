@@ -44,8 +44,12 @@ struct ARBOperand {
 	bool			absValue;		// |...|
 	int				arrayIndex;		// for env/local/texcoord/attrib/matrix row, -1 if none
 	int				arrayIndex2;	// secondary index (e.g. state.matrix.texture[n].row[m])
+	bool			relativeIndex;	// array index uses ADDRESS, e.g. c[A0.x + 11]
+	std::string		relativeRegister;
+	int				relativeOffset;
 
-	ARBOperand() : negate( false ), absValue( false ), arrayIndex( -1 ), arrayIndex2( -1 ) {}
+	ARBOperand() : negate( false ), absValue( false ), arrayIndex( -1 ), arrayIndex2( -1 ),
+		relativeIndex( false ), relativeOffset( 0 ) {}
 };
 
 //----------------------------------------------------------
@@ -148,12 +152,18 @@ struct ARBParsedProgram {
 	// Per-unit texture target: 0=2D, 1=3D, 2=CUBE, 3=RECT
 	std::map<int, std::string>	texTargetPerUnit;
 
+	// YAE compatibility (yae_eye_distance_fog): rescale the VP's
+	// result.texcoord[5] to the true eye-space distance. Set before HLSL
+	// generation; see ARB_CompileProgram.
+	bool			eyeDistanceTexCoord5;
+
 	ARBParsedProgram() : target( 0 ), positionInvariant( false ), fogOption( false ),
 		usesColor( false ), usesColor2( false ), usesNormal( false ),
 		usesFogCoord( false ), usesPosition( false ),
 		outputsColor( false ), outputsColor2( false ), outputsFog( false ), outputsPointSize( false ),
 		outputsDepth( false ), usesFragmentPosition( false ),
-		usesMaterial( false ), usesLights( false ), usesLightModelAmbient( false ), usesFogParams( false )
+		usesMaterial( false ), usesLights( false ), usesLightModelAmbient( false ), usesFogParams( false ),
+		eyeDistanceTexCoord5( false )
 	{}
 };
 
