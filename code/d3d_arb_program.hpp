@@ -175,14 +175,22 @@ struct ARBCompiledProgram {
 	LPDIRECT3DVERTEXSHADER9	vs;				// non-NULL for vertex programs
 	LPDIRECT3DPIXELSHADER9	ps;				// non-NULL for fragment programs
 	LPD3DXCONSTANTTABLE		constants;		// constant table for setting uniforms
+	// Fragment programs: a ps_2_x build for draws without a vertex shader.
+	// Direct3D 9 pairs ps_3_0 only with vs_3_0; with fixed-function vertex
+	// processing its texture coordinate inputs are undefined.
+	LPDIRECT3DPIXELSHADER9	psFixedFunction;
+	LPD3DXCONSTANTTABLE		constantsFixedFunction;
 	ARBParsedProgram		parsed;			// keep parsed state for constant setup
 	std::string				hlslSource;		// for debugging
 
-	ARBCompiledProgram() : target( 0 ), vs( nullptr ), ps( nullptr ), constants( nullptr ) {}
+	ARBCompiledProgram() : target( 0 ), vs( nullptr ), ps( nullptr ), constants( nullptr ),
+		psFixedFunction( nullptr ), constantsFixedFunction( nullptr ) {}
 	~ARBCompiledProgram() {
 		if ( vs ) vs->Release();
 		if ( ps ) ps->Release();
 		if ( constants ) constants->Release();
+		if ( psFixedFunction ) psFixedFunction->Release();
+		if ( constantsFixedFunction ) constantsFixedFunction->Release();
 	}
 };
 
