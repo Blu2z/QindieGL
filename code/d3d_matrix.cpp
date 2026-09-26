@@ -32,7 +32,9 @@
 // glFrustum will create a D3D-compatible projection matrix.
 // But some games( like Quake3 and Doom3 ) create their own projection matrices 
 // and glLoadMatrix them. If ProjectionFix setting is enabled, we will 
-// try to catch such operation and fix the matrix.
+// try to catch such operation and fix the matrix. Other games( You Are Empty,
+// gluPerspective ) glLoadIdentity and glMultMatrix their matrix instead; a
+// multiplication onto an identity projection is converted like a load.
 //
 // The fix is applied to values C( m[2][2] ) and D( m[2][3] ).
 //
@@ -175,6 +177,25 @@ static void ProjectionMatrix_GLtoD3D( FLOAT *m )
 	}
 }
 
+// ProjectionFix for glMultMatrix: a projection multiplied onto an identity
+// projection matrix is effectively loaded, so it is converted exactly as
+// glLoadMatrix converts it. Multiplications onto any other matrix (a projection
+// already converted, or a pick matrix) are left unconverted, as before.
+static void ProjectionFixMultiplied( FLOAT *m )
+{
+	if( !D3DGlobal.settings.projectionFix || D3DState.TransformState.matrixMode != GL_PROJECTION )
+		return;
+	if( !D3DState.currentMatrixStack->top().is_identity() )
+		return;
+	ProjectionMatrix_GLtoD3D( m );
+	static bool reported = false;
+	if( !reported ) {
+		reported = true;
+		logPrintfLevel( QGL_LOG_INFO, "PROJECTION",
+			"ProjectionFix: converting projections multiplied onto identity (glMultMatrix)" );
+	}
+}
+
 OPENGL_API void WINAPI glLoadMatrixf( const GLfloat *m )
 {
 	DL_RECORD_MAT16F( glLoadMatrixf, m );
@@ -234,7 +255,9 @@ OPENGL_API void WINAPI glMultMatrixf( const GLfloat *m )
 	DL_RECORD_MAT16F( glMultMatrixf, m );
 	if( !D3DState.currentMatrixStack ) return;
 	RecordModelviewOp( MVOP_MULT, m );
-	D3DState.currentMatrixStack->multiply( m );
+	D3DXMATRIX m2( m );
+	ProjectionFixMultiplied( m2 );
+	D3DState.currentMatrixStack->multiply( m2 );
 	*D3DState.currentMatrixModified = true;
 	CheckTexCoordOffset_Hack( false );
 
@@ -251,6 +274,7 @@ OPENGL_API void WINAPI glMultMatrixd( const GLdouble *m )
 	for( int i = 0; i < 16; ++i ) 
 		mf[i] =(FLOAT)m[i];
 	RecordModelviewOp( MVOP_MULT, mf );
+	ProjectionFixMultiplied( mf );
 	D3DState.currentMatrixStack->multiply( mf );
 	*D3DState.currentMatrixModified = true;
 	CheckTexCoordOffset_Hack( false );
@@ -320,6 +344,7 @@ OPENGL_API void WINAPI glMultTransposeMatrixf( const GLfloat *m )
 	D3DXMATRIX mt;
 	D3DXMatrixTranspose( &mt,(D3DXMATRIX*)m );
 	RecordModelviewOp( MVOP_MULT, &mt.m[0][0] );
+	ProjectionFixMultiplied( mt );
 	D3DState.currentMatrixStack->multiply( mt );
 	*D3DState.currentMatrixModified = true;
 	CheckTexCoordOffset_Hack( false );
@@ -337,6 +362,7 @@ OPENGL_API void WINAPI glMultTransposeMatrixd( const GLdouble *m )
 	for( int i = 0; i < 4; ++i ) 
 		for( int j = 0; j < 4; ++j ) 
 			mt.m[i][j] =(FLOAT)m[j*4+i];
+	ProjectionFixMultiplied( mt );
 	D3DState.currentMatrixStack->multiply( mt );
 	*D3DState.currentMatrixModified = true;
 	CheckTexCoordOffset_Hack( false );

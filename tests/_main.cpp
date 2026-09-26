@@ -30,6 +30,7 @@ extern void do_framebuffer_copy_tests();
 extern void do_extension_availability_tests( bool expectBufferObjects );
 extern void do_view_tests();
 extern void check_view_diagnostics_log( const std::string &logPath );
+extern void do_projection_tests( bool projectionFix );
 
 namespace {
 
@@ -170,6 +171,7 @@ int RunGLChild( const char *dll, const char *configurationName )
 	switch (configuration->mode) {
 	case MODE_BUFFER_OBJECTS:
 		do_extension_availability_tests(true);
+		do_projection_tests(strstr(configuration->ini, "ProjectionFix = 1") != nullptr);
 		do_lighting_tests();
 		do_texture_projection_tests();
 		do_rectangle_texture_tests();
