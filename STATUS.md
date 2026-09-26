@@ -620,7 +620,8 @@ Phase F, ARB shader support.
 
 ## Phase F - ARB shader path
 
-Status: **in progress**. Test configuration:
+Status: **deferred** since 2026-09-26; work continues on the fixed-function
+path (see below). Test configuration:
 `tools/glintercept/ds2engine.phase-f-test.cfg` (`use_shaders=1`, HDR off,
 normal maps off). The observed DS2 corpus compiles completely (58 programs,
 0 failures, in the latest run).
@@ -709,6 +710,69 @@ setups without the `.local` redirection.
 - Attached weapons still use DS2's incorrectly scaled fragment-program camera
   for specular/light directions. This matches native rendering and is not
   corrected.
-- `glLoadTransposeMatrixd` and `glMultTransposeMatrixd` increment `i` instead
-  of `j` in their inner copy loop (out-of-bounds read). Not used by the observed
-  DS2 path; to be fixed separately.
+- Fixed later: `glLoadTransposeMatrixd` and `glMultTransposeMatrixd` incremented
+  `i` instead of `j` in their inner copy loop.
+
+## Fixed-function path (`use_shaders=0`)
+
+All You Are Empty testing now uses `use_shaders=0` in
+`config_engine\ds2engine.cfg`. DS2 still uses ARB fragment programs on this path,
+fed by fixed-function vertex processing: the soft object shadow (`6120C2C6`)
+and the screen-space effects sampling a rectangle texture (pickup blur
+`5897313B` and others).
+
+### Fixes, validated in game
+
+- Lighting: GL light defaults and spot lights (emulated with D3D9 spot lights).
+- `glBufferData` on a mapped buffer unmaps it instead of failing.
+- Projective texturing: a generated Q or a projective texture matrix gives four
+  coordinates divided per pixel (`COUNT4|PROJECTED`); texgen-only coordinates
+  get their full size.
+- Fragment programs with fixed-function vertices receive the full `(s,t,r,q)`
+  after texgen and the texture matrix, and use a `ps_2_x` build (Direct3D 9
+  pairs `ps_3_0` only with `vs_3_0`).
+- Eye-linear texgen read an uninitialized eye-space w: planes with a `d` term and
+  DS2's Q plane `(0,0,0,1)` produced garbage. Root cause of the dark square on
+  the floor and of the missing object and mob shadows.
+- In the YAE profile, a projective stage with an affine texture matrix had that
+  matrix applied twice.
+- Fragment programs flipped `RECT` lookups vertically; the pickup effect showed
+  the scene upside down. It now no longer "blinks" as native DS2 does (a known
+  original bug); accepted by the user as an improvement.
+
+### Tests and diagnostics
+
+`tests/QindieGL_Tests` loads the built DLL with a real D3D9 context and checks
+rendered pixels, one child process per INI configuration (`vbo-copy-path`,
+`vbo-fast-path`, `yae-profile`, `vbo-disabled`, `view-diagnostics`). Coverage:
+VBO, lighting, projective texturing, rectangle textures, DS2's shadow receiver
+pass and view/HUD classification.
+
+Diagnostics: frame capture (`DebugCaptureFrame` or Scroll Lock: per-draw state,
+texgen, combiners, D3D9 states, before/after images, copies and clears), a
+one-frame GLIntercept trace (`tools/glintercept/gliConfig.frame.ini`,
+Ctrl+Shift+F), draw-time sections, slow-frame logs, lighting census and view
+diagnostics.
+
+### Known remaining differences: object shadows
+
+Reference scene: the vase and plant shot from the user's save (native vs
+QindieGL, pixel-reproducible). Shadow shape and core darkening (to 0.6-0.7 of
+the floor brightness) match native. Not investigated further, by decision:
+
+- **Soft-shadow edge band.** The lighter band around the silhouette is native:
+  `6120C2C6` averages four taps offset by up to about four texels of the
+  512x512 silhouette. In QindieGL the band is slightly wider or lighter on some
+  edges (the vase shadow's lower right). To investigate, capture the same frame
+  natively and with QindieGL and compare the silhouette texture (copied from a
+  512x512 viewport at y=538 by `glCopyTexSubImage2D`) and the receiver draw.
+- **Polygon offset scale.** `glPolygonOffset` maps units as `units / 250000`,
+  an upstream workaround for Wolfenstein decals. For DS2's receivers
+  (`glPolygonOffset(-2, 3)`, `LEQUAL`, no depth writes) the constant push-away
+  is 1.2e-5 instead of GL's `3 * 2^-24` (about 67 times larger). With DS2's near
+  plane of 10 the slope term wins at the vase (about 300 units away), but
+  receivers far from the camera or seen nearly head-on can fail the depth test
+  and lose their shadow. Candidate fix: GL-exact units for the YAE profile.
+- QindieGL ignores the first five framebuffer copies after the device is created
+  or reset (upstream behaviour); silhouettes and the pickup effect are stale for
+  those copies.
