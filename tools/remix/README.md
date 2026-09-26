@@ -78,3 +78,14 @@ In `[game.game]` and `[game.YOU_ARE_EMPTY]` of `QindieGL.ini`:
 - `yae_camera_split = 1`: DS2's camera reaches D3D9 as `D3DTS_VIEW`. The
   output without Remix is unchanged; the session log's camera census shows
   how DS2 built each view.
+- `remix_server_all_cpus = 1` (set in `msvc/QindieGL.ini`): required.
+  `ds2kernel.dll` pins the game to CPU 0 with
+  `SetProcessAffinityMask(GetCurrentProcess(), 1)`, and `NvRemixBridge.exe`,
+  which the bridge's `Direct3DCreate9` starts with `HIGH_PRIORITY_CLASS`,
+  inherits that affinity. The server's busy-waiting threads then keep the
+  game's thread off CPU 0: the game freezes at the logo, its window stops
+  responding and `remix-dxvk.log` repeats "Message channel ... handshake
+  timeout". With the key, QindieGL runs `Direct3DCreate9` with every CPU
+  allowed and restores the game's pin afterwards (`[REMIX]` lines in
+  `QindieGL.log`). Check with Task Manager (Details, Set affinity) that
+  `NvRemixBridge.exe` may use every CPU.

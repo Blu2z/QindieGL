@@ -37,6 +37,10 @@ extern void check_camera_split_log( const std::string &logPath, bool split );
 extern void prepare_calls_without_context();
 extern void do_calls_without_context_tests();
 extern void check_calls_without_context_log( const std::string &logPath );
+extern bool affinity_can_be_widened();
+extern void pin_to_one_cpu();
+extern void do_affinity_tests();
+extern void check_affinity_log( const std::string &logPath, bool widened );
 
 namespace {
 
@@ -45,6 +49,7 @@ enum GLTestMode
 	MODE_BUFFER_OBJECTS,	// VBO, lighting and multitexture tests
 	MODE_NO_BUFFER_OBJECTS,	// the extension must be hidden
 	MODE_VIEW_DIAGNOSTICS,	// frames checked afterwards through QindieGL.log
+	MODE_PINNED_CPU,	// pinned to one CPU before the context is created, as DS2 is
 };
 
 struct GLConfiguration
@@ -86,6 +91,15 @@ const GLConfiguration kConfigurations[] = {
 	{ "view-diagnostics",
 		"[Settings]\r\nLogLevel = 3\r\nProjectionFix = 1\r\nDebugCaptureFrame = 1\r\n\r\n"
 		"[Extensions]\r\n", MODE_VIEW_DIAGNOSTICS },
+	// A process that Direct3DCreate9 starts (the RTX Remix bridge server)
+	// inherits the CPU affinity in effect during that call.
+	{ "pinned-cpu",
+		"[Settings]\r\nLogLevel = 2\r\n\r\n"
+		"[Extensions]\r\n", MODE_PINNED_CPU },
+	{ "pinned-cpu-remix-server-all-cpus",
+		"[Settings]\r\nLogLevel = 2\r\n\r\n"
+		"[game.QindieGL_Tests]\r\nremix_server_all_cpus = 1\r\n\r\n"
+		"[Extensions]\r\n", MODE_PINNED_CPU },
 };
 
 std::string ExecutablePath()
@@ -179,6 +193,8 @@ int RunGLChild( const char *dll, const char *configurationName )
 		return 1;
 	}
 
+	if (configuration->mode == MODE_PINNED_CPU)
+		pin_to_one_cpu();
 	std::string error;
 	if (!Harness_Init(dll, 64, 64, error)) {
 		printf("[%s] harness initialisation failed: %s\n", configurationName, error.c_str());
@@ -205,6 +221,9 @@ int RunGLChild( const char *dll, const char *configurationName )
 		break;
 	case MODE_VIEW_DIAGNOSTICS:
 		do_view_tests();
+		break;
+	case MODE_PINNED_CPU:
+		do_affinity_tests();
 		break;
 	}
 	Harness_Shutdown();
@@ -256,6 +275,12 @@ int main( int argc, char **argv )
 		compare_camera_split_frames(root + "yae-profile\\camera_split_frame.bin",
 			root + "yae-camera-split\\camera_split_frame.bin");
 		check_calls_without_context_log(root + "yae-profile\\QindieGL.log");
+		if (affinity_can_be_widened()) {
+			check_affinity_log(root + "pinned-cpu\\QindieGL.log", false);
+			check_affinity_log(root + "pinned-cpu-remix-server-all-cpus\\QindieGL.log", true);
+		} else {
+			printf("Single CPU: the affinity checks are skipped\n");
+		}
 	}
 
 	printf("Tests results: %d/%d\n", tests_ok, tests_total);

@@ -961,6 +961,41 @@ static bool D3DGlobal_SetupPresentParams( int width, int height, int bpp, BOOL w
 
 #define D3D_CONTEXT_MAGIC	0xBEEF
 
+// A process started by Direct3DCreate9 inherits this process's CPU affinity:
+// the RTX Remix bridge starts its server (NvRemixBridge.exe) there. DS2 pins
+// itself to CPU 0, where the server's busy-waiting high-priority threads then
+// starve the game's thread. Returns false when there is nothing to widen.
+static bool D3DGlobal_WidenAffinity( DWORD_PTR &gameAffinity )
+{
+	DWORD_PTR systemAffinity = 0;
+	if ( !GetProcessAffinityMask( GetCurrentProcess(), &gameAffinity, &systemAffinity ) ) {
+		logPrintfLevel( QGL_LOG_WARN, "REMIX", "remix_server_all_cpus: GetProcessAffinityMask failed (%lu)", GetLastError() );
+		return false;
+	}
+	if ( gameAffinity == systemAffinity ) {
+		logPrintfLevel( QGL_LOG_INFO, "REMIX", "remix_server_all_cpus: the game already runs on every CPU (0x%llX)",
+			static_cast<unsigned long long>(systemAffinity) );
+		return false;
+	}
+	if ( !SetProcessAffinityMask( GetCurrentProcess(), systemAffinity ) ) {
+		logPrintfLevel( QGL_LOG_WARN, "REMIX", "remix_server_all_cpus: cannot widen CPU affinity 0x%llX to 0x%llX (%lu)",
+			static_cast<unsigned long long>(gameAffinity), static_cast<unsigned long long>(systemAffinity), GetLastError() );
+		return false;
+	}
+	logPrintfLevel( QGL_LOG_INFO, "REMIX", "Direct3DCreate9 runs with CPU affinity 0x%llX instead of the game's 0x%llX (remix_server_all_cpus)",
+		static_cast<unsigned long long>(systemAffinity), static_cast<unsigned long long>(gameAffinity) );
+	return true;
+}
+
+static void D3DGlobal_RestoreAffinity( DWORD_PTR gameAffinity )
+{
+	if ( SetProcessAffinityMask( GetCurrentProcess(), gameAffinity ) )
+		logPrintfLevel( QGL_LOG_INFO, "REMIX", "CPU affinity restored to the game's 0x%llX", static_cast<unsigned long long>(gameAffinity) );
+	else
+		logPrintfLevel( QGL_LOG_WARN, "REMIX", "cannot restore the game's CPU affinity 0x%llX (%lu)",
+			static_cast<unsigned long long>(gameAffinity), GetLastError() );
+}
+
 static BOOL D3DGlobal_InitializeDirect3D( void )
 {
 	if ( nullptr == (D3DGlobal.hD3DDll = LoadLibrary( _T( "d3d9.dll" ) )) ) {
@@ -984,7 +1019,13 @@ static BOOL D3DGlobal_InitializeDirect3D( void )
 		return 0;
 	}
 
-	if ( nullptr == (D3DGlobal.pD3D = d3dCreateFn( D3D_SDK_VERSION )) ) {
+	D3DGlobal.settings.game.remixServerAllCPUs = D3DGlobal_ReadGameConf( "remix_server_all_cpus" );
+	DWORD_PTR gameAffinity = 0;
+	const bool affinityWidened = D3DGlobal.settings.game.remixServerAllCPUs && D3DGlobal_WidenAffinity( gameAffinity );
+	D3DGlobal.pD3D = d3dCreateFn( D3D_SDK_VERSION );
+	if ( affinityWidened )
+		D3DGlobal_RestoreAffinity( gameAffinity );
+	if ( nullptr == D3DGlobal.pD3D ) {
 		logPrintf( "wglCreateContext: failed to initialize Direct3D\n" );
 		return 0;
 	}

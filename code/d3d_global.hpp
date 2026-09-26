@@ -178,6 +178,7 @@ typedef struct D3DGlobal_s
 			DWORD               yaeCompileARBPrograms;
 			DWORD               yaeEyeDistanceFog;
 			DWORD               yaeCameraSplit;
+			DWORD               remixServerAllCPUs;
 		} game;
 	} settings;
 	struct {
