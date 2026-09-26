@@ -99,6 +99,72 @@ static void RecordModelviewOp( int op, const GLfloat *m16, GLfloat x = 0, GLfloa
 	QGL_DiagnosticsRecordProgramOp('M', GL_MODELVIEW, 0, op, v);
 }
 
+//==================================================================================
+// Camera tracking and the YAE camera split
+//----------------------------------------------------------------------------------
+// DS2 never loads a camera matrix: each view starts with glLoadIdentity and one
+// glMultMatrixf(camera) at modelview stack depth 0, and objects follow as
+// glPushMatrix + glMultMatrixf(object). With yae_camera_split the first transform
+// at depth 0 after a reset goes to the view stack (D3DTS_VIEW) and every other
+// transform to the model stack (D3DTS_WORLD), so WORLD * VIEW stays the GL
+// modelview. Without it the model stack receives every transform, as before.
+//==================================================================================
+namespace {
+	struct CameraTracking
+	{
+		bool viewPending;	// yae_camera_split: the next depth-0 transform is the view
+	};
+	CameraTracking gCameraTracking = {};
+}
+
+void D3DMatrix_ResetCameraTracking()
+{
+	memset( &gCameraTracking, 0, sizeof(gCameraTracking) );
+}
+
+// glLoadIdentity or glLoadMatrix on the modelview. Returns true at depth 0.
+static bool CameraTrackReset( bool loaded )
+{
+	const int depth = D3DGlobal.modelviewMatrixStack->stack_depth();
+	if( depth > 0 )
+		return false;
+	gCameraTracking.viewPending = !loaded && D3DGlobal.settings.game.yaeCameraSplit;
+	return true;
+}
+
+// Any other modelview transform: the view (yae_camera_split) or the model.
+static void CameraSplitMultiply( const GLfloat *m )
+{
+	if( D3DGlobal.modelviewMatrixStack->stack_depth() == 0 ) {
+		if( gCameraTracking.viewPending ) {
+			gCameraTracking.viewPending = false;
+			D3DGlobal.viewMatrixStack->multiply( m );
+			return;
+		}
+	}
+	D3DGlobal.modelMatrixStack->multiply( m );
+}
+
+// glLoadMatrix on the modelview. With yae_camera_split a matrix loaded at
+// depth 0 is the view; above depth 0 the level no longer contains the view.
+static void CameraSplitLoad( const GLfloat *m )
+{
+	const bool depth0 = CameraTrackReset( true );
+	if( D3DGlobal.settings.game.yaeCameraSplit ) {
+		D3DGlobal.modelMatrixStack->load_identity( );
+		D3DGlobal.viewMatrixStack->load_identity( );
+		if( depth0 )
+			D3DGlobal.viewMatrixStack->load( m );
+		else
+			D3DGlobal.modelMatrixStack->load( m );
+		return;
+	}
+	D3DXMATRIX model, view;
+	matrix_detect_process_upload(m, &model, &view);
+	D3DGlobal.modelMatrixStack->load(model);
+	D3DGlobal.viewMatrixStack->load(view);
+}
+
 OPENGL_API void WINAPI glMatrixMode( GLenum mode )
 {
 	DL_RECORD_1( glMatrixMode, mode );
@@ -123,6 +189,7 @@ OPENGL_API void WINAPI glLoadIdentity()
 	{
 		D3DGlobal.modelMatrixStack->load_identity( );
 		D3DGlobal.viewMatrixStack->load_identity( );
+		CameraTrackReset( false );
 	}
 }
 
@@ -217,10 +284,7 @@ OPENGL_API void WINAPI glLoadMatrixf( const GLfloat *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DXMATRIX model, view;
-		matrix_detect_process_upload(m, &model, &view);
-		D3DGlobal.modelMatrixStack->load(model);
-		D3DGlobal.viewMatrixStack->load(view);
+		CameraSplitLoad( m );
 	}
 }
 OPENGL_API void WINAPI glLoadMatrixd( const GLdouble *m )
@@ -244,10 +308,7 @@ OPENGL_API void WINAPI glLoadMatrixd( const GLdouble *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DXMATRIX model, view;
-		matrix_detect_process_upload(mf, &model, &view);
-		D3DGlobal.modelMatrixStack->load(model);
-		D3DGlobal.viewMatrixStack->load(view);
+		CameraSplitLoad( mf );
 	}
 }
 OPENGL_API void WINAPI glMultMatrixf( const GLfloat *m )
@@ -263,7 +324,7 @@ OPENGL_API void WINAPI glMultMatrixf( const GLfloat *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( m );
+		CameraSplitMultiply( m );
 	}
 }
 OPENGL_API void WINAPI glMultMatrixd( const GLdouble *m )
@@ -281,7 +342,7 @@ OPENGL_API void WINAPI glMultMatrixd( const GLdouble *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( mf );
+		CameraSplitMultiply( mf );
 	}
 }
 OPENGL_API void WINAPI glLoadTransposeMatrixf( const GLfloat *m )
@@ -304,10 +365,7 @@ OPENGL_API void WINAPI glLoadTransposeMatrixf( const GLfloat *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DXMATRIX model, view;
-		matrix_detect_process_upload(&mt.m[0][0], &model, &view);
-		D3DGlobal.modelMatrixStack->load(model);
-		D3DGlobal.viewMatrixStack->load(view);
+		CameraSplitLoad( &mt.m[0][0] );
 	}
 }
 OPENGL_API void WINAPI glLoadTransposeMatrixd( const GLdouble *m )
@@ -331,10 +389,7 @@ OPENGL_API void WINAPI glLoadTransposeMatrixd( const GLdouble *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DXMATRIX model, view;
-		matrix_detect_process_upload(&mt.m[0][0], &model, &view);
-		D3DGlobal.modelMatrixStack->load(model);
-		D3DGlobal.viewMatrixStack->load(view);
+		CameraSplitLoad( &mt.m[0][0] );
 	}
 }
 OPENGL_API void WINAPI glMultTransposeMatrixf( const GLfloat *m )
@@ -351,7 +406,7 @@ OPENGL_API void WINAPI glMultTransposeMatrixf( const GLfloat *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( mt );
+		CameraSplitMultiply( mt );
 	}
 }
 OPENGL_API void WINAPI glMultTransposeMatrixd( const GLdouble *m )
@@ -369,7 +424,7 @@ OPENGL_API void WINAPI glMultTransposeMatrixd( const GLdouble *m )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( mt );
+		CameraSplitMultiply( mt );
 	}
 }
 OPENGL_API void WINAPI glFrustum( GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar )
@@ -381,6 +436,11 @@ OPENGL_API void WINAPI glFrustum( GLdouble left, GLdouble right, GLdouble bottom
 	D3DState.currentMatrixStack->multiply( m );
 	*D3DState.currentMatrixModified = true;
 	CheckTexCoordOffset_Hack( false );
+
+	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
+	{
+		CameraSplitMultiply( m );
+	}
 }
 OPENGL_API void WINAPI glOrtho( GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar )
 {
@@ -395,6 +455,11 @@ OPENGL_API void WINAPI glOrtho( GLdouble left, GLdouble right, GLdouble bottom, 
 	D3DState.currentMatrixStack->multiply( m );
 	*D3DState.currentMatrixModified = true;
 	CheckTexCoordOffset_Hack( true );
+
+	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
+	{
+		CameraSplitMultiply( m );
+	}
 }
 OPENGL_API void WINAPI glPopMatrix( void )
 {
@@ -409,6 +474,9 @@ OPENGL_API void WINAPI glPopMatrix( void )
 	{
 		D3DGlobal.modelMatrixStack->pop( );
 		D3DGlobal.viewMatrixStack->pop( );
+		// An underflow loads identity at depth 0 (see D3DMatrixStack::pop).
+		if( hr == E_STACK_UNDERFLOW )
+			CameraTrackReset( false );
 	}
 }
 OPENGL_API void WINAPI glPushMatrix( void )
@@ -438,7 +506,7 @@ OPENGL_API void WINAPI glRotatef( GLfloat angle, GLfloat x, GLfloat y, GLfloat z
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( m );
+		CameraSplitMultiply( m );
 	}
 }
 OPENGL_API void WINAPI glRotated( GLdouble angle, GLdouble x, GLdouble y, GLdouble z )
@@ -454,7 +522,7 @@ OPENGL_API void WINAPI glRotated( GLdouble angle, GLdouble x, GLdouble y, GLdoub
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( m );
+		CameraSplitMultiply( m );
 	}
 }
 OPENGL_API void WINAPI glScalef( GLfloat x, GLfloat y, GLfloat z )
@@ -469,7 +537,7 @@ OPENGL_API void WINAPI glScalef( GLfloat x, GLfloat y, GLfloat z )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( m );
+		CameraSplitMultiply( m );
 	}
 }
 OPENGL_API void WINAPI glScaled( GLdouble x, GLdouble y, GLdouble z )
@@ -484,7 +552,7 @@ OPENGL_API void WINAPI glScaled( GLdouble x, GLdouble y, GLdouble z )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( m );
+		CameraSplitMultiply( m );
 	}
 }
 OPENGL_API void WINAPI glTranslatef( GLfloat x, GLfloat y, GLfloat z )
@@ -499,7 +567,7 @@ OPENGL_API void WINAPI glTranslatef( GLfloat x, GLfloat y, GLfloat z )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( m );
+		CameraSplitMultiply( m );
 	}
 }
 OPENGL_API void WINAPI glTranslated( GLdouble x, GLdouble y, GLdouble z )
@@ -514,6 +582,6 @@ OPENGL_API void WINAPI glTranslated( GLdouble x, GLdouble y, GLdouble z )
 
 	if (D3DState.TransformState.matrixMode == GL_MODELVIEW)
 	{
-		D3DGlobal.modelMatrixStack->multiply( m );
+		CameraSplitMultiply( m );
 	}
 }

@@ -2052,6 +2052,7 @@ void QGL_DiagnosticsDumpCapabilityReport()
 	logPrintf("  YAEFallbackCompatibility: %u\n", D3DGlobal.settings.game.yaeFallbackCompatibility);
 	logPrintf("  YAECompileARBPrograms: %u\n", D3DGlobal.settings.game.yaeCompileARBPrograms);
 	logPrintf("  YAEEyeDistanceFog: %u\n", D3DGlobal.settings.game.yaeEyeDistanceFog);
+	logPrintf("  YAECameraSplit: %u\n", D3DGlobal.settings.game.yaeCameraSplit);
 	logPrintf("  MultiSample: %u\n", D3DGlobal.settings.multisample);
 	logPrintf("  CrashDiagnostics: %u\n", D3DGlobal.settings.crashDiagnostics);
 	logPrintf("  DebugMaxDrawCall: %d\n", D3DGlobal.settings.debugMaxDrawCall);

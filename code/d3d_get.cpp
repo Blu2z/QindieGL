@@ -362,7 +362,8 @@ template<typename T> static void glGet( GLenum pname, T *params )
 			}
 			// Only the idtech2 detection mode moves the modelview into the view.
 			D3DXMATRIX model, view;
-			if (matrix_detect_on_world_retrieve(&pm->m[0][0], &model, &view)) {
+			if (!D3DGlobal.settings.game.yaeCameraSplit &&
+				matrix_detect_on_world_retrieve(&pm->m[0][0], &model, &view)) {
 				D3DGlobal.modelMatrixStack->load(model);
 				D3DGlobal.viewMatrixStack->load(view);
 			}

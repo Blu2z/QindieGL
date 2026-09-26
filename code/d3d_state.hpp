@@ -35,6 +35,13 @@ typedef struct D3DState_s
 	bool				projectionMatrixModified;
 	bool				textureMatrixModified[MAX_D3D_TMU];
 	bool*				currentMatrixModified;
+	struct {
+		// D3DTS_VIEW as last sent with yae_camera_split
+		D3DXMATRIX		matrix;
+		D3DXMATRIX		inverse;
+		bool			valid;
+		bool			identity;
+	} ViewTransformState;
 
 	struct {
 		DWORD			alphaTestFunc;

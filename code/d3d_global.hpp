@@ -177,6 +177,7 @@ typedef struct D3DGlobal_s
 			DWORD               yaeFallbackCompatibility;
 			DWORD               yaeCompileARBPrograms;
 			DWORD               yaeEyeDistanceFog;
+			DWORD               yaeCameraSplit;
 		} game;
 	} settings;
 	struct {
