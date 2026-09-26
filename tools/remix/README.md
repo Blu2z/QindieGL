@@ -21,16 +21,45 @@ and `D3DPERF_EndEvent`.
 Switch with `Set-YAEDllChain.ps1`, with the game closed:
 
 ```powershell
-# Remix runs: the Remix-enabled build as opengl32.dll
-.\tools\remix\Set-YAEDllChain.ps1 -Chain Direct -QindieGLDll .\bin\Release.x86\opengl32.dll
+# Remix runs: the Remix-enabled build as opengl32.dll, Remix bridge on
+.\tools\remix\Set-YAEDllChain.ps1 -Chain Direct -QindieGLDll .\bin\Release.x86\opengl32.dll -Remix On
+
+# Without Remix: park the bridge as d3d9.remix.dll
+.\tools\remix\Set-YAEDllChain.ps1 -Remix Off
 
 # Back to GLIntercept; optionally install a build as QindieGL-traced.dll
 .\tools\remix\Set-YAEDllChain.ps1 -Chain GLIntercept
+
+# Only print the current state
+.\tools\remix\Set-YAEDllChain.ps1
 ```
 
-The script identifies the DLLs by content, parks the inactive one as
-`opengl32.glintercept.dll` or `opengl32.qindiegl.dll`, and refuses to touch
-anything it does not recognise. It leaves `YOU_ARE_EMPTY.exe.local` alone.
+The script identifies the DLLs by content, parks the inactive ones as
+`opengl32.glintercept.dll`, `opengl32.qindiegl.dll` or `d3d9.remix.dll`, and
+refuses to touch anything it does not recognise. It leaves
+`YOU_ARE_EMPTY.exe.local` alone.
+
+## Remix runtime
+
+Installed from the official release `remix-1.5.2`
+(`remix-1.5.2-release.zip`, GitHub NVIDIAGameWorks/rtx-remix, published
+2026-06-16); the binaries were checked against the release's SHA256 list.
+Only these parts are copied next to `YOU_ARE_EMPTY.EXE`:
+
+- `d3d9.dll`: the x86 bridge client. It exports `D3DPERF_BeginEvent`,
+  `D3DPERF_EndEvent` and `remixapi_InitializeLibrary`.
+- `.trex\`: `NvRemixBridge.exe` (x64 bridge server), `d3d9.dll` (x64
+  DXVK-Remix renderer) and their dependencies.
+- The license files.
+
+`d3d8to9.dll` (Direct3D 8 games) and `NvRemixLauncher32.exe` (injection for
+games that do not load `d3d9.dll` from their directory) are not needed.
+
+Remix opens its menu with Alt+X. The documented `bridge.conf` places the
+bridge client log (`d3d9.log`) next to the game executable and the bridge
+server log in `.trex\`; both are overwritten at each launch. Without
+`bridge.conf`, `dxvk.conf` and `rtx.conf` the runtime uses its defaults;
+`rtx.conf` appears when settings are saved from the Remix menu.
 
 ## Builds
 
