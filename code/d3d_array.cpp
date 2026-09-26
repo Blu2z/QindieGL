@@ -28,6 +28,7 @@
 #include "d3d_matrix_stack.hpp"
 #include "d3d_helpers.hpp"
 #include "d3d_arb_program.hpp"
+#include "d3d_extension.hpp"
 #include "d3d_texture.hpp"
 
 //!DO NOT UNCOMMENT THIS UNLESS YOU MAKE PERFORMANCE TESTS!
@@ -59,23 +60,96 @@ static const GLubyte *D3DVA_ResolveData( const D3DVAInfo *pVAInfo, int lastIndex
 	size_t requiredBytes = 0;
 	if (lastIndex >= 0) {
 		const size_t elementSize = D3DVA_ElementSize(pVAInfo->elementType);
-		const size_t packedSize = elementSize * static_cast<size_t>(pVAInfo->elementCount);
+		if (!elementSize || pVAInfo->elementCount <= 0 || pVAInfo->stride < 0) {
+			QGL_SET_ERROR(E_INVALID_OPERATION);
+			return nullptr;
+		}
+		const size_t elementCount = static_cast<size_t>(pVAInfo->elementCount);
+		if (elementCount > std::numeric_limits<size_t>::max() / elementSize) {
+			QGL_SET_ERROR(E_INVALID_OPERATION);
+			return nullptr;
+		}
+		const size_t packedSize = elementSize * elementCount;
 		const size_t stride = pVAInfo->stride > 0 ? static_cast<size_t>(pVAInfo->stride) : packedSize;
-		requiredBytes = static_cast<size_t>(lastIndex) * stride + packedSize;
+		const size_t finalIndex = static_cast<size_t>(lastIndex);
+		if (stride && finalIndex > (std::numeric_limits<size_t>::max() - packedSize) / stride) {
+			QGL_SET_ERROR(E_INVALID_OPERATION);
+			return nullptr;
+		}
+		requiredBytes = finalIndex * stride + packedSize;
 	}
 	return D3DBuffer_ResolvePointer(pVAInfo->bufferBinding, pVAInfo->data, requiredBytes);
 }
 
+static bool D3DVA_UsePrimaryColorArray()
+{
+	if (!(D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT))
+		return false;
+	if (!D3DState.EnableState.vertexProgramEnabled)
+		return true;
+
+	ARBCompiledProgram *program = ARB_GetCompiledProgram(ARB_GetBoundVertexProgram());
+	// A translated ARB vertex program consumes only the attributes referenced by
+	// its source. YAE enables a transient, invalid conventional color array for
+	// its firing animation, but the skinned VP does not read vertex.color. Native
+	// OpenGL therefore never has to fetch it. Validating or copying that unused
+	// array made the entire viewmodel draw disappear until the animation ended.
+	return !program || !program->vs || program->parsed.usesColor;
+}
+
+static bool D3DVA_ValidateEnabledBufferRanges( GLint lastIndex )
+{
+	const DWORD enabled = D3DState.ClientVertexArrayState.vertexArrayEnable;
+	const D3DVAInfo *info = &D3DState.ClientVertexArrayState.vertexInfo;
+	if (info->bufferBinding && !D3DVA_ResolveData(info, lastIndex)) return false;
+
+	if (enabled & VA_ENABLE_NORMAL_BIT) {
+		info = &D3DState.ClientVertexArrayState.normalInfo;
+		if (info->bufferBinding && !D3DVA_ResolveData(info, lastIndex)) return false;
+	}
+	if (D3DVA_UsePrimaryColorArray()) {
+		info = &D3DState.ClientVertexArrayState.colorInfo;
+		if (info->bufferBinding && !D3DVA_ResolveData(info, lastIndex)) return false;
+	}
+	if (enabled & VA_ENABLE_COLOR2_BIT) {
+		info = &D3DState.ClientVertexArrayState.color2Info;
+		if (info->bufferBinding && !D3DVA_ResolveData(info, lastIndex)) return false;
+	}
+	if (enabled & VA_ENABLE_FOG_BIT) {
+		info = &D3DState.ClientVertexArrayState.fogInfo;
+		if (info->bufferBinding && !D3DVA_ResolveData(info, lastIndex)) return false;
+	}
+	for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
+		if (!VA_TEXTURE_BIT_IS_SET(enabled, unit)) continue;
+		info = &D3DState.ClientVertexArrayState.texCoordInfo[unit];
+		if (info->bufferBinding && !D3DVA_ResolveData(info, lastIndex)) return false;
+	}
+
+	return true;
+}
+
 template<typename T> 
-static void D3DVA_CopyArrayToFloatsInternal( const D3DVAInfo *pVAInfo, int index, GLfloat *out )
+static void D3DVA_CopyArrayToFloatsInternal( const D3DVAInfo *pVAInfo, int index,
+	GLfloat *out, bool normalizeIntegers )
 {
 	GLsizei stride = pVAInfo->stride;
 	if (!stride) stride = sizeof(T) * pVAInfo->elementCount;
 	const GLubyte *base = D3DVA_ResolveData(pVAInfo, index);
 	if (!base) { memset(out, 0, sizeof(GLfloat) * pVAInfo->elementCount); return; }
 	const T *data = reinterpret_cast<const T*>(base + index * stride);
-	for (int i = 0; i < pVAInfo->elementCount; ++i)
-		out[i] = (GLfloat)data[i] / std::numeric_limits<T>::max();
+	for (int i = 0; i < pVAInfo->elementCount; ++i) {
+		if ( normalizeIntegers ) {
+			// Normal arrays use normalized fixed-point conversion. Position and
+			// texture-coordinate arrays do not. YAE stores its bone indices in a
+			// GL_SHORT texcoord array, where 1 must remain 1 rather than 1/32767.
+			if ( std::numeric_limits<T>::is_signed && data[i] == std::numeric_limits<T>::min() )
+				out[i] = -1.0f;
+			else
+				out[i] = (GLfloat)data[i] / (GLfloat)std::numeric_limits<T>::max();
+		} else {
+			out[i] = (GLfloat)data[i];
+		}
+	}
 }
 static void D3DVA_CopyArrayToFloatsInternalFloat( const D3DVAInfo *pVAInfo, int index, GLfloat *out )
 {
@@ -97,27 +171,28 @@ static void D3DVA_CopyArrayToFloatsInternalDouble( const D3DVAInfo *pVAInfo, int
 		out[i] = static_cast<GLfloat>( data[i] );
 }
 
-static void D3DVA_CopyArrayToFloats( const D3DVAInfo *pVAInfo, int index, GLfloat *out )
+static void D3DVA_CopyArrayToFloats( const D3DVAInfo *pVAInfo, int index, GLfloat *out,
+	bool normalizeIntegers = false )
 {
 	switch (pVAInfo->elementType)
 	{
 	case GL_BYTE:
-		D3DVA_CopyArrayToFloatsInternal<GLbyte>(pVAInfo, index, out);
+		D3DVA_CopyArrayToFloatsInternal<GLbyte>(pVAInfo, index, out, normalizeIntegers);
 		break;
 	case GL_UNSIGNED_BYTE:
-		D3DVA_CopyArrayToFloatsInternal<GLubyte>(pVAInfo, index, out);
+		D3DVA_CopyArrayToFloatsInternal<GLubyte>(pVAInfo, index, out, normalizeIntegers);
 		break;
 	case GL_SHORT:
-		D3DVA_CopyArrayToFloatsInternal<GLshort>(pVAInfo, index, out);
+		D3DVA_CopyArrayToFloatsInternal<GLshort>(pVAInfo, index, out, normalizeIntegers);
 		break;
 	case GL_UNSIGNED_SHORT:
-		D3DVA_CopyArrayToFloatsInternal<GLushort>(pVAInfo, index, out);
+		D3DVA_CopyArrayToFloatsInternal<GLushort>(pVAInfo, index, out, normalizeIntegers);
 		break;
 	case GL_INT:
-		D3DVA_CopyArrayToFloatsInternal<GLint>(pVAInfo, index, out);
+		D3DVA_CopyArrayToFloatsInternal<GLint>(pVAInfo, index, out, normalizeIntegers);
 		break;
 	case GL_UNSIGNED_INT:
-		D3DVA_CopyArrayToFloatsInternal<GLuint>(pVAInfo, index, out);
+		D3DVA_CopyArrayToFloatsInternal<GLuint>(pVAInfo, index, out, normalizeIntegers);
 		break;
 	case GL_DOUBLE:
 		D3DVA_CopyArrayToFloatsInternalDouble(pVAInfo, index, out);
@@ -248,17 +323,30 @@ D3DVABuffer :: ~D3DVABuffer()
 	logPrintf("D3DVABuffer: %.2f kb vertex data, %.2f kb index data [%i swap frames]\n", vbSize / 1024.0f, ibSize / 1024.0f, c_MaxSwapFrame );
 }
 
-void D3DVABuffer :: SetMinimumVertexBufferSize( int numVerts )
+bool D3DVABuffer :: SetMinimumVertexBufferSize( int numVerts )
 {
-	if (m_vbAllocSize[m_swapFrame] >= numVerts * m_vertexSize)
-		return;
+	if (numVerts <= 0 || m_vertexSize <= 0 ||
+		numVerts > std::numeric_limits<GLsizei>::max() / m_vertexSize) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		return false;
+	}
+	const GLsizei requiredFloats = numVerts * m_vertexSize;
+	if (m_vbAllocSize[m_swapFrame] >= requiredFloats)
+		return true;
 
 	if (m_pVertexBuffer[m_swapFrame]) {
 		m_pVertexBuffer[m_swapFrame]->Release();
 		m_pVertexBuffer[m_swapFrame] = nullptr;
 	}
 
-	m_vbAllocSize[m_swapFrame] = QINDIEGL_MAX( VABuffer_VB_Grow_Size, numVerts ) * m_vertexSize;
+	const GLsizei allocatedVerts = QINDIEGL_MAX(VABuffer_VB_Grow_Size, numVerts);
+	if (allocatedVerts > std::numeric_limits<GLsizei>::max() / m_vertexSize ||
+		static_cast<size_t>(allocatedVerts) * static_cast<size_t>(m_vertexSize) >
+			std::numeric_limits<UINT>::max() / sizeof(GLfloat)) {
+		QGL_SET_ERROR(E_OUTOFMEMORY);
+		return false;
+	}
+	m_vbAllocSize[m_swapFrame] = allocatedVerts * m_vertexSize;
 	HRESULT hr = D3DGlobal.pDevice->CreateVertexBuffer( m_vbAllocSize[m_swapFrame] * sizeof(GLfloat), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 
 				 									    0, D3DPOOL_DEFAULT, &m_pVertexBuffer[m_swapFrame], nullptr );
 
@@ -266,7 +354,9 @@ void D3DVABuffer :: SetMinimumVertexBufferSize( int numVerts )
 		m_pVertexBuffer[m_swapFrame] = nullptr;
 		m_vbAllocSize[m_swapFrame] = 0;
 		QGL_SET_ERROR(hr);
+		return false;
 	}
+	return true;
 }
 
 int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumIndex )
@@ -282,6 +372,10 @@ int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumInde
 		++currentIndexBuffer;
 		m_indexSize += 2;
 	}
+	if (numIndices <= 0 || numIndices > std::numeric_limits<GLsizei>::max() / m_indexSize) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		return -1;
+	}
 
 	if (m_ibAllocSize[currentIndexBuffer][m_swapFrame] >= numIndices * m_indexSize)
 		return currentIndexBuffer;
@@ -291,7 +385,12 @@ int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumInde
 		m_pIndexBuffer[currentIndexBuffer][m_swapFrame] = nullptr;
 	}
 
-	m_ibAllocSize[currentIndexBuffer][m_swapFrame] = QINDIEGL_MAX( VABuffer_IB_Grow_Size, numIndices ) * m_indexSize;
+	const GLsizei allocatedIndices = QINDIEGL_MAX(VABuffer_IB_Grow_Size, numIndices);
+	if (allocatedIndices > std::numeric_limits<GLsizei>::max() / m_indexSize) {
+		QGL_SET_ERROR(E_OUTOFMEMORY);
+		return -1;
+	}
+	m_ibAllocSize[currentIndexBuffer][m_swapFrame] = allocatedIndices * m_indexSize;
 	HRESULT hr = D3DGlobal.pDevice->CreateIndexBuffer( m_ibAllocSize[currentIndexBuffer][m_swapFrame], D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 
 													   currentIndexBuffer ? D3DFMT_INDEX32 : D3DFMT_INDEX16,
 				 									   D3DPOOL_DEFAULT, &m_pIndexBuffer[currentIndexBuffer][m_swapFrame], nullptr );
@@ -363,8 +462,11 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 		QGL_SET_ERROR(E_FAIL);
 		return;
 	}
+	if (!D3DVA_ValidateEnabledBufferRanges(last))
+		return;
 
 	GLsizei count = last - first + 1;
+	const bool usePrimaryColorArray = D3DVA_UsePrimaryColorArray();
 
 	//Compute vertex size and FVF
 	// WG: D3DFVF_XYZW requires shader processing according to docs
@@ -426,8 +528,7 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	fvf |= (numSamplers << D3DFVF_TEXCOUNT_SHIFT);
 
 	//Check if vertex buffer has enough space
-	SetMinimumVertexBufferSize( count );
-	if (!m_pVertexBuffer)
+	if (!SetMinimumVertexBufferSize(count) || !m_pVertexBuffer[m_swapFrame])
 		return;
 
 	//Lock vertex buffer
@@ -478,7 +579,7 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 			}
 		}
 		pVAInfo = &D3DState.ClientVertexArrayState.colorInfo;
-		if (((D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT) != 0) &&
+		if (usePrimaryColorArray &&
 			(pVAInfo->elementType != GL_BYTE) && (pVAInfo->elementType != GL_UNSIGNED_BYTE))
 		{
 			fast_path_abort_reason = __LINE__;
@@ -546,9 +647,9 @@ FAST_PATH_CHECK_ABORT:
 		if (norms) norms += first * norms_inc;
 
 		pVAInfo = &D3DState.ClientVertexArrayState.colorInfo;
-		const unsigned char* cols = (D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT)
+		const unsigned char* cols = usePrimaryColorArray
 			? D3DVA_ResolveData(pVAInfo, lastVertex) : nullptr;
-		if ((D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT) && !cols)
+		if (usePrimaryColorArray && !cols)
 			qualify_for_fast_path = false;
 		const int cols_inc = pVAInfo->stride ? pVAInfo->stride : pVAInfo->elementCount;
 		if (cols) cols += first * cols_inc;
@@ -587,7 +688,7 @@ FAST_PATH_CHECK_ABORT:
 			}
 
 			//copy color
-			if (D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT)
+			if (usePrimaryColorArray)
 			{
 				*(DWORD*)dest = D3DCOLOR_ARGB(cols[3], cols[0], cols[1], cols[2]);
 				cols += cols_inc;
@@ -675,7 +776,7 @@ FAST_PATH_CHECK_ABORT:
 					elemIndex <= D3DState.ClientVertexArrayState.normalInfo._internal.compiledLast) {
 					memcpy( normalData, D3DGlobal.compiledVertexArray.compiledNormalData + elemIndex*3, sizeof(GLfloat)*3 );
 				} else {
-					D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.normalInfo, elemIndex, normalData );
+					D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.normalInfo, elemIndex, normalData, true );
 				}
 				memcpy(pLockedVertices, normalData, sizeof(normalData));
 				pLockedVertices += 3;
@@ -683,7 +784,7 @@ FAST_PATH_CHECK_ABORT:
 				memcpy(normalData, defaultNormal, sizeof(defaultNormal));
 			}
 
-			if (D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT) {
+			if (usePrimaryColorArray) {
 				if (elemIndex >= D3DState.ClientVertexArrayState.colorInfo._internal.compiledFirst &&
 					elemIndex <= D3DState.ClientVertexArrayState.colorInfo._internal.compiledLast) {
 					*(DWORD*)pLockedVertices = D3DGlobal.compiledVertexArray.compiledColorData[elemIndex];
@@ -775,10 +876,7 @@ FAST_PATH_CHECK_ABORT:
 
 void D3DVABuffer :: Unlock()
 {
-	if (m_lockCount <= 0) {
-		QGL_SET_ERROR(E_FAIL);
-		return;
-	}
+	if (m_lockCount <= 0) return;
 
 	m_lockFirst = 0;
 	m_lockCount = 0;
@@ -797,6 +895,12 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 	}
 
 	m_primitiveType = mode;
+	m_primitiveIndexCount = 0;
+	if (count <= 0) return;
+	if (mode == GL_QUADS && count > std::numeric_limits<GLsizei>::max() - (count >> 1)) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		return;
+	}
 
 	//For GL_QUADS, we add 2 additional indices per quad
 	//For GL_LINE_LOOP, we add 1 additional index
@@ -831,9 +935,18 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 				maxVertexIndex > USHRT_MAX ? 32u : 16u);
 		}
 	}
+	if (maxVertexIndex > static_cast<GLuint>(std::numeric_limits<GLint>::max())) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		m_primitiveIndexCount = 0;
+		return;
+	}
 
 	//Set index buffer size
 	int currentIndexBuffer = SetMinimumIndexBufferSize( m_primitiveIndexCount, maxVertexIndex );
+	if (currentIndexBuffer < 0) {
+		m_primitiveIndexCount = 0;
+		return;
+	}
 	if ( !m_pIndexBuffer[currentIndexBuffer][m_swapFrame] )
 		return;
 
@@ -892,6 +1005,10 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 		else
 			Lock( minVertexIndex, maxVertexIndex );
 	}
+	if (!m_lockCount) {
+		m_primitiveIndexCount = 0;
+		return;
+	}
 
 	if (!indices)
 		m_lockFirst = 0;	//our own indices are already offset
@@ -906,6 +1023,9 @@ void D3DVABuffer :: DrawPrimitive()
 {
 	if (!m_primitiveIndexCount || !m_lockCount) 
 		return;
+	QGL_DiagnosticsRecordVertexUpload(static_cast<uint32_t>(m_lockCount),
+		static_cast<uint32_t>(m_lockCount) * static_cast<uint32_t>(m_vertexSize) * static_cast<uint32_t>(sizeof(float)),
+		static_cast<uint32_t>(m_primitiveIndexCount) * static_cast<uint32_t>(m_indexSize));
 
 	HRESULT hr;
 
@@ -1325,7 +1445,7 @@ OPENGL_API void WINAPI glArrayElement( GLint i )
 	}
 
 	if (D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_NORMAL_BIT) {
-		D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.normalInfo, i, D3DState.CurrentState.currentNormal );
+		D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.normalInfo, i, D3DState.CurrentState.currentNormal, true );
 	}
 	if (D3DState.ClientVertexArrayState.vertexArrayEnable & VA_ENABLE_COLOR_BIT) {
 		GLubyte color[4] = { 255, 255, 255, 255 };
@@ -1367,6 +1487,13 @@ OPENGL_API void WINAPI glArrayElement( GLint i )
 
 static void internal_DrawArrays( const char *api, GLenum mode, GLint first, GLsizei count )
 {
+	QGLDrawTimer drawTimer;
+	if (first < 0 || count < 0 ||
+		(count > 0 && first > std::numeric_limits<GLint>::max() - (count - 1))) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		return;
+	}
+	if (count == 0) return;
 	if (!QGL_DiagnosticsBeginDraw(api, mode, count, first, 0, nullptr))
 		return;
 #if defined(VA_USE_IMMEDIATE_MODE)
@@ -1405,21 +1532,33 @@ static void internal_DrawArrays( const char *api, GLenum mode, GLint first, GLsi
 }
 static void internal_DrawElements( const char *api, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,  const GLvoid *indices )
 {
+	QGLDrawTimer drawTimer;
+	if (count < 0) {
+		QGL_SET_ERROR(E_INVALIDARG);
+		return;
+	}
+	size_t indexSize = 0;
+	switch (type) {
+	case GL_UNSIGNED_BYTE: indexSize = sizeof(GLubyte); break;
+	case GL_UNSIGNED_SHORT: indexSize = sizeof(GLushort); break;
+	case GL_UNSIGNED_INT: indexSize = sizeof(GLuint); break;
+	default:
+		QGL_SET_ERROR(E_INVALID_ENUM);
+		return;
+	}
+	if (count == 0) return;
 	if (!QGL_DiagnosticsBeginDraw(api, mode, count,
 		start == ~0u ? -1 : static_cast<int>(start), type, indices))
 		return;
 
 	const GLuint elementBuffer = D3DBuffer_GetBinding(GL_ELEMENT_ARRAY_BUFFER_ARB);
 	if (elementBuffer) {
-		size_t indexSize = 0;
-		switch (type) {
-		case GL_UNSIGNED_BYTE: indexSize = sizeof(GLubyte); break;
-		case GL_UNSIGNED_SHORT: indexSize = sizeof(GLushort); break;
-		case GL_UNSIGNED_INT: indexSize = sizeof(GLuint); break;
-		default: break;
+		if (static_cast<size_t>(count) > std::numeric_limits<size_t>::max() / indexSize) {
+			QGL_SET_ERROR(E_INVALID_OPERATION);
+			return;
 		}
 		indices = D3DBuffer_ResolvePointer(elementBuffer, indices,
-			indexSize * static_cast<size_t>(count > 0 ? count : 0));
+			indexSize * static_cast<size_t>(count));
 		if (!indices)
 			return;
 	}
@@ -1646,7 +1785,7 @@ OPENGL_API void WINAPI glLockArrays( GLint first, GLsizei count )
 
 			GLfloat *pdata = *ppdata;
 			for (int i = 0; i < count; ++i) {
-				D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.normalInfo, first + i, pdata );
+				D3DVA_CopyArrayToFloats( &D3DState.ClientVertexArrayState.normalInfo, first + i, pdata, true );
 				pdata += 3;
 			}
 
