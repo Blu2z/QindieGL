@@ -93,7 +93,9 @@ bool Harness_Init( const char *dllPath, int width, int height, std::string &erro
 		!LoadExport(gl.GetLightfv, "glGetLightfv", error) ||
 		!LoadExport(gl.LoadMatrixf, "glLoadMatrixf", error) ||
 		!LoadExport(gl.Ortho, "glOrtho", error) ||
-		!LoadExport(gl.DepthMask, "glDepthMask", error))
+		!LoadExport(gl.DepthMask, "glDepthMask", error) ||
+		!LoadExport(gl.TexGeni, "glTexGeni", error) ||
+		!LoadExport(gl.TexGenfv, "glTexGenfv", error))
 		return false;
 
 	WNDCLASSA windowClass = {};
@@ -112,8 +114,12 @@ bool Harness_Init( const char *dllPath, int width, int height, std::string &erro
 		return false;
 	}
 	g_dc = GetDC(g_window);
-	g_width = width;
-	g_height = height;
+	// Windows enforces a minimum width for captioned windows, so the client
+	// area (and the D3D9 back buffer) can be wider than requested.
+	RECT client = {};
+	GetClientRect(g_window, &client);
+	g_width = client.right - client.left;
+	g_height = client.bottom - client.top;
 
 	PIXELFORMATDESCRIPTOR pixelFormat = {};
 	pixelFormat.nSize = sizeof(pixelFormat);
@@ -147,7 +153,7 @@ bool Harness_Init( const char *dllPath, int width, int height, std::string &erro
 	LoadExtension(gl.SecondaryColorPointerEXT, "glSecondaryColorPointerEXT");
 	LoadExtension(gl.MultiTexCoord4sdARB, "glMultiTexCoord4sdARB");
 
-	gl.Viewport(0, 0, width, height);
+	gl.Viewport(0, 0, g_width, g_height);
 	return true;
 }
 
