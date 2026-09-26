@@ -44,6 +44,15 @@ void QGL_DiagnosticsRecordVBOCreated();
 void QGL_DiagnosticsRecordVBOBytes( int64_t delta );
 void QGL_DiagnosticsSetRenderTarget( const char *name );
 
+// Frame capture (task brief section 41). DebugCaptureFrame = N, or pressing
+// Scroll Lock during play, records the next frame into
+// QindieGL-capture\frame_NNNNNN\: one state line per draw (draws.txt), the
+// framebuffer before and the texture after every glCopyTex* call, the
+// framebuffer after draws sampling such a texture, and the final frame.
+void QGL_DiagnosticsConfigureCapture( int frame );
+void QGL_DiagnosticsCaptureCopy( bool afterCopy, unsigned int target, int level, int xoffset, int yoffset,
+	int x, int y, int width, int height );
+
 // Projection classes and world-to-HUD boundaries (d3d_view_diagnostics.cpp).
 void QGL_ViewDiagnosticsOnDraw( uint64_t frame, uint64_t draw );
 // Returns true when the frame contained world draws (perspective, depth tested).

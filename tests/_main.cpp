@@ -64,7 +64,7 @@ const GLConfiguration kConfigurations[] = {
 		"[Settings]\r\nLogLevel = 1\r\n\r\n"
 		"[Extensions]\r\nGL_ARB_vertex_buffer_object = 0\r\n", MODE_NO_BUFFER_OBJECTS },
 	{ "view-diagnostics",
-		"[Settings]\r\nLogLevel = 3\r\nProjectionFix = 1\r\n\r\n"
+		"[Settings]\r\nLogLevel = 3\r\nProjectionFix = 1\r\nDebugCaptureFrame = 1\r\n\r\n"
 		"[Extensions]\r\n", MODE_VIEW_DIAGNOSTICS },
 };
 

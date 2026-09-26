@@ -98,6 +98,8 @@ void D3DGlobal_Init( bool clearGlobals )
 	D3DGlobal.settings.debugMaxDrawCall = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugMaxDrawCall", "Settings", static_cast<DWORD>(-1) ));
 	D3DGlobal.settings.debugDumpFrame = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugDumpFrame", "Settings", static_cast<DWORD>(-1) ));
 	D3DGlobal.settings.debugDumpDraw = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugDumpDraw", "Settings", static_cast<DWORD>(-1) ));
+	D3DGlobal.settings.debugCaptureFrame = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugCaptureFrame", "Settings", static_cast<DWORD>(-1) ));
+	QGL_DiagnosticsConfigureCapture( D3DGlobal.settings.debugCaptureFrame );
 	logSetLevel( static_cast<int>(D3DGlobal.settings.logLevel) );
 	QGL_DiagnosticsConfigure( D3DGlobal.settings.crashDiagnostics != 0,
 		D3DGlobal.settings.debugMaxDrawCall, D3DGlobal.settings.debugDumpFrame,
