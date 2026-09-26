@@ -78,7 +78,11 @@ In `[game.game]` and `[game.YOU_ARE_EMPTY]` of `QindieGL.ini`:
 
 - `yae_camera_split = 1`: DS2's camera reaches D3D9 as `D3DTS_VIEW`. The
   output without Remix is unchanged; the session log's camera census shows
-  how DS2 built each view.
+  how DS2 built each view. DS2 gives its lights in world coordinates under
+  the camera, and they reach D3D9 unchanged. Remix tells game lights apart by
+  their exact position: a lamp whose position changed in the last bits as
+  the camera moved counted as a moving light and went out as soon as DS2
+  stopped passing it, which it does when no lit model is near the lamp.
 - `remix_server_all_cpus = 1` (set in `msvc/QindieGL.ini`): required.
   `ds2kernel.dll` pins the game to CPU 0 with
   `SetProcessAffinityMask(GetCurrentProcess(), 1)`, and `NvRemixBridge.exe`,

@@ -136,6 +136,17 @@ void D3DMatrix_GetCameraTrackInfo( D3DCameraTrackInfo *info )
 	info->eyeSpace = gCameraTracking.eyeSpace[depth];
 }
 
+const D3DStateMatrix *D3DMatrix_ObjectToWorld( unsigned int *camera )
+{
+	// Generation 0: the modelview was never reset, so no camera was taken.
+	if( !D3DGlobal.settings.game.yaeCameraSplit || gCameraTracking.viewPending || !gCameraTracking.generation )
+		return nullptr;
+	if( gCameraTracking.eyeSpace[D3DGlobal.modelviewMatrixStack->stack_depth()] )
+		return nullptr;
+	*camera = gCameraTracking.generation;
+	return &D3DGlobal.modelMatrixStack->top();
+}
+
 // glLoadIdentity or glLoadMatrix on the modelview. Returns true at depth 0.
 static bool CameraTrackReset( bool loaded )
 {

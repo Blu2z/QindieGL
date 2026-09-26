@@ -161,6 +161,19 @@ bool Near( int value, int expected, int tolerance )
 	return value >= expected - tolerance && value <= expected + tolerance;
 }
 
+Mat CameraToWorld()
+{
+	return Multiply(Translation(10.0f, 5.0f, 20.0f), Multiply(RotationY(30.0f), RotationX(-10.0f)));
+}
+
+// LIGHT1: a point light given in world coordinates under the world camera.
+void PointLightWorld( float *world )
+{
+	const float pointEye[3] = { 0.0f, -1.5f, -3.0f };
+	TransformPoint(CameraToWorld(), pointEye, world);
+	world[3] = 1.0f;
+}
+
 } // namespace
 
 void do_camera_split_tests()
@@ -177,7 +190,7 @@ void do_camera_split_tests()
 	// casters behind the light view.
 	const Mat ortho = { { 0.5f, 0, 0, 0, 0, 0.5f, 0, 0, 0, 0, -0.1f, 0, 0, 0, 0, 1 } };
 
-	const Mat cameraToWorld = Multiply(Translation(10.0f, 5.0f, 20.0f), Multiply(RotationY(30.0f), RotationX(-10.0f)));
+	const Mat cameraToWorld = CameraToWorld();
 	const Mat view = RigidInverse(cameraToWorld);
 	const Mat skyView = RotationPart(view);
 	const Mat lightView = RigidInverse(Multiply(Translation(3.0f, -2.0f, 1.0f), RotationX(40.0f)));
@@ -218,9 +231,8 @@ void do_camera_split_tests()
 	float lightWorld[4] = { 0, 0, 0, 0 };
 	TransformDirection(cameraToWorld, lightEye, lightWorld);
 	gl.Lightfv(GL_LIGHT0, GL_POSITION, lightWorld);
-	const float pointEye[3] = { 0.0f, -1.5f, -3.0f };
-	float pointWorld[4] = { 0, 0, 0, 1 };
-	TransformPoint(cameraToWorld, pointEye, pointWorld);
+	float pointWorld[4];
+	PointLightWorld(pointWorld);
 	const float white[4] = { 1, 1, 1, 1 };
 	gl.Lightfv(GL_LIGHT1, GL_POSITION, pointWorld);
 	gl.Lightfv(GL_LIGHT1, GL_DIFFUSE, white);
@@ -341,10 +353,22 @@ void check_camera_split_log( const std::string &logPath, bool split )
 	for (const char *pattern : patterns)
 		CHECK(log.find(pattern) != std::string::npos, "%s: camera census contains %s", logPath.c_str(), pattern);
 	const char *view = "[CAMERA_SPLIT] first camera sent as D3DTS_VIEW: pos=(3.0,-2.0,1.0)";
-	if (split)
+	// The point light reaches D3D at exactly the world position it was given.
+	// Through the inverse view its last bits would change with the camera, and
+	// RTX Remix would take it for a moving light.
+	float pointWorld[4];
+	PointLightWorld(pointWorld);
+	unsigned int bits[3];
+	memcpy(bits, pointWorld, sizeof(bits));
+	char light[160];
+	sprintf_s(light, "[CAMERA_SPLIT] first light sent at the world position it was given: bits %08X %08X %08X",
+		bits[0], bits[1], bits[2]);
+	if (split) {
 		CHECK(log.find(view) != std::string::npos, "%s: contains %s", logPath.c_str(), view);
-	else
+		CHECK(log.find(light) != std::string::npos, "%s: contains %s", logPath.c_str(), light);
+	} else {
 		CHECK(log.find("[CAMERA_SPLIT]") == std::string::npos, "%s: no camera split without the setting", logPath.c_str());
+	}
 }
 
 // Runs in the parent: the frame must be identical with and without the split.

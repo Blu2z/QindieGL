@@ -94,5 +94,9 @@ struct D3DCameraTrackInfo
 
 void D3DMatrix_ResetCameraTracking();
 void D3DMatrix_GetCameraTrackInfo( D3DCameraTrackInfo *info );
+// yae_camera_split: the model stack top when the modelview is the camera sent as
+// D3DTS_VIEW times the model stack, so that it maps object coordinates to world
+// coordinates; nullptr otherwise. *camera receives the camera's generation.
+const D3DStateMatrix *D3DMatrix_ObjectToWorld( unsigned int *camera );
 
 #endif //QINDIEGL_D3D_MATRIX_STACK_H

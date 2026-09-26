@@ -123,6 +123,12 @@ typedef struct D3DState_s
 		D3DCOLORVALUE	lightColorSpecular[IMPL_MAX_LIGHTS];
 		D3DXVECTOR3		lightPosition[IMPL_MAX_LIGHTS];
 		D3DXVECTOR3		lightDirection[IMPL_MAX_LIGHTS];
+		// yae_camera_split: the same in world coordinates, and the camera they were
+		// given under (0: none, see D3DMatrix_ObjectToWorld).
+		D3DXVECTOR3		lightWorldPosition[IMPL_MAX_LIGHTS];
+		D3DXVECTOR3		lightWorldDirection[IMPL_MAX_LIGHTS];
+		unsigned int	lightWorldPositionCamera[IMPL_MAX_LIGHTS];
+		unsigned int	lightWorldDirectionCamera[IMPL_MAX_LIGHTS];
 		D3DVECTOR		lightAttenuation[IMPL_MAX_LIGHTS];
 		FLOAT			lightSpotExponent[IMPL_MAX_LIGHTS];
 		FLOAT			lightSpotCutoff[IMPL_MAX_LIGHTS];
