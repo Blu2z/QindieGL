@@ -1108,6 +1108,16 @@ namespace {
 		gCapture.active = false;
 	}
 
+	// Which build ARB_ActivateShaders uses for the bound fragment program.
+	const char *FragmentProgramBuild()
+	{
+		ARBCompiledProgram *fp = ARB_GetCompiledProgram(ARB_GetBoundFragmentProgram());
+		if (!fp || !fp->ps) return "none";
+		ARBCompiledProgram *vp = D3DState.EnableState.vertexProgramEnabled ?
+			ARB_GetCompiledProgram(ARB_GetBoundVertexProgram()) : nullptr;
+		return (!vp || !vp->vs) && fp->psFixedFunction ? "ps_2_x" : "ps_3_0";
+	}
+
 	void CaptureDraw( const char *api, unsigned int mode, int count )
 	{
 		const auto &enable = D3DState.EnableState;
@@ -1120,14 +1130,17 @@ namespace {
 			HashBytes(D3DGlobal.projectionMatrixStack->top(), sizeof(D3DXMATRIX)) : 0;
 		fprintf(gCapture.file,
 			"D%04llu %s mode=0x%X count=%d | %s/%08X depth=%u/%u/%u blend=%u(0x%X,0x%X) alpha=%u(%u,%u) cull=%u(%u) stencil=%u colorMask=0x%X "
-			"lighting=%u(0x%X) fog=%u color=0x%08X arrays=0x%08X |",
+			"lighting=%u(0x%X) fog=%u color=0x%08X arrays=0x%08X offset=%u(%g,%g) vp=%u(%u) fp=%u(%u,%s) |",
 			static_cast<unsigned long long>(gDiagnostics.drawId), api, mode, count,
 			ortho ? "ORTHO" : "PERSP", projectionHash, enable.depthTestEnabled,
 			D3DState.DepthBufferState.depthWriteMask, D3DState.DepthBufferState.depthTestFunc,
 			enable.alphaBlendEnabled, color.glBlendSrc, color.glBlendDst, enable.alphaTestEnabled,
 			color.alphaTestFunc, color.alphaTestReference, enable.cullEnabled, D3DState.PolygonState.cullMode,
 			enable.stencilTestEnabled, color.colorWriteMask, enable.lightingEnabled, lightMask, enable.fogEnabled,
-			D3DState.CurrentState.currentColor, D3DState.ClientVertexArrayState.vertexArrayEnable);
+			D3DState.CurrentState.currentColor, D3DState.ClientVertexArrayState.vertexArrayEnable,
+			enable.depthBiasEnabled, D3DState.PolygonState.depthBiasFactor, D3DState.PolygonState.depthBiasUnits,
+			enable.vertexProgramEnabled, ARB_GetBoundVertexProgram(), enable.fragmentProgramEnabled,
+			ARB_GetBoundFragmentProgram(), FragmentProgramBuild());
 		bool samplesCopy = false;
 		for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
 			if (!enable.textureEnabled[unit]) continue;
@@ -1241,15 +1254,16 @@ namespace {
 					stage, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
 				if (v[0] == D3DTOP_DISABLE) break;
 			}
-			DWORD rs[10] = {};
-			const D3DRENDERSTATETYPE renderStates[10] = { D3DRS_ALPHATESTENABLE, D3DRS_ALPHAFUNC, D3DRS_ALPHAREF,
+			DWORD rs[13] = {};
+			const D3DRENDERSTATETYPE renderStates[13] = { D3DRS_ALPHATESTENABLE, D3DRS_ALPHAFUNC, D3DRS_ALPHAREF,
 				D3DRS_ZENABLE, D3DRS_ZFUNC, D3DRS_ZWRITEENABLE, D3DRS_ALPHABLENDENABLE, D3DRS_SRCBLEND,
-				D3DRS_DESTBLEND, D3DRS_COLORWRITEENABLE };
-			for (int i = 0; i < 10; ++i)
+				D3DRS_DESTBLEND, D3DRS_COLORWRITEENABLE, D3DRS_DEPTHBIAS, D3DRS_SLOPESCALEDEPTHBIAS, D3DRS_FOGENABLE };
+			for (int i = 0; i < 13; ++i)
 				D3DGlobal.pDevice->GetRenderState(renderStates[i], &rs[i]);
 			fprintf(gCapture.file,
-				"    D3D alphatest=%lu func=%lu ref=%lu z=%lu func=%lu write=%lu blend=%lu src=%lu dst=%lu colorwrite=0x%lX\n",
-				rs[0], rs[1], rs[2], rs[3], rs[4], rs[5], rs[6], rs[7], rs[8], rs[9]);
+				"    D3D alphatest=%lu func=%lu ref=%lu z=%lu func=%lu write=%lu blend=%lu src=%lu dst=%lu colorwrite=0x%lX depthbias=%g slopebias=%g fog=%lu\n",
+				rs[0], rs[1], rs[2], rs[3], rs[4], rs[5], rs[6], rs[7], rs[8], rs[9],
+				*reinterpret_cast<const float *>(&rs[10]), *reinterpret_cast<const float *>(&rs[11]), rs[12]);
 
 			char name[48];
 			sprintf_s(name, "before_draw_%04llu", static_cast<unsigned long long>(gDiagnostics.drawId));
