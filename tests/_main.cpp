@@ -26,6 +26,7 @@ extern void do_texture_projection_tests();
 extern void do_rectangle_texture_tests();
 extern void do_shadow_receiver_tests();
 extern void do_streaming_tests();
+extern void do_framebuffer_copy_tests();
 extern void do_extension_availability_tests( bool expectBufferObjects );
 extern void do_view_tests();
 extern void check_view_diagnostics_log( const std::string &logPath );
@@ -174,6 +175,7 @@ int RunGLChild( const char *dll, const char *configurationName )
 		do_rectangle_texture_tests();
 		do_shadow_receiver_tests();
 		do_streaming_tests();
+		do_framebuffer_copy_tests();
 		do_vbo_tests();
 		do_multitexture_tests();
 		break;

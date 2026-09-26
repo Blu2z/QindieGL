@@ -37,6 +37,10 @@ public:
 	HRESULT GetTexImage( GLint cubeface, GLint level, GLenum format,  GLenum type,  GLvoid *pixels );
 	HRESULT DumpTexture();
 	void CheckMipmapAutogen();
+	// A render-target texture (framebuffer copy target) becomes a managed
+	// texture again, keeping its content when the device allows it.
+	HRESULT DemoteRenderTarget();
+	bool IsRenderTarget() const { return m_renderTarget; }
 
 	LPDIRECT3DBASETEXTURE9 GetD3DTexture() const { return m_pD3DBaseTexture; }
 	GLenum GetTarget() const { return m_target; }
@@ -78,6 +82,9 @@ public:
 	void SetLodBias( GLfloat value ) { m_lodBias = value; }
 
 private:
+	HRESULT PromoteToRenderTarget();
+	HRESULT CopyFramebufferOnGPU( GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height );
+
 	union {
 		LPDIRECT3DBASETEXTURE9 		m_pD3DBaseTexture;
 		LPDIRECT3DTEXTURE9			m_pD3DTexture;
@@ -102,7 +109,15 @@ private:
 	D3DCOLOR				m_borderColor;
 	DWORD					m_priority;
 	uint64_t				m_estimatedBytes;
+	bool					m_renderTarget;		// D3DPOOL_DEFAULT render-target texture, one level
 };
+
+// Framebuffer copies into a whole single-level 2D texture run on the GPU: the
+// texture becomes a render-target texture and each copy is a StretchRect plus
+// a flipping quad, with no read-back to system memory. Called before a device
+// Reset or release: render-target textures become managed again (keeping
+// their content while the device allows it) and the copy resources are freed.
+void D3DTex_ReleaseRenderTargets();
 
 // D3D9 2D samplers use normalized coordinates, while
 // GL_TEXTURE_RECTANGLE uses pixel coordinates.  YAE's ARB fragment-program

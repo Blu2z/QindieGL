@@ -50,6 +50,7 @@ struct GLApi
 	decltype(&::glTexGeni) TexGeni;
 	decltype(&::glTexGenfv) TexGenfv;
 	decltype(&::glCopyTexSubImage2D) CopyTexSubImage2D;
+	decltype(&::glTexSubImage2D) TexSubImage2D;
 	decltype(&::glTexImage1D) TexImage1D;
 	decltype(&::glTexEnvi) TexEnvi;
 	decltype(&::glColor4f) Color4f;
