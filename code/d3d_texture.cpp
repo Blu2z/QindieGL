@@ -1916,9 +1916,20 @@ static void D3DTex_CopySubImage( GLenum target, GLint level, GLint xoffset, GLin
 }
 
 //=========================================
+// The texture table exists only with a context. The system opengl32 ignores
+// GL calls made without a current context, and DS2 relies on it: its global
+// destructors delete textures at process exit, after wglDeleteContext.
+static bool NoTextureContext( const char *api )
+{
+	if (D3DGlobal.pObjectBuffer)
+		return false;
+	QGL_DiagnosticsRecordCallWithoutContext(api);
+	return true;
+}
+
 OPENGL_API void WINAPI glDeleteTextures( GLsizei n, const GLuint *textures )
 {
-	assert(D3DGlobal.pObjectBuffer != nullptr);
+	if (NoTextureContext("glDeleteTextures")) return;
 	if (!textures || n < 0) {
 		QGL_SET_ERROR(E_INVALIDARG);
 		return;
@@ -1946,17 +1957,18 @@ OPENGL_API void WINAPI glDeleteTextures( GLsizei n, const GLuint *textures )
 }
 OPENGL_API void WINAPI glGenTextures( GLsizei n, GLuint *textures )
 {
-	assert(D3DGlobal.pObjectBuffer != nullptr);
+	if (NoTextureContext("glGenTextures")) return;
 	HRESULT hr = D3DGlobal.pObjectBuffer->GenObjects( D3D_OBJECT_TYPE_TEXTURE, n, textures );
 	if (FAILED(hr)) QGL_SET_ERROR(hr);
 }
 OPENGL_API GLboolean WINAPI glIsTexture( GLuint texture )
 {
-	assert(D3DGlobal.pObjectBuffer != nullptr);
+	if (NoTextureContext("glIsTexture")) return GL_FALSE;
 	return D3DGlobal.pObjectBuffer->IsObject( D3D_OBJECT_TYPE_TEXTURE, texture );
 }
 OPENGL_API GLboolean WINAPI glAreTexturesResident( GLsizei n, const GLuint *textures, GLboolean *residences )
 {
+	if (NoTextureContext("glAreTexturesResident")) return GL_FALSE;
 	if (n <= 0) {
 		QGL_SET_ERROR(E_INVALIDARG);
 		return GL_FALSE;
@@ -1977,12 +1989,12 @@ OPENGL_API GLboolean WINAPI glAreTexturesResident( GLsizei n, const GLuint *text
 }
 OPENGL_API void WINAPI glPrioritizeTextures( GLsizei n, const GLuint *textures, const GLclampf *priorities )
 {
+	if (NoTextureContext("glPrioritizeTextures")) return;
 	if (n < 0) {
 		QGL_SET_ERROR(E_INVALIDARG);
 		return;
 	}
 
-	assert(D3DGlobal.pObjectBuffer != nullptr);
 	for (int i = 0; i < n; ++i) {
 		if (textures[i] <= 0) continue;
 		D3DTextureObject *pTexture = (D3DTextureObject*)D3DGlobal.pObjectBuffer->GetObjectData( D3D_OBJECT_TYPE_TEXTURE, textures[i] );
@@ -1996,6 +2008,7 @@ OPENGL_API void WINAPI glPrioritizeTextures( GLsizei n, const GLuint *textures, 
 OPENGL_API void WINAPI glBindTexture( GLenum target, GLuint texture )
 {
 	DL_RECORD_2( glBindTexture, target, texture );
+	if (NoTextureContext("glBindTexture")) return;
 	int targetIndex = UTIL_GLTextureTargettoInternalIndex( target );
 	if (targetIndex < 0 || targetIndex >= D3D_TEXTARGET_MAX) {
 		QGL_SET_ERROR(E_INVALIDARG);
@@ -2015,7 +2028,6 @@ OPENGL_API void WINAPI glBindTexture( GLenum target, GLuint texture )
 		return;
 	}
 	
-	assert(D3DGlobal.pObjectBuffer != nullptr);
 	D3DTextureObject *pTexture = (D3DTextureObject*)D3DGlobal.pObjectBuffer->GetObjectData( D3D_OBJECT_TYPE_TEXTURE, texture );
 	if (!pTexture) {
 		D3DState.TextureState.currentTexture[currentTMU][targetIndex] = D3DGlobal.defaultTexture[targetIndex];
