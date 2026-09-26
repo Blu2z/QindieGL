@@ -1742,15 +1742,18 @@ OPENGL_API void WINAPI glBindTexture( GLenum target, GLuint texture )
 }
 OPENGL_API void WINAPI glTexImage1D( GLenum target, GLint level, GLint internalformat, GLsizei width, GLint border, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	//refer 1d-textures to as 2d-textures with height = 1
 	D3DTex_LoadImage( target, level, internalformat, width, 1, 1, border, format, type, pixels );
 }
 OPENGL_API void WINAPI glTexImage2D( GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	D3DTex_LoadImage( target, level, internalformat, width, height, 1, border, format, type, pixels );
 }
 OPENGL_API void WINAPI glTexImage3D( GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	D3DTex_LoadImage( target, level, internalformat, width, height, depth, border, format, type, pixels );
 }
 OPENGL_API void WINAPI glTexSubImage1D( GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLenum type, const GLvoid *pixels )
@@ -1759,6 +1762,7 @@ OPENGL_API void WINAPI glTexSubImage1D( GLenum target, GLint level, GLint xoffse
 }
 OPENGL_API void WINAPI glTexSubImage2D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	D3DTex_LoadSubImage( target, level, xoffset, yoffset, 0, width, height, 1, format, type, pixels );
 }
 OPENGL_API void WINAPI glTexSubImage3D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels)
@@ -1772,6 +1776,7 @@ OPENGL_API void WINAPI glCompressedTexImage1D( GLenum target, GLint level, GLint
 }
 OPENGL_API void WINAPI glCompressedTexImage2D( GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid *pixels )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	D3DTex_LoadCompressedImage( target, level, internalformat, width, height, 1, border, imageSize, pixels );
 }
 OPENGL_API void WINAPI glCompressedTexImage3D( GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid *pixels )
@@ -1784,6 +1789,7 @@ OPENGL_API void WINAPI glCompressedTexSubImage1D( GLenum target, GLint level, GL
 }
 OPENGL_API void WINAPI glCompressedTexSubImage2D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const GLvoid *pixels )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	D3DTex_LoadCompressedSubImage( target, level, xoffset, yoffset, 0, width, height, 1, format, imageSize, pixels );
 }
 OPENGL_API void WINAPI glCompressedTexSubImage3D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const GLvoid *pixels )
@@ -1798,6 +1804,7 @@ OPENGL_API void WINAPI glCopyTexImage1D( GLenum target, GLint level, GLenum /*in
 }
 OPENGL_API void WINAPI glCopyTexImage2D( GLenum target, GLint level, GLenum /*internalFormat*/, GLint x, GLint y, GLsizei width, GLsizei height, GLint /*border*/ )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	//FIXME: format conversion! border!!
 	D3DTex_CopySubImage( target, level, 0, 0, x, y, width, height );
 }
@@ -1811,6 +1818,7 @@ OPENGL_API void WINAPI glCopyTexSubImage1D( GLenum target, GLint level, GLint xo
 }
 OPENGL_API void WINAPI glCopyTexSubImage2D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height )
 {
+	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
 	D3DTex_CopySubImage( target, level, xoffset, yoffset, x, y, width, height );
 }
 OPENGL_API void WINAPI glCopyTexSubImage3D( GLenum /*target*/, GLint /*level*/, GLint /*xoffset*/, GLint /*yoffset*/, GLint /*zoffset*/, GLint /*x*/, GLint /*y*/, GLint /*z*/, GLsizei /*width*/, GLsizei /*height*/, GLsizei /*depth*/ )
