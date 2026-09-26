@@ -486,6 +486,9 @@ const D3DXMATRIX *D3DState_GetSoftwareTextureTransform( int stage )
 		D3DState.EnableState.vertexProgramEnabled || stage < 0 ||
 		stage >= D3DGlobal.maxActiveTMU )
 		return nullptr;
+	// Those stages apply the full matrix instead (D3DState_GetProjectiveTextureTransform).
+	if ( D3DState_IsFragmentProgramTexCoordStage( stage ) )
+		return nullptr;
 
 	D3DStateMatrix& matrix = D3DGlobal.textureMatrixStack[stage]->top();
 	if ( matrix.is_identity() )
@@ -521,10 +524,26 @@ bool D3DState_IsProjectiveTextureStage( int stage )
 		fabsf( m._34 ) > epsilon || fabsf( m._44 - 1.0f ) > epsilon;
 }
 
-// The matrix a projective stage applies on the CPU, or null when identity.
+// With fixed-function vertex processing feeding an ARB fragment program, GL
+// gives the program the complete (s,t,r,q) after texgen and the texture
+// matrix (You Are Empty's soft shadow samples it with TXP). A stage the
+// program reads and that uses texgen or a texture matrix therefore carries
+// four coordinates with the matrix applied on the CPU and no D3D texture
+// transform; a pixel shader performs any projection itself.
+bool D3DState_IsFragmentProgramTexCoordStage( int stage )
+{
+	if ( !D3DState.EnableState.fragmentProgramEnabled || D3DState.EnableState.vertexProgramEnabled ||
+		stage < 0 || stage >= D3DGlobal.maxActiveTMU || stage >= ARB_GetRequiredVertexTexCoordCount() )
+		return false;
+	return D3DState.EnableState.texGenEnabled[stage] ||
+		!D3DGlobal.textureMatrixStack[stage]->top().is_identity();
+}
+
+// The full texture matrix a projective or fragment-program stage applies on
+// the CPU, or null when there is none to apply.
 const D3DXMATRIX *D3DState_GetProjectiveTextureTransform( int stage )
 {
-	if ( !D3DState_IsProjectiveTextureStage( stage ) )
+	if ( !D3DState_IsFragmentProgramTexCoordStage( stage ) && !D3DState_IsProjectiveTextureStage( stage ) )
 		return nullptr;
 	D3DStateMatrix& matrix = D3DGlobal.textureMatrixStack[stage]->top();
 	return matrix.is_identity() ? nullptr : static_cast<const D3DXMATRIX *>( matrix );
@@ -552,9 +571,11 @@ void D3DState_SetTexture()
 
 		D3DState.textureMatrixModified[i] = false;
 		D3DStateMatrix& mat = D3DGlobal.textureMatrixStack[i]->top();
-		const bool projectiveStage = D3DState_IsProjectiveTextureStage( i );
-		const bool stageTransformEnabled = !projectiveStage && !mat.is_identity() &&
-			!D3DState_GetSoftwareTextureTransform( i );
+		// Fragment-program stages receive final coordinates from the CPU.
+		const bool fragmentProgramStage = D3DState_IsFragmentProgramTexCoordStage( i );
+		const bool projectiveStage = !fragmentProgramStage && D3DState_IsProjectiveTextureStage( i );
+		const bool stageTransformEnabled = !fragmentProgramStage && !projectiveStage &&
+			!mat.is_identity() && !D3DState_GetSoftwareTextureTransform( i );
 
 		// Affine S/T transforms are folded into YAE's copied vertex data above.
 		// Projective stages (see D3DState_IsProjectiveTextureStage) receive four
@@ -1405,10 +1426,15 @@ static void D3DState_EnableDisableState( GLenum cap, DWORD value )
 		break;
 
 	case GL_VERTEX_PROGRAM_ARB:
+		// Texture coordinate routing depends on the program state.
+		if (D3DState.EnableState.vertexProgramEnabled != value)
+			D3DState.TextureState.textureSamplerStateChanged = TRUE;
 		D3DState.EnableState.vertexProgramEnabled = value;
 		QGL_DiagnosticsRecordProgramOp(value ? 'E' : 'e', cap, 0, -1, nullptr);
 		break;
 	case GL_FRAGMENT_PROGRAM_ARB:
+		if (D3DState.EnableState.fragmentProgramEnabled != value)
+			D3DState.TextureState.textureSamplerStateChanged = TRUE;
 		D3DState.EnableState.fragmentProgramEnabled = value;
 		QGL_DiagnosticsRecordProgramOp(value ? 'E' : 'e', cap, 0, -1, nullptr);
 		break;

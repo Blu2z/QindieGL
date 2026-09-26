@@ -501,9 +501,11 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 		softwareTransforms[j] = D3DState_GetSoftwareTextureTransform( j );
 	// Projective stages need all four coordinates (D3DState_IsProjectiveTextureStage).
 	bool projectiveStages[MAX_D3D_TMU] = {};
+	bool fragmentProgramStages[MAX_D3D_TMU] = {};
 	const D3DXMATRIX *projectiveTransforms[MAX_D3D_TMU] = {};
 	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
 		projectiveStages[j] = D3DState_IsProjectiveTextureStage( j );
+		fragmentProgramStages[j] = D3DState_IsFragmentProgramTexCoordStage( j );
 		projectiveTransforms[j] = D3DState_GetProjectiveTextureTransform( j );
 	}
 	for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
@@ -522,9 +524,9 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 			// Generated coordinates without an array: carry all four (GL fills the
 			// rest from the current texture coordinate). A stale or zero array size
 			// here previously mismatched the FVF and the written vertex data.
-			if ( ( projectiveStages[j] || ( D3DState.EnableState.texGenEnabled[j] &&
+			if ( fragmentProgramStages[j] || ( ( projectiveStages[j] || ( D3DState.EnableState.texGenEnabled[j] &&
 				!VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j) ) ) &&
-				!arbSemanticRequired )
+				!arbSemanticRequired ) )
 				numCoords = 4;
 			m_vertexSize += numCoords;
 			switch (numCoords)
@@ -848,9 +850,9 @@ FAST_PATH_CHECK_ABORT:
 					{
 						numCoords = 4;
 					}
-					if ( ( projectiveStages[j] || ( D3DState.EnableState.texGenEnabled[j] &&
+					if ( fragmentProgramStages[j] || ( ( projectiveStages[j] || ( D3DState.EnableState.texGenEnabled[j] &&
 						!VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j) ) ) &&
-						!arbSemanticRequired )
+						!arbSemanticRequired ) )
 						numCoords = 4;
 					if (VA_TEXTURE_BIT_IS_SET(D3DState.ClientVertexArrayState.vertexArrayEnable, j)) {
 						if (elemIndex >= D3DState.ClientVertexArrayState.texCoordInfo[j]._internal.compiledFirst &&
