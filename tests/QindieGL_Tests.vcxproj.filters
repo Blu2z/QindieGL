@@ -27,6 +27,9 @@
     <ClCompile Include="lighting_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="projection_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="texgen.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
