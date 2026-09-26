@@ -106,14 +106,24 @@ namespace {
 		uint64_t frameVertices;
 		uint64_t frameVertexBytes;
 		uint64_t frameIndexBytes;
+		uint64_t frameCopies, frameCopyPixels;
 		uint64_t frames;
 		double frameMsSum, frameMsMax;
 		double drawMsSum, drawMsMax;
 		double presentMsSum;
 		uint64_t drawsSum, drawsMax;
 		uint64_t verticesSum, vertexBytesSum, indexBytesSum;
+		uint64_t copiesSum, copyPixelsSum;
 		uint32_t histogram[kFrameHistogramBuckets];
+		// Logged and restarted every kIntervalSeconds of world frames, so a
+		// session log shows where in the game the time goes.
+		int64_t intervalStart;
+		uint64_t intervalFrames;
+		double intervalFrameMs, intervalFrameMax, intervalDrawMs, intervalPresentMs;
+		double intervalSectionMs[QGL_PERF_SECTIONS];
+		uint64_t intervalDraws, intervalVertices, intervalCopies;
 	};
+	static const double kIntervalSeconds = 10.0;
 	static PerformanceState gPerformance = {};
 	static std::map<int, uint64_t> gSlowPathReasons;
 
@@ -154,17 +164,50 @@ namespace {
 			gPerformance.verticesSum += gPerformance.frameVertices;
 			gPerformance.vertexBytesSum += gPerformance.frameVertexBytes;
 			gPerformance.indexBytesSum += gPerformance.frameIndexBytes;
+			gPerformance.copiesSum += gPerformance.frameCopies;
+			gPerformance.copyPixelsSum += gPerformance.frameCopyPixels;
 			++gPerformance.histogram[std::min(static_cast<int>(frameMs * 10.0), kFrameHistogramBuckets - 1)];
 
+			const double uploadMs = TicksToMs(gPerformance.frameSectionTicks[QGL_PERF_TEXTURE_UPLOAD]);
+			const double copyMs = TicksToMs(gPerformance.frameSectionTicks[QGL_PERF_FRAMEBUFFER_COPY]);
 			static unsigned int slowFramesLogged = 0;
 			if (frameMs > 100.0 && slowFramesLogged < 32 && logIsEnabled(QGL_LOG_INFO)) {
 				++slowFramesLogged;
-				const double uploadMs = TicksToMs(gPerformance.frameSectionTicks[QGL_PERF_TEXTURE_UPLOAD]);
 				logPrintfLevel(QGL_LOG_INFO, "PERF",
-					"slow frame %llu: %.1f ms = draw calls %.1f + Present %.1f + texture uploads %.1f + outside QindieGL %.1f; draws %llu, vertices %llu",
-					static_cast<unsigned long long>(gDiagnostics.frameId), frameMs, drawMs, presentMs, uploadMs,
-					std::max(0.0, frameMs - drawMs - presentMs - uploadMs), static_cast<unsigned long long>(draws),
+					"slow frame %llu: %.1f ms = draw calls %.1f + Present %.1f + texture uploads %.1f + framebuffer copies %.1f + outside QindieGL %.1f; draws %llu, vertices %llu",
+					static_cast<unsigned long long>(gDiagnostics.frameId), frameMs, drawMs, presentMs, uploadMs, copyMs,
+					std::max(0.0, frameMs - drawMs - presentMs - uploadMs - copyMs), static_cast<unsigned long long>(draws),
 					static_cast<unsigned long long>(gPerformance.frameVertices));
+			}
+
+			if (!gPerformance.intervalFrames)
+				gPerformance.intervalStart = gPerformance.lastFrameEnd;
+			++gPerformance.intervalFrames;
+			gPerformance.intervalFrameMs += frameMs;
+			gPerformance.intervalFrameMax = std::max(gPerformance.intervalFrameMax, frameMs);
+			gPerformance.intervalDrawMs += drawMs;
+			gPerformance.intervalPresentMs += presentMs;
+			for (int section = 0; section < QGL_PERF_SECTIONS; ++section)
+				gPerformance.intervalSectionMs[section] += TicksToMs(gPerformance.frameSectionTicks[section]);
+			gPerformance.intervalDraws += draws;
+			gPerformance.intervalVertices += gPerformance.frameVertices;
+			gPerformance.intervalCopies += gPerformance.frameCopies;
+			if (TicksToMs(now - gPerformance.intervalStart) >= kIntervalSeconds * 1000.0) {
+				const double n = static_cast<double>(gPerformance.intervalFrames);
+				const double avgFrame = gPerformance.intervalFrameMs / n;
+				const double *section = gPerformance.intervalSectionMs;
+				logPrintfLevel(QGL_LOG_INFO, "PERF",
+					"interval: %.0f fps, frame avg %.1f max %.1f ms; draw calls %.2f ms (state %.2f, vertices %.2f, DrawIndexedPrimitive %.2f), Present %.2f, texture uploads %.2f, framebuffer copies %.2f ms (%.1f/frame); %.0f draws, %.0f vertices per frame",
+					avgFrame > 0.0 ? 1000.0 / avgFrame : 0.0, avgFrame, gPerformance.intervalFrameMax,
+					gPerformance.intervalDrawMs / n, section[QGL_PERF_STATE] / n, section[QGL_PERF_VERTICES] / n,
+					section[QGL_PERF_SUBMIT] / n, gPerformance.intervalPresentMs / n,
+					section[QGL_PERF_TEXTURE_UPLOAD] / n, section[QGL_PERF_FRAMEBUFFER_COPY] / n,
+					gPerformance.intervalCopies / n, gPerformance.intervalDraws / n, gPerformance.intervalVertices / n);
+				gPerformance.intervalFrames = 0;
+				gPerformance.intervalFrameMs = gPerformance.intervalFrameMax = 0.0;
+				gPerformance.intervalDrawMs = gPerformance.intervalPresentMs = 0.0;
+				memset(gPerformance.intervalSectionMs, 0, sizeof(gPerformance.intervalSectionMs));
+				gPerformance.intervalDraws = gPerformance.intervalVertices = gPerformance.intervalCopies = 0;
 			}
 		}
 		gPerformance.lastFrameEnd = now;
@@ -174,6 +217,8 @@ namespace {
 		gPerformance.frameVertices = 0;
 		gPerformance.frameVertexBytes = 0;
 		gPerformance.frameIndexBytes = 0;
+		gPerformance.frameCopies = 0;
+		gPerformance.frameCopyPixels = 0;
 	}
 
 	double FramePercentileMs( double fraction )
@@ -220,6 +265,10 @@ namespace {
 		logPrintf("  Present: avg %.2f ms/frame\n", gPerformance.presentMsSum / frames);
 		logPrintf("  Texture uploads (outside draw calls): avg %.2f ms/frame\n",
 			gPerformance.sectionMsSum[QGL_PERF_TEXTURE_UPLOAD] / frames);
+		logPrintf("  Framebuffer copies: avg %.2f ms/frame, %.2f copies and %.0f pixels per frame\n",
+			gPerformance.sectionMsSum[QGL_PERF_FRAMEBUFFER_COPY] / frames,
+			static_cast<double>(gPerformance.copiesSum) / frames,
+			static_cast<double>(gPerformance.copyPixelsSum) / frames);
 		logPrintf("  Draw calls: avg %.0f/frame, max %llu\n", static_cast<double>(gPerformance.drawsSum) / frames,
 			static_cast<unsigned long long>(gPerformance.drawsMax));
 		logPrintf("  Streamed to D3D9 by vertex arrays: avg %.0f vertices, %.1f KB vertex data, %.1f KB index data per frame\n",
@@ -1742,6 +1791,13 @@ void QGL_DiagnosticsRecordVertexUpload( uint32_t vertices, uint32_t vertexBytes,
 	gPerformance.frameVertices += vertices;
 	gPerformance.frameVertexBytes += vertexBytes;
 	gPerformance.frameIndexBytes += indexBytes;
+}
+
+void QGL_DiagnosticsRecordFramebufferCopy( int width, int height )
+{
+	++gPerformance.frameCopies;
+	if (width > 0 && height > 0)
+		gPerformance.frameCopyPixels += static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
 }
 
 QGLDrawTimer::QGLDrawTimer() : m_start( 0 )
