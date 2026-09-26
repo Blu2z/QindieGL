@@ -95,7 +95,18 @@ bool Harness_Init( const char *dllPath, int width, int height, std::string &erro
 		!LoadExport(gl.Ortho, "glOrtho", error) ||
 		!LoadExport(gl.DepthMask, "glDepthMask", error) ||
 		!LoadExport(gl.TexGeni, "glTexGeni", error) ||
-		!LoadExport(gl.TexGenfv, "glTexGenfv", error))
+		!LoadExport(gl.TexGenfv, "glTexGenfv", error) ||
+		!LoadExport(gl.CopyTexSubImage2D, "glCopyTexSubImage2D", error) ||
+		!LoadExport(gl.TexImage1D, "glTexImage1D", error) ||
+		!LoadExport(gl.TexEnvi, "glTexEnvi", error) ||
+		!LoadExport(gl.Color4f, "glColor4f", error) ||
+		!LoadExport(gl.BlendFunc, "glBlendFunc", error) ||
+		!LoadExport(gl.AlphaFunc, "glAlphaFunc", error) ||
+		!LoadExport(gl.DepthFunc, "glDepthFunc", error) ||
+		!LoadExport(gl.PolygonOffset, "glPolygonOffset", error) ||
+		!LoadExport(gl.Frustum, "glFrustum", error) ||
+		!LoadExport(gl.Translatef, "glTranslatef", error) ||
+		!LoadExport(gl.Scalef, "glScalef", error))
 		return false;
 
 	WNDCLASSA windowClass = {};

@@ -40,9 +40,11 @@ static void TrVertexFunc_Copy( const GLfloat *vertex, float *output )
 	memcpy( output, vertex, sizeof(GLfloat)*4 );
 }
 
+// Eye-linear planes dot the homogeneous eye coordinates, w included: a plane's
+// fourth component (and a Q plane of (0, 0, 0, 1)) reads the eye-space w.
 static void TrVertexFunc_TransformByModelview( const GLfloat *vertex, float *output )
 {
-	D3DXVec3TransformCoord((D3DXVECTOR3*)output, (D3DXVECTOR3*)vertex, D3DGlobal.modelviewMatrixStack->top());
+	D3DXVec4Transform((D3DXVECTOR4*)output, (const D3DXVECTOR4*)vertex, D3DGlobal.modelviewMatrixStack->top());
 }
 
 static void TrVertexFunc_TransformByModelviewAndNormalize( const GLfloat *vertex, float *output )
