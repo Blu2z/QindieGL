@@ -450,6 +450,7 @@ void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords,
 
 void D3DVABuffer :: Lock( GLint first, GLint last )
 {
+	QGLSectionTimer vertexTimer(QGL_PERF_VERTICES);
 	float defaultNormal[3] = { 0, 0, 1 };
 	float vertexData[4];
 	float normalData[3];
@@ -627,6 +628,7 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	} while (0);
 FAST_PATH_CHECK_ABORT:
 
+	QGL_DiagnosticsRecordVertexPath(qualify_for_fast_path, fast_path_abort_reason);
 	if (qualify_for_fast_path)
 	{
 		//Fast path
@@ -1023,6 +1025,7 @@ void D3DVABuffer :: DrawPrimitive()
 {
 	if (!m_primitiveIndexCount || !m_lockCount) 
 		return;
+	QGLSectionTimer submitTimer(QGL_PERF_SUBMIT);
 	QGL_DiagnosticsRecordVertexUpload(static_cast<uint32_t>(m_lockCount),
 		static_cast<uint32_t>(m_lockCount) * static_cast<uint32_t>(m_vertexSize) * static_cast<uint32_t>(sizeof(float)),
 		static_cast<uint32_t>(m_primitiveIndexCount) * static_cast<uint32_t>(m_indexSize));
@@ -1663,6 +1666,7 @@ static void internal_DrawElements( const char *api, GLenum mode, GLuint start, G
 
 OPENGL_API void WINAPI glDrawArrays( GLenum mode, GLint first, GLsizei count )
 {
+	QGLDrawTimer drawTimer;
 	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
@@ -1670,6 +1674,7 @@ OPENGL_API void WINAPI glDrawArrays( GLenum mode, GLint first, GLsizei count )
 }
 OPENGL_API void WINAPI glDrawElements( GLenum mode, GLsizei count, GLenum type, const GLvoid *indices )
 {
+	QGLDrawTimer drawTimer;
 	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
@@ -1678,6 +1683,7 @@ OPENGL_API void WINAPI glDrawElements( GLenum mode, GLsizei count, GLenum type, 
 
 OPENGL_API void WINAPI glDrawRangeElements( GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices )
 {
+	QGLDrawTimer drawTimer;
 	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
@@ -1686,6 +1692,7 @@ OPENGL_API void WINAPI glDrawRangeElements( GLenum mode, GLuint start, GLuint en
 
 OPENGL_API void WINAPI glMultiDrawArrays( GLenum mode, const GLint *first, const GLsizei *count, GLsizei primcount )
 {
+	QGLDrawTimer drawTimer;
 	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();
@@ -1695,6 +1702,7 @@ OPENGL_API void WINAPI glMultiDrawArrays( GLenum mode, const GLint *first, const
 
 OPENGL_API void WINAPI glMultiDrawElements( GLenum mode, GLsizei *count, GLenum type, const GLvoid **indices, GLsizei primcount )
 {
+	QGLDrawTimer drawTimer;
 	if ( D3DGlobal.deviceLost ) return;
 	D3DState_Check();
 	D3DState_AssureBeginScene();

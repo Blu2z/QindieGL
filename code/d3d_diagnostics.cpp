@@ -69,6 +69,10 @@ namespace {
 		int64_t presentStart;
 		int drawTimerDepth;
 		int64_t frameDrawTicks;
+		int64_t frameSectionTicks[QGL_PERF_SECTIONS];
+		double sectionMsSum[QGL_PERF_SECTIONS];
+		uint64_t fastPathLocks;
+		uint64_t slowPathLocks;
 		uint64_t frameVertices;
 		uint64_t frameVertexBytes;
 		uint64_t frameIndexBytes;
@@ -81,6 +85,7 @@ namespace {
 		uint32_t histogram[kFrameHistogramBuckets];
 	};
 	static PerformanceState gPerformance = {};
+	static std::map<int, uint64_t> gSlowPathReasons;
 
 	int64_t PerformanceNow()
 	{
@@ -112,6 +117,8 @@ namespace {
 			gPerformance.drawMsSum += drawMs;
 			gPerformance.drawMsMax = std::max(gPerformance.drawMsMax, drawMs);
 			gPerformance.presentMsSum += presentMs;
+			for (int section = 0; section < QGL_PERF_SECTIONS; ++section)
+				gPerformance.sectionMsSum[section] += TicksToMs(gPerformance.frameSectionTicks[section]);
 			gPerformance.drawsSum += draws;
 			gPerformance.drawsMax = std::max(gPerformance.drawsMax, draws);
 			gPerformance.verticesSum += gPerformance.frameVertices;
@@ -122,6 +129,7 @@ namespace {
 		gPerformance.lastFrameEnd = now;
 		gPerformance.presentStart = 0;
 		gPerformance.frameDrawTicks = 0;
+		memset(gPerformance.frameSectionTicks, 0, sizeof(gPerformance.frameSectionTicks));
 		gPerformance.frameVertices = 0;
 		gPerformance.frameVertexBytes = 0;
 		gPerformance.frameIndexBytes = 0;
@@ -150,6 +158,22 @@ namespace {
 			FramePercentileMs(0.95), FramePercentileMs(0.99), gPerformance.frameMsMax);
 		logPrintf("  Inside QindieGL draw calls: avg %.2f ms/frame (%.0f%% of frame time), max %.2f ms\n",
 			drawMs, frameMs > 0.0 ? 100.0 * drawMs / frameMs : 0.0, gPerformance.drawMsMax);
+		const double stateMs = gPerformance.sectionMsSum[QGL_PERF_STATE] / frames;
+		const double verticesMs = gPerformance.sectionMsSum[QGL_PERF_VERTICES] / frames;
+		const double submitMs = gPerformance.sectionMsSum[QGL_PERF_SUBMIT] / frames;
+		logPrintf("    state application %.2f ms, vertex conversion/upload %.2f ms, DrawIndexedPrimitive %.2f ms, other %.2f ms\n",
+			stateMs, verticesMs, submitMs, std::max(0.0, drawMs - stateMs - verticesMs - submitMs));
+		const uint64_t locks = gPerformance.fastPathLocks + gPerformance.slowPathLocks;
+		logPrintf("    vertex copy path (all frames): fast %llu, slow %llu (%.0f%% slow)\n",
+			static_cast<unsigned long long>(gPerformance.fastPathLocks),
+			static_cast<unsigned long long>(gPerformance.slowPathLocks),
+			locks ? 100.0 * gPerformance.slowPathLocks / locks : 0.0);
+		std::vector<std::pair<uint64_t, int>> reasons;
+		for (const auto &reason : gSlowPathReasons) reasons.emplace_back(reason.second, reason.first);
+		std::sort(reasons.rbegin(), reasons.rend());
+		for (size_t i = 0; i < reasons.size() && i < 6; ++i)
+			logPrintf("      slow because of d3d_array.cpp:%d: %llu\n", reasons[i].second,
+				static_cast<unsigned long long>(reasons[i].first));
 		logPrintf("  Present: avg %.2f ms/frame\n", gPerformance.presentMsSum / frames);
 		logPrintf("  Draw calls: avg %.0f/frame, max %llu\n", static_cast<double>(gPerformance.drawsSum) / frames,
 			static_cast<unsigned long long>(gPerformance.drawsMax));
@@ -1198,6 +1222,25 @@ QGLDrawTimer::~QGLDrawTimer()
 {
 	if (--gPerformance.drawTimerDepth == 0 && m_start)
 		gPerformance.frameDrawTicks += PerformanceNow() - m_start;
+}
+
+QGLSectionTimer::QGLSectionTimer( QGLPerfSection section ) : m_section( section ), m_start( PerformanceNow() )
+{
+}
+
+QGLSectionTimer::~QGLSectionTimer()
+{
+	gPerformance.frameSectionTicks[m_section] += PerformanceNow() - m_start;
+}
+
+void QGL_DiagnosticsRecordVertexPath( bool fastPath, int abortLine )
+{
+	if (fastPath) {
+		++gPerformance.fastPathLocks;
+	} else {
+		++gPerformance.slowPathLocks;
+		++gSlowPathReasons[abortLine];
+	}
 }
 
 void QGL_DiagnosticsRecordProgramOp( char op, unsigned int target, unsigned int program,
