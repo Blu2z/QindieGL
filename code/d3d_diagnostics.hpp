@@ -66,6 +66,28 @@ private:
 	int64_t m_start;
 };
 
+// Sections of the draw path reported separately in the session summary.
+enum QGLPerfSection
+{
+	QGL_PERF_STATE,		// D3DState_Check: deferred state application
+	QGL_PERF_VERTICES,	// D3DVABuffer::Lock: array conversion and upload
+	QGL_PERF_SUBMIT,	// D3DVABuffer::DrawPrimitive: DrawIndexedPrimitive
+	QGL_PERF_SECTIONS
+};
+
+class QGLSectionTimer
+{
+public:
+	explicit QGLSectionTimer( QGLPerfSection section );
+	~QGLSectionTimer();
+private:
+	QGLPerfSection m_section;
+	int64_t m_start;
+};
+
+// abortLine is the d3d_array.cpp line that rejected the fast copy path.
+void QGL_DiagnosticsRecordVertexPath( bool fastPath, int abortLine );
+
 // YAE Phase F program/modelview history, dumped by the program-fog probe.
 // op: 'B' bind program, 'L' local parameter write, 'E'/'e' enable/disable
 // program target, 'M' modelview operation (index = operation), 'D' draw.

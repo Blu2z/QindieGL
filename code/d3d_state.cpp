@@ -634,6 +634,7 @@ void D3DState_SetTexture()
 
 void D3DState_Check()
 {
+	QGLSectionTimer stateTimer(QGL_PERF_STATE);
 	//check state for modifications and apply them
 	//this is actually needed before any draw commands (glBegin, glDrawArrays etc.)
 	D3DState_SetTransform();
