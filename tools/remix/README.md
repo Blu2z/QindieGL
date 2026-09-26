@@ -55,11 +55,12 @@ Only these parts are copied next to `YOU_ARE_EMPTY.EXE`:
 `d3d8to9.dll` (Direct3D 8 games) and `NvRemixLauncher32.exe` (injection for
 games that do not load `d3d9.dll` from their directory) are not needed.
 
-Remix opens its menu with Alt+X. The documented `bridge.conf` places the
-bridge client log (`d3d9.log`) next to the game executable and the bridge
-server log in `.trex\`; both are overwritten at each launch. Without
-`bridge.conf`, `dxvk.conf` and `rtx.conf` the runtime uses its defaults;
-`rtx.conf` appears when settings are saved from the Remix menu.
+Remix opens its menu with Alt+X. Remix 1.5.2 writes its logs to
+`rtx-remix\logs\` in the game directory: `bridge32.log` (bridge client),
+`bridge64.log` (bridge server) and `remix-dxvk.log` (renderer), all
+overwritten at each launch. A server crash leaves
+`.trex\NvRemixBridge.exe_<date>_<time>.dmp`. Without `bridge.conf`,
+`dxvk.conf` and `rtx.conf` the runtime uses its defaults.
 
 ## Builds
 
@@ -89,3 +90,46 @@ In `[game.game]` and `[game.YOU_ARE_EMPTY]` of `QindieGL.ini`:
   allowed and restores the game's pin afterwards (`[REMIX]` lines in
   `QindieGL.log`). Check with Task Manager (Details, Set affinity) that
   `NvRemixBridge.exe` may use every CPU.
+
+## DS2 settings for Remix
+
+DS2's model shadows must be off for Remix runs. In
+`config_user\startup_autorun.cmd` (DS2 writes it back at exit):
+
+```
+set r_mdl_fake_shadows                 0
+set r_mdl_shadows                      0
+```
+
+With shadows on, each frame starts by drawing shadow-caster silhouettes with
+an orthographic light view and depth writes off into a 512x512 corner of the
+back buffer. Remix treats such draws as UI (`isRenderingUI` in
+`d3d9_rtx.cpp`) and ray traces the frame at the first one, before the world
+is drawn, so those frames show the rasterized image: the picture flickers
+between that and the ray-traced frame. The shadow receivers also draw the
+world a second time with a projected texture, which Remix does not support.
+Remix computes its own shadows. Turn the shadows back on for comparisons
+without Remix.
+
+## Remix settings
+
+`tools/remix/rtx.conf` holds the Remix options for You Are Empty; copy it
+into the game directory. The bridge server inherits the game's working
+directory, where Remix looks for `rtx.conf` and `user.conf`. Saving settings
+from the Remix menu rewrites `rtx.conf` without its comments; copy new
+entries such as texture tags back here. The file explains each option; the
+two that matter most:
+
+- `rtx.dlfg.enable = False`: with DLSS frame generation, which Remix enables
+  by default on GPUs that support it, the first level load crashed the
+  server in the NVIDIA driver (`vkQueueSubmit`); runs without it did not.
+- `rtx.lightConversionMaxIntensity`: DS2 lights its models with GL lights
+  that have no attenuation, and QindieGL passes their unlimited range as
+  D3D9 `Range = sqrtf(FLT_MAX)`. Remix sizes a converted light to reach its
+  range, so without the cap every lamp is about 1e38 bright and the picture
+  is white.
+
+Decals (blood, dirt) are drawn with multiply blending over the world. Remix
+needs their textures in `rtx.decalTextures`, or they become transparent
+holes: Alt+X, Developer Settings Menu, Game Setup, Step 1: Categorize
+Textures, then click the decal in the game and tick Decal Texture.
