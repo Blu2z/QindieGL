@@ -97,6 +97,7 @@ bool Harness_Init( const char *dllPath, int width, int height, std::string &erro
 		!LoadExport(gl.TexGeni, "glTexGeni", error) ||
 		!LoadExport(gl.TexGenfv, "glTexGenfv", error) ||
 		!LoadExport(gl.CopyTexSubImage2D, "glCopyTexSubImage2D", error) ||
+		!LoadExport(gl.TexSubImage2D, "glTexSubImage2D", error) ||
 		!LoadExport(gl.TexImage1D, "glTexImage1D", error) ||
 		!LoadExport(gl.TexEnvi, "glTexEnvi", error) ||
 		!LoadExport(gl.Color4f, "glColor4f", error) ||

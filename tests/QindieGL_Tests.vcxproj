@@ -123,6 +123,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="framebuffer_copy_tests.cpp" />
     <ClCompile Include="gl_harness.cpp" />
     <ClCompile Include="lighting_tests.cpp" />
     <ClCompile Include="texgen.cpp" />

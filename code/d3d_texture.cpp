@@ -26,6 +26,7 @@
 #include "d3d_texture.hpp"
 #include "d3d_pixels.hpp"
 #include "d3d_lists.hpp"
+#include <set>
 
 //==================================================================================
 // Texturing
@@ -42,6 +43,8 @@ namespace {
 	uint64_t gD3DTextureCreates = 0;
 	uint64_t gD3DTextureReleases = 0;
 	unsigned int gD3DTextureLiveResources = 0;
+	// Textures currently held as render targets (framebuffer copy targets).
+	std::set<D3DTextureObject*> gRenderTargetTextures;
 
 	uint64_t D3DTex_LevelBytes( D3DFORMAT format, UINT width, UINT height, UINT depth )
 	{
@@ -153,6 +156,7 @@ D3DTextureObject :: D3DTextureObject( GLuint gl_index )
 	m_lodBias = 0;
 	m_glIndex = gl_index;
 	m_estimatedBytes = 0;
+	m_renderTarget = false;
 }
 
 D3DTextureObject :: ~D3DTextureObject()
@@ -374,6 +378,10 @@ static D3DFORMAT D3DTex_SelectDepthFormat(GLint internalformat)
 
 void D3DTextureObject :: FreeD3DTexture()
 {
+	if (m_renderTarget) {
+		gRenderTargetTextures.erase(this);
+		m_renderTarget = false;
+	}
 	if (m_pD3DTexture) {
 		if (m_target == GL_TEXTURE_3D_EXT) {
 			//logPrintf("FreeD3DTexture: %i x %i x %i x %s\n", m_width, m_height, m_depth, D3DGlobal_FormatToString(m_format) );
@@ -461,6 +469,8 @@ HRESULT D3DTextureObject :: CreateD3DTexture( GLenum target, GLsizei width, GLsi
 
 HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 {
+	if (FAILED(DemoteRenderTarget()))	// the code below locks or reads the texture
+		return E_FAIL;
 	if (!m_pD3DBaseTexture) return E_FAIL;
 	if (m_mipmaps == mipmaps) return S_OK;
 	const uint64_t oldEstimatedBytes = m_estimatedBytes;
@@ -591,6 +601,8 @@ HRESULT D3DTextureObject :: RecreateD3DTexture( GLboolean mipmaps )
 
 HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	if (FAILED(DemoteRenderTarget()))	// the code below locks or reads the texture
+		return E_FAIL;
 	if (!m_pD3DBaseTexture)
 		return E_INVALID_OPERATION;
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048)) {
@@ -772,6 +784,8 @@ HRESULT D3DTextureObject :: FillTextureLevel( GLint cubeface, GLint level, GLint
 
 HRESULT D3DTextureObject :: FillTextureSubLevel( GLint cubeface, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels )
 {
+	if (FAILED(DemoteRenderTarget()))	// the code below locks or reads the texture
+		return E_FAIL;
 	static int yaeLargeSubImageLogs = 0;
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048) &&
 		yaeLargeSubImageLogs++ < 64) {
@@ -861,6 +875,265 @@ HRESULT D3DTextureObject :: FillTextureSubLevel( GLint cubeface, GLint level, GL
 	return hr;
 }
 
+//---------------------------------------------------
+// Framebuffer copies on the GPU (see D3DTex_ReleaseRenderTargets)
+//---------------------------------------------------
+
+namespace {
+	LPDIRECT3DTEXTURE9 gCopyScratch = nullptr;		// render target the region is copied into first
+	UINT gCopyScratchWidth = 0;
+	UINT gCopyScratchHeight = 0;
+	D3DFORMAT gCopyScratchFormat = D3DFMT_UNKNOWN;
+	LPDIRECT3DSTATEBLOCK9 gCopyStateBlock = nullptr;	// device state around the flipping quad
+
+	bool D3DTex_CanRenderTo( D3DFORMAT format )
+	{
+		if ( format != D3DFMT_A8R8G8B8 && format != D3DFMT_X8R8G8B8 )
+			return false;
+		static int supported[2] = { -1, -1 };
+		int &entry = supported[format == D3DFMT_X8R8G8B8 ? 1 : 0];
+		if ( entry < 0 ) {
+			entry = SUCCEEDED( D3DGlobal.pD3D->CheckDeviceFormat( D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
+				D3DGlobal.hCurrentMode.Format, D3DUSAGE_RENDERTARGET, D3DRTYPE_TEXTURE, format ) ) ? 1 : 0;
+		}
+		return entry == 1;
+	}
+
+	void D3DTex_TrackCreated( LPDIRECT3DBASETEXTURE9 texture, GLenum target, uint64_t &estimatedBytes )
+	{
+		estimatedBytes = D3DTex_EstimateResourceBytes( texture, target );
+		gD3DTextureLiveBytes += estimatedBytes;
+		if ( gD3DTextureLiveBytes > gD3DTexturePeakBytes )
+			gD3DTexturePeakBytes = gD3DTextureLiveBytes;
+		++gD3DTextureLiveResources;
+		++gD3DTextureCreates;
+	}
+
+	// The D3D texture behind a GL texture changed: bindings must be re-applied.
+	void D3DTex_InvalidateBindings( const D3DTextureObject *texture )
+	{
+		for ( int unit = 0; unit < MAX_D3D_TMU; ++unit ) {
+			for ( int target = 0; target < D3D_TEXTARGET_MAX; ++target ) {
+				if ( D3DState.TextureState.currentTexture[unit][target] != texture )
+					continue;
+				D3DState.TextureState.textureChanged[unit][target] = TRUE;
+				D3DState.TextureState.textureStateChanged[unit] = TRUE;
+				D3DState.TextureState.textureSamplerStateChanged = TRUE;
+			}
+		}
+	}
+
+	struct CopyVertex { float x, y, z, rhw, u, v; };
+}
+
+HRESULT D3DTextureObject :: PromoteToRenderTarget()
+{
+	if ( m_renderTarget )
+		return S_OK;
+	if ( !m_pD3DTexture || m_target == GL_TEXTURE_3D_EXT || m_target == GL_TEXTURE_CUBE_MAP_ARB ||
+		m_autogenMipmaps || m_pD3DTexture->GetLevelCount() != 1 || !D3DTex_CanRenderTo( m_format ) )
+		return E_FAIL;
+
+	LPDIRECT3DTEXTURE9 texture = nullptr;
+	HRESULT hr = D3DGlobal.pDevice->CreateTexture( m_width, m_height, 1, D3DUSAGE_RENDERTARGET, m_format,
+		D3DPOOL_DEFAULT, &texture, nullptr );
+	if ( FAILED( hr ) )
+		return hr;
+	FreeD3DTexture();
+	m_pD3DTexture = texture;
+	m_renderTarget = true;
+	gRenderTargetTextures.insert( this );
+	D3DTex_TrackCreated( m_pD3DBaseTexture, m_target, m_estimatedBytes );
+	D3DTex_InvalidateBindings( this );
+	PRINT_ONCE( "Framebuffer copies into whole textures run on the GPU (render-target textures).\n" );
+	return S_OK;
+}
+
+HRESULT D3DTextureObject :: DemoteRenderTarget()
+{
+	if ( !m_renderTarget )
+		return S_OK;
+
+	LPDIRECT3DTEXTURE9 managed = nullptr;
+	HRESULT hr = D3DGlobal.pDevice->CreateTexture( m_width, m_height, 1, 0, m_format, D3DPOOL_MANAGED, &managed, nullptr );
+	if ( FAILED( hr ) )
+		return hr;
+
+	// Keep the content (render target -> system memory -> managed texture). On
+	// a lost device the content is undefined, as after a GL context loss.
+	LPDIRECT3DSURFACE9 source = nullptr;
+	LPDIRECT3DSURFACE9 readback = nullptr;
+	if ( SUCCEEDED( m_pD3DTexture->GetSurfaceLevel( 0, &source ) ) &&
+		SUCCEEDED( D3DGlobal.pDevice->CreateOffscreenPlainSurface( m_width, m_height, m_format,
+			D3DPOOL_SYSTEMMEM, &readback, nullptr ) ) &&
+		SUCCEEDED( D3DGlobal.pDevice->GetRenderTargetData( source, readback ) ) ) {
+		D3DLOCKED_RECT from, to;
+		if ( SUCCEEDED( readback->LockRect( &from, nullptr, D3DLOCK_READONLY ) ) ) {
+			if ( SUCCEEDED( managed->LockRect( 0, &to, nullptr, 0 ) ) ) {
+				for ( GLsizei row = 0; row < m_height; ++row )
+					memcpy( (BYTE*)to.pBits + row * to.Pitch, (const BYTE*)from.pBits + row * from.Pitch, m_width * 4 );
+				managed->UnlockRect( 0 );
+			}
+			readback->UnlockRect();
+		}
+	}
+	if ( readback ) readback->Release();
+	if ( source ) source->Release();
+
+	FreeD3DTexture();
+	m_pD3DTexture = managed;
+	D3DTex_TrackCreated( m_pD3DBaseTexture, m_target, m_estimatedBytes );
+	D3DTex_InvalidateBindings( this );
+	return S_OK;
+}
+
+// Copies the GL framebuffer rectangle (x, y, width, height) to (xoffset,
+// yoffset) of this render-target texture. GL row r of a texture is D3D row r
+// and the framebuffer's bottom row is the render target's last row, so the
+// region is flipped: StretchRect into a scratch texture, then a quad samples
+// it upside down into this texture.
+HRESULT D3DTextureObject :: CopyFramebufferOnGPU( GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height )
+{
+	LPDIRECT3DDEVICE9 device = D3DGlobal.pDevice;
+	LPDIRECT3DSURFACE9 renderTarget = nullptr;
+	HRESULT hr = device->GetRenderTarget( 0, &renderTarget );
+	if ( FAILED( hr ) )
+		return hr;
+	D3DSURFACE_DESC targetDesc;
+	renderTarget->GetDesc( &targetDesc );
+	if ( x < 0 || y < 0 || width <= 0 || height <= 0 ||
+		static_cast<UINT>( x + width ) > targetDesc.Width || static_cast<UINT>( y + height ) > targetDesc.Height ) {
+		renderTarget->Release();
+		return E_INVALIDARG;
+	}
+
+	if ( !gCopyScratch || gCopyScratchWidth < static_cast<UINT>( width ) ||
+		gCopyScratchHeight < static_cast<UINT>( height ) || gCopyScratchFormat != targetDesc.Format ) {
+		if ( gCopyScratch ) {
+			gCopyScratch->Release();
+			gCopyScratch = nullptr;
+		}
+		const UINT scratchWidth = QINDIEGL_MAX( targetDesc.Width, static_cast<UINT>( width ) );
+		const UINT scratchHeight = QINDIEGL_MAX( targetDesc.Height, static_cast<UINT>( height ) );
+		hr = device->CreateTexture( scratchWidth, scratchHeight, 1, D3DUSAGE_RENDERTARGET, targetDesc.Format,
+			D3DPOOL_DEFAULT, &gCopyScratch, nullptr );
+		if ( FAILED( hr ) ) {
+			gCopyScratch = nullptr;
+			renderTarget->Release();
+			return hr;
+		}
+		gCopyScratchWidth = scratchWidth;
+		gCopyScratchHeight = scratchHeight;
+		gCopyScratchFormat = targetDesc.Format;
+	}
+	if ( !gCopyStateBlock ) {
+		hr = device->CreateStateBlock( D3DSBT_ALL, &gCopyStateBlock );
+		if ( FAILED( hr ) ) {
+			gCopyStateBlock = nullptr;
+			renderTarget->Release();
+			return hr;
+		}
+	}
+
+	LPDIRECT3DSURFACE9 scratch = nullptr;
+	LPDIRECT3DSURFACE9 destination = nullptr;
+	gCopyScratch->GetSurfaceLevel( 0, &scratch );
+	m_pD3DTexture->GetSurfaceLevel( 0, &destination );
+	const RECT sourceRect = { x, static_cast<LONG>( targetDesc.Height ) - ( y + height ),
+		x + width, static_cast<LONG>( targetDesc.Height ) - y };
+	const RECT scratchRect = { 0, 0, width, height };
+	hr = device->StretchRect( renderTarget, &sourceRect, scratch, &scratchRect, D3DTEXF_NONE );
+
+	if ( SUCCEEDED( hr ) ) {
+		LPDIRECT3DSURFACE9 depthStencil = nullptr;
+		device->GetDepthStencilSurface( &depthStencil );	// none is fine
+		gCopyStateBlock->Capture();
+
+		device->SetRenderTarget( 0, destination );
+		device->SetDepthStencilSurface( nullptr );
+		const D3DVIEWPORT9 viewport = { 0, 0, static_cast<DWORD>( m_width ), static_cast<DWORD>( m_height ), 0.0f, 1.0f };
+		device->SetViewport( &viewport );
+		device->SetVertexShader( nullptr );
+		device->SetPixelShader( nullptr );
+		device->SetFVF( D3DFVF_XYZRHW | D3DFVF_TEX1 );
+		device->SetRenderState( D3DRS_ZENABLE, D3DZB_FALSE );
+		device->SetRenderState( D3DRS_ZWRITEENABLE, FALSE );
+		device->SetRenderState( D3DRS_ALPHABLENDENABLE, FALSE );
+		device->SetRenderState( D3DRS_ALPHATESTENABLE, FALSE );
+		device->SetRenderState( D3DRS_STENCILENABLE, FALSE );
+		device->SetRenderState( D3DRS_SCISSORTESTENABLE, FALSE );
+		device->SetRenderState( D3DRS_CULLMODE, D3DCULL_NONE );
+		device->SetRenderState( D3DRS_FOGENABLE, FALSE );
+		device->SetRenderState( D3DRS_LIGHTING, FALSE );
+		device->SetRenderState( D3DRS_SPECULARENABLE, FALSE );
+		device->SetRenderState( D3DRS_COLORWRITEENABLE, 0xF );
+		device->SetRenderState( D3DRS_SRGBWRITEENABLE, FALSE );
+		device->SetRenderState( D3DRS_CLIPPLANEENABLE, 0 );
+		device->SetTexture( 0, gCopyScratch );
+		device->SetTextureStageState( 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1 );
+		device->SetTextureStageState( 0, D3DTSS_COLORARG1, D3DTA_TEXTURE );
+		device->SetTextureStageState( 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1 );
+		device->SetTextureStageState( 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE );
+		device->SetTextureStageState( 0, D3DTSS_TEXCOORDINDEX, 0 );
+		device->SetTextureStageState( 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE );
+		device->SetTextureStageState( 1, D3DTSS_COLOROP, D3DTOP_DISABLE );
+		device->SetTextureStageState( 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE );
+		device->SetSamplerState( 0, D3DSAMP_MINFILTER, D3DTEXF_POINT );
+		device->SetSamplerState( 0, D3DSAMP_MAGFILTER, D3DTEXF_POINT );
+		device->SetSamplerState( 0, D3DSAMP_MIPFILTER, D3DTEXF_NONE );
+		device->SetSamplerState( 0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP );
+		device->SetSamplerState( 0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP );
+		device->SetSamplerState( 0, D3DSAMP_SRGBTEXTURE, FALSE );
+		device->SetSamplerState( 0, D3DSAMP_MIPMAPLODBIAS, 0 );
+		device->SetSamplerState( 0, D3DSAMP_MAXMIPLEVEL, 0 );
+
+		// Destination rows yoffset.. take scratch rows height-1 downwards.
+		const float left = xoffset - 0.5f, right = xoffset + width - 0.5f;
+		const float top = yoffset - 0.5f, bottom = yoffset + height - 0.5f;
+		const float u1 = static_cast<float>( width ) / gCopyScratchWidth;
+		const float v1 = static_cast<float>( height ) / gCopyScratchHeight;
+		const CopyVertex quad[4] = {
+			{ left, top, 0.0f, 1.0f, 0.0f, v1 },
+			{ right, top, 0.0f, 1.0f, u1, v1 },
+			{ left, bottom, 0.0f, 1.0f, 0.0f, 0.0f },
+			{ right, bottom, 0.0f, 1.0f, u1, 0.0f },
+		};
+		hr = device->DrawPrimitiveUP( D3DPT_TRIANGLESTRIP, 2, quad, sizeof( CopyVertex ) );
+
+		device->SetRenderTarget( 0, renderTarget );
+		device->SetDepthStencilSurface( depthStencil );
+		gCopyStateBlock->Apply();
+		if ( depthStencil ) depthStencil->Release();
+	}
+
+	if ( destination ) destination->Release();
+	if ( scratch ) scratch->Release();
+	renderTarget->Release();
+	return hr;
+}
+
+void D3DTex_ReleaseRenderTargets()
+{
+	// Demoting removes the texture from the set.
+	while ( !gRenderTargetTextures.empty() ) {
+		D3DTextureObject *texture = *gRenderTargetTextures.begin();
+		if ( FAILED( texture->DemoteRenderTarget() ) ) {
+			texture->FreeD3DTexture();
+			D3DTex_InvalidateBindings( texture );
+		}
+	}
+	if ( gCopyScratch ) {
+		gCopyScratch->Release();
+		gCopyScratch = nullptr;
+	}
+	gCopyScratchWidth = gCopyScratchHeight = 0;
+	gCopyScratchFormat = D3DFMT_UNKNOWN;
+	if ( gCopyStateBlock ) {
+		gCopyStateBlock->Release();
+		gCopyStateBlock = nullptr;
+	}
+}
+
 HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height )
 {
 	static int yaeLargeCopyLogs = 0;
@@ -878,6 +1151,21 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 		logPrintf("WARNING: CopyTextureSubLevel is not supported for 3D textures\n");
 		return E_FAIL;
 	}
+
+	// A copy replacing the whole level of a single-level 2D texture turns it
+	// into a render target; copies into a render-target texture stay on the GPU.
+	if (level == 0 && cubeface == 0 && m_target != GL_TEXTURE_CUBE_MAP_ARB) {
+		if (!m_renderTarget && xoffset == 0 && yoffset == 0 && width == m_width && height == m_height)
+			PromoteToRenderTarget();
+		if (m_renderTarget && xoffset >= 0 && yoffset >= 0 &&
+			xoffset + width <= m_width && yoffset + height <= m_height &&
+			SUCCEEDED(CopyFramebufferOnGPU(xoffset, yoffset, x, y, width, height)))
+			return S_OK;
+	}
+	// The read-back path below locks the texture.
+	hr = DemoteRenderTarget();
+	if (FAILED(hr))
+		return hr;
 
 	hr = D3DGlobal.pDevice->GetRenderTarget( 0, &lpRenderTarget );
 	if (FAILED(hr)) {
@@ -1019,6 +1307,8 @@ HRESULT D3DTextureObject :: CopyTextureSubLevel( GLint cubeface, GLint level, GL
 
 HRESULT D3DTextureObject :: FillCompressedTextureLevel( GLint cubeface, GLint level, GLint /*internalformat*/, GLsizei /*width*/, GLsizei /*height*/, GLsizei /*depth*/, GLsizei imageSize, const GLvoid *pixels )
 {
+	if (FAILED(DemoteRenderTarget()))	// the code below locks or reads the texture
+		return E_FAIL;
 	if (!m_pD3DBaseTexture)
 		return E_INVALID_OPERATION;
 	if (D3DGlobal.settings.game.yaeFallbackCompatibility && (m_width >= 2048 || m_height >= 2048)) {
@@ -1073,6 +1363,8 @@ HRESULT D3DTextureObject :: FillCompressedTextureLevel( GLint cubeface, GLint le
 
 HRESULT D3DTextureObject :: GetTexImage( GLint cubeface, GLint level, GLenum format, GLenum type, GLvoid *pixels )
 {
+	if (FAILED(DemoteRenderTarget()))	// the code below locks or reads the texture
+		return E_FAIL;
 	HRESULT hr;
 	GLubyte *srcdata;
 	GLint pitch;
@@ -1132,6 +1424,8 @@ HRESULT D3DTextureObject :: GetTexImage( GLint cubeface, GLint level, GLenum for
 
 HRESULT D3DTextureObject :: DumpTexture()
 {
+	if (FAILED(DemoteRenderTarget()))	// the code below locks or reads the texture
+		return E_FAIL;
 	HRESULT hr;
 	GLubyte *srcdata;
 	GLint pitch;

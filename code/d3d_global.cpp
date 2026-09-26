@@ -155,6 +155,7 @@ static bool D3DGlobal_Reset()
 		D3DGlobal.pSystemMemFB = nullptr;
 	}
 
+	D3DTex_ReleaseRenderTargets();
 	D3DExtension_ReleaseQueryResources();
 	PBuffer_ReleaseResources();
 	// GetSwapChain adds a reference to the implicit swap chain.  D3D9 requires
@@ -313,6 +314,8 @@ void D3DGlobal_Cleanup( bool cleanupAll )
 		D3DGlobal.pSystemMemFB->Release();
 		D3DGlobal.pSystemMemFB = nullptr;
 	}
+	if (D3DGlobal.pDevice)
+		D3DTex_ReleaseRenderTargets();
 
 	if (D3DGlobal.pSwapChain) {
 		D3DGlobal.pSwapChain->Release();
