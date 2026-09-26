@@ -184,9 +184,15 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 		return 0;
 	}
 
+	const int arbTexCoordCount = ARB_GetRequiredVertexTexCoordCount();
 	const D3DXMATRIX *softwareTransforms[MAX_D3D_TMU] = {};
-	for ( int stage = 0; stage < D3DGlobal.maxActiveTMU; ++stage )
+	bool projectiveStages[MAX_D3D_TMU] = {};
+	const D3DXMATRIX *projectiveTransforms[MAX_D3D_TMU] = {};
+	for ( int stage = 0; stage < D3DGlobal.maxActiveTMU; ++stage ) {
 		softwareTransforms[stage] = D3DState_GetSoftwareTextureTransform( stage );
+		projectiveStages[stage] = D3DState_IsProjectiveTextureStage( stage );
+		projectiveTransforms[stage] = D3DState_GetProjectiveTextureTransform( stage );
+	}
 
 	for ( int i = 0; i < m_vertexCount; ++i ) {
 		if ( m_bXYZW == false ) /* D3DFVF_XYZ */ {
@@ -211,13 +217,20 @@ UINT D3DIMBuffer :: ReorderBufferToFVF( int fvf, int fvfsz )
 
 		for ( int j = 0; j < D3DGlobal.maxActiveTMU; ++j ) {
 			int numCoords = 4;
-			if ( D3DState.TextureState.transformEnabled == FALSE )
+			if ( D3DState.TextureState.transformEnabled == FALSE && !projectiveStages[j] &&
+				!( j >= arbTexCoordCount && D3DState.EnableState.texGenEnabled[j] ) )
 			{
 				numCoords = (DWORD( D3DState.CurrentState.isSet.bits.texcoord ) >> (j * 2)) & 0x3;
 				numCoords++;
 			}
 			if ( m_samplerMask & ( 1 << j ) ) {
 				memcpy( dst, src->texCoord[j], sizeof(FLOAT)*numCoords );
+				if ( projectiveTransforms[j] && numCoords == 4 ) {
+					// Projective stage: the full texture matrix; D3D divides by q.
+					D3DXVECTOR4 transformed;
+					D3DXVec4Transform( &transformed, reinterpret_cast<const D3DXVECTOR4 *>( dst ), projectiveTransforms[j] );
+					memcpy( dst, &transformed, sizeof(FLOAT) * 4 );
+				}
 				const D3DXMATRIX *transform = softwareTransforms[j];
 				if ( transform && numCoords >= 2 ) {
 					const float s = dst[0];
@@ -326,6 +339,11 @@ void D3DIMBuffer :: End( bool recordDraw )
 			m_samplerMask |= ( 1 << i );
 			int numCoordsX = D3DState.TextureState.transformEnabled ? 3 :
 				(DWORD( D3DState.CurrentState.isSet.bits.texcoord ) >> (i * 2)) & 0x3;
+			// Projective and texgen stages carry all four coordinates (texgen fills
+			// them per vertex; see D3DState_IsProjectiveTextureStage).
+			if ( D3DState_IsProjectiveTextureStage( i ) ||
+				( i >= arbTexCoordCount && D3DState.EnableState.texGenEnabled[i] ) )
+				numCoordsX = 3;
 			switch ( numCoordsX )
 			{
 			case 0:
