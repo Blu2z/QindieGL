@@ -197,10 +197,10 @@ namespace {
 				const double avgFrame = gPerformance.intervalFrameMs / n;
 				const double *section = gPerformance.intervalSectionMs;
 				logPrintfLevel(QGL_LOG_INFO, "PERF",
-					"interval: %.0f fps, frame avg %.1f max %.1f ms; draw calls %.2f ms (state %.2f, vertices %.2f, DrawIndexedPrimitive %.2f), Present %.2f, texture uploads %.2f, framebuffer copies %.2f ms (%.1f/frame); %.0f draws, %.0f vertices per frame",
+					"interval: %.0f fps, frame avg %.1f max %.1f ms; draw calls %.2f ms (state %.2f, vertices %.2f, indices %.2f, DrawIndexedPrimitive %.2f), Present %.2f, texture uploads %.2f, framebuffer copies %.2f ms (%.1f/frame); %.0f draws, %.0f vertices per frame",
 					avgFrame > 0.0 ? 1000.0 / avgFrame : 0.0, avgFrame, gPerformance.intervalFrameMax,
 					gPerformance.intervalDrawMs / n, section[QGL_PERF_STATE] / n, section[QGL_PERF_VERTICES] / n,
-					section[QGL_PERF_SUBMIT] / n, gPerformance.intervalPresentMs / n,
+					section[QGL_PERF_INDICES] / n, section[QGL_PERF_SUBMIT] / n, gPerformance.intervalPresentMs / n,
 					section[QGL_PERF_TEXTURE_UPLOAD] / n, section[QGL_PERF_FRAMEBUFFER_COPY] / n,
 					gPerformance.intervalCopies / n, gPerformance.intervalDraws / n, gPerformance.intervalVertices / n);
 				gPerformance.intervalFrames = 0;
@@ -246,11 +246,12 @@ namespace {
 			drawMs, frameMs > 0.0 ? 100.0 * drawMs / frameMs : 0.0, gPerformance.drawMsMax);
 		const double stateMs = gPerformance.sectionMsSum[QGL_PERF_STATE] / frames;
 		const double verticesMs = gPerformance.sectionMsSum[QGL_PERF_VERTICES] / frames;
+		const double indicesMs = gPerformance.sectionMsSum[QGL_PERF_INDICES] / frames;
 		const double submitMs = gPerformance.sectionMsSum[QGL_PERF_SUBMIT] / frames;
 		const double diagnosticsMs = gPerformance.sectionMsSum[QGL_PERF_DIAGNOSTICS] / frames;
-		logPrintf("    state application %.2f ms, vertex conversion/upload %.2f ms, DrawIndexedPrimitive %.2f ms, diagnostics %.2f ms, other %.2f ms\n",
-			stateMs, verticesMs, submitMs, diagnosticsMs,
-			std::max(0.0, drawMs - stateMs - verticesMs - submitMs - diagnosticsMs));
+		logPrintf("    state application %.2f ms, vertex conversion/upload %.2f ms, index upload %.2f ms, DrawIndexedPrimitive %.2f ms, diagnostics %.2f ms, other %.2f ms\n",
+			stateMs, verticesMs, indicesMs, submitMs, diagnosticsMs,
+			std::max(0.0, drawMs - stateMs - verticesMs - indicesMs - submitMs - diagnosticsMs));
 		const uint64_t locks = gPerformance.fastPathLocks + gPerformance.slowPathLocks;
 		logPrintf("    vertex copy path (all frames): fast %llu, slow %llu (%.0f%% slow)\n",
 			static_cast<unsigned long long>(gPerformance.fastPathLocks),
@@ -1823,8 +1824,8 @@ QGLDrawTimer::~QGLDrawTimer()
 		for (int i = 0; i < QGL_PERF_SECTIONS; ++i)
 			section[i] = TicksToMs(gPerformance.frameSectionTicks[i] - m_sectionStart[i]);
 		logPrintfLevel(QGL_LOG_INFO, "PERF",
-			"slow draw %.1f ms (state %.1f, vertices %.1f, DrawIndexedPrimitive %.1f, diagnostics %.1f, texture upload %.1f): %s mode=0x%X count=%d textures(%s)",
-			TicksToMs(elapsed), section[QGL_PERF_STATE], section[QGL_PERF_VERTICES], section[QGL_PERF_SUBMIT],
+			"slow draw %.1f ms (state %.1f, vertices %.1f, indices %.1f, DrawIndexedPrimitive %.1f, diagnostics %.1f, texture upload %.1f): %s mode=0x%X count=%d textures(%s)",
+			TicksToMs(elapsed), section[QGL_PERF_STATE], section[QGL_PERF_VERTICES], section[QGL_PERF_INDICES], section[QGL_PERF_SUBMIT],
 			section[QGL_PERF_DIAGNOSTICS], section[QGL_PERF_TEXTURE_UPLOAD],
 			gLastDraw.api ? gLastDraw.api : "<unknown>", gLastDraw.mode, gLastDraw.count, textures);
 	}

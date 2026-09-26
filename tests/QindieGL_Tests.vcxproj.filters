@@ -33,6 +33,9 @@
     <ClCompile Include="shadow_receiver_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="streaming_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="texture_projection_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

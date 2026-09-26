@@ -269,139 +269,147 @@ static void D3DVA_CopyArrayToUBytes( const D3DVAInfo *pVAInfo, int index, GLubyt
 }
 
 //---------------------------------------------------
-// VA buffer uses a concept of "swap frames"
-// This means that each time we unlock a buffer,
-// an internal intex changes, so next time we will
-// lock another buffer. This will give D3D time to
-// complete rendering from other buffers and not to
-// wait when Lock is issued.
-// The maximum number of swap frames is arbitrary,
-// however low values will lower the fps, but high
-// values will consume a lot of memory.
+// Streaming rings (see D3DVABuffer in d3d_array.hpp).
+// The initial sizes hold a typical YAE frame; a draw
+// larger than a ring grows it.
 //---------------------------------------------------
 
-static const GLsizei VABuffer_VB_Grow_Size = 256;
-static const GLsizei VABuffer_IB_Grow_Size = 256;
+static const UINT VABuffer_VB_Initial_Bytes = 8u << 20;
+static const UINT VABuffer_IB_Initial_Bytes = 2u << 20;
+
+// Places size bytes, aligned to align, in a ring of capacity bytes (size <=
+// capacity): after offset while they fit, otherwise at the start, discarding
+// what the GPU may still read from the previous pass.
+static void VABuffer_Place( UINT capacity, UINT &offset, UINT size, UINT align, UINT &position, DWORD &flags )
+{
+	const UINT aligned = ( offset + align - 1 ) / align * align;
+	if ( aligned >= offset && aligned <= capacity - size ) {
+		position = aligned;
+		flags = aligned ? D3DLOCK_NOOVERWRITE : D3DLOCK_DISCARD;
+	} else {
+		position = 0;
+		flags = D3DLOCK_DISCARD;
+	}
+	offset = position + size;
+}
+
+static UINT VABuffer_GrowCapacity( UINT current, UINT initial, UINT required )
+{
+	UINT capacity = QINDIEGL_MAX( current, initial );
+	while ( capacity < required && capacity <= UINT_MAX / 2 )
+		capacity *= 2;
+	return QINDIEGL_MAX( capacity, required );
+}
 
 D3DVABuffer :: D3DVABuffer()
 {
+	m_pVertexBuffer = nullptr;
+	m_pIndexBuffer[0] = m_pIndexBuffer[1] = nullptr;
+	m_vbCapacity = m_vbOffset = 0;
+	m_ibCapacity[0] = m_ibCapacity[1] = 0;
+	m_ibOffset[0] = m_ibOffset[1] = 0;
 	m_vertexSize = 0;
 	m_indexSize = 0;
 	m_lockFirst = 0;
 	m_lockCount = 0;
-	m_swapFrame = 0;
-	for (int i = 0; i < c_MaxSwapFrame; ++i) {
-		m_pVertexBuffer[i] = nullptr;
-		m_pIndexBuffer[0][i] = nullptr;
-		m_pIndexBuffer[1][i] = nullptr;
-		m_vbAllocSize[i] = 0;
-		m_ibAllocSize[0][i] = 0;
-		m_ibAllocSize[1][i] = 0;
-	}
+	m_baseVertex = 0;
+	m_startIndex = 0;
+	m_primitiveType = GL_TRIANGLES;
+	m_primitiveIndexCount = 0;
 }
 
 D3DVABuffer :: ~D3DVABuffer()
 {
-	GLsizei vbSize = 0;
-	GLsizei ibSize = 0;
-
-	for (int i = 0; i < c_MaxSwapFrame; ++i) {
-		if (m_pVertexBuffer[i]) {
-			vbSize += m_vbAllocSize[i] * sizeof(GLfloat);
-			m_pVertexBuffer[i]->Release();
-		}
-		if (m_pIndexBuffer[0][i]) {
-			ibSize += m_ibAllocSize[0][i] * sizeof(GLushort);
-			m_pIndexBuffer[0][i]->Release();
-		}
-		if (m_pIndexBuffer[1][i]) {
-			ibSize += m_ibAllocSize[1][i] * sizeof(GLuint);
-			m_pIndexBuffer[1][i]->Release();
-		}
-	}
-
-	logPrintf("D3DVABuffer: %.2f kb vertex data, %.2f kb index data [%i swap frames]\n", vbSize / 1024.0f, ibSize / 1024.0f, c_MaxSwapFrame );
+	if (m_pVertexBuffer) m_pVertexBuffer->Release();
+	if (m_pIndexBuffer[0]) m_pIndexBuffer[0]->Release();
+	if (m_pIndexBuffer[1]) m_pIndexBuffer[1]->Release();
+	logPrintf("D3DVABuffer: %.2f kb vertex ring, %.2f kb 16-bit and %.2f kb 32-bit index rings\n",
+		m_vbCapacity / 1024.0f, m_ibCapacity[0] / 1024.0f, m_ibCapacity[1] / 1024.0f );
 }
 
-bool D3DVABuffer :: SetMinimumVertexBufferSize( int numVerts )
+GLfloat *D3DVABuffer :: LockVertices( GLsizei count )
 {
-	if (numVerts <= 0 || m_vertexSize <= 0 ||
-		numVerts > std::numeric_limits<GLsizei>::max() / m_vertexSize) {
+	const UINT stride = static_cast<UINT>(m_vertexSize) * sizeof(GLfloat);
+	if (count <= 0 || m_vertexSize <= 0 ||
+		static_cast<uint64_t>(count) * stride > UINT_MAX / 2) {
 		QGL_SET_ERROR(E_INVALIDARG);
-		return false;
+		return nullptr;
 	}
-	const GLsizei requiredFloats = numVerts * m_vertexSize;
-	if (m_vbAllocSize[m_swapFrame] >= requiredFloats)
-		return true;
+	const UINT bytes = static_cast<UINT>(count) * stride;
 
-	if (m_pVertexBuffer[m_swapFrame]) {
-		m_pVertexBuffer[m_swapFrame]->Release();
-		m_pVertexBuffer[m_swapFrame] = nullptr;
+	if (!m_pVertexBuffer || bytes > m_vbCapacity) {
+		if (m_pVertexBuffer) {
+			m_pVertexBuffer->Release();
+			m_pVertexBuffer = nullptr;
+		}
+		const UINT capacity = VABuffer_GrowCapacity( m_vbCapacity, VABuffer_VB_Initial_Bytes, bytes );
+		m_vbCapacity = 0;
+		m_vbOffset = 0;
+		HRESULT hr = D3DGlobal.pDevice->CreateVertexBuffer( capacity, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
+			0, D3DPOOL_DEFAULT, &m_pVertexBuffer, nullptr );
+		if (FAILED(hr)) {
+			m_pVertexBuffer = nullptr;
+			QGL_SET_ERROR(hr);
+			return nullptr;
+		}
+		m_vbCapacity = capacity;
 	}
 
-	const GLsizei allocatedVerts = QINDIEGL_MAX(VABuffer_VB_Grow_Size, numVerts);
-	if (allocatedVerts > std::numeric_limits<GLsizei>::max() / m_vertexSize ||
-		static_cast<size_t>(allocatedVerts) * static_cast<size_t>(m_vertexSize) >
-			std::numeric_limits<UINT>::max() / sizeof(GLfloat)) {
-		QGL_SET_ERROR(E_OUTOFMEMORY);
-		return false;
-	}
-	m_vbAllocSize[m_swapFrame] = allocatedVerts * m_vertexSize;
-	HRESULT hr = D3DGlobal.pDevice->CreateVertexBuffer( m_vbAllocSize[m_swapFrame] * sizeof(GLfloat), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 
-				 									    0, D3DPOOL_DEFAULT, &m_pVertexBuffer[m_swapFrame], nullptr );
-
+	UINT position = 0;
+	DWORD flags = 0;
+	VABuffer_Place( m_vbCapacity, m_vbOffset, bytes, stride, position, flags );
+	GLfloat *locked = nullptr;
+	HRESULT hr = m_pVertexBuffer->Lock( position, bytes, (void**)&locked, flags );
 	if (FAILED(hr)) {
-		m_pVertexBuffer[m_swapFrame] = nullptr;
-		m_vbAllocSize[m_swapFrame] = 0;
 		QGL_SET_ERROR(hr);
-		return false;
+		return nullptr;
 	}
-	return true;
+	m_baseVertex = position / stride;
+	return locked;
 }
 
-int D3DVABuffer :: SetMinimumIndexBufferSize( int numIndices, GLuint maximumIndex )
+int D3DVABuffer :: LockIndices( GLsizei numIndices, GLuint maximumIndex, GLvoid **locked )
 {
-	//select either 16-bit or 32-bit index buffer
-	int currentIndexBuffer = 0;
-	m_indexSize = 2;
 	// The index format is determined by the values stored in the buffer, not by
 	// how many of them this draw happens to contain.  A short draw into a large
 	// VBO can still reference vertices above 65535; truncating those values made
 	// unrelated vertices form intermittent screen-sized triangles in YAE.
-	if (maximumIndex > USHRT_MAX) {
-		++currentIndexBuffer;
-		m_indexSize += 2;
-	}
+	const int ring = maximumIndex > USHRT_MAX ? 1 : 0;
+	m_indexSize = ring ? 4 : 2;
 	if (numIndices <= 0 || numIndices > std::numeric_limits<GLsizei>::max() / m_indexSize) {
 		QGL_SET_ERROR(E_INVALIDARG);
 		return -1;
 	}
+	const UINT bytes = static_cast<UINT>(numIndices) * static_cast<UINT>(m_indexSize);
 
-	if (m_ibAllocSize[currentIndexBuffer][m_swapFrame] >= numIndices * m_indexSize)
-		return currentIndexBuffer;
-
-	if (m_pIndexBuffer[currentIndexBuffer][m_swapFrame]) {
-		m_pIndexBuffer[currentIndexBuffer][m_swapFrame]->Release();
-		m_pIndexBuffer[currentIndexBuffer][m_swapFrame] = nullptr;
+	if (!m_pIndexBuffer[ring] || bytes > m_ibCapacity[ring]) {
+		if (m_pIndexBuffer[ring]) {
+			m_pIndexBuffer[ring]->Release();
+			m_pIndexBuffer[ring] = nullptr;
+		}
+		const UINT capacity = VABuffer_GrowCapacity( m_ibCapacity[ring], VABuffer_IB_Initial_Bytes, bytes );
+		m_ibCapacity[ring] = 0;
+		m_ibOffset[ring] = 0;
+		HRESULT hr = D3DGlobal.pDevice->CreateIndexBuffer( capacity, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
+			ring ? D3DFMT_INDEX32 : D3DFMT_INDEX16, D3DPOOL_DEFAULT, &m_pIndexBuffer[ring], nullptr );
+		if (FAILED(hr)) {
+			m_pIndexBuffer[ring] = nullptr;
+			QGL_SET_ERROR(hr);
+			return -1;
+		}
+		m_ibCapacity[ring] = capacity;
 	}
 
-	const GLsizei allocatedIndices = QINDIEGL_MAX(VABuffer_IB_Grow_Size, numIndices);
-	if (allocatedIndices > std::numeric_limits<GLsizei>::max() / m_indexSize) {
-		QGL_SET_ERROR(E_OUTOFMEMORY);
+	UINT position = 0;
+	DWORD flags = 0;
+	VABuffer_Place( m_ibCapacity[ring], m_ibOffset[ring], bytes, static_cast<UINT>(m_indexSize), position, flags );
+	HRESULT hr = m_pIndexBuffer[ring]->Lock( position, bytes, locked, flags );
+	if (FAILED(hr)) {
+		QGL_SET_ERROR(hr);
 		return -1;
 	}
-	m_ibAllocSize[currentIndexBuffer][m_swapFrame] = allocatedIndices * m_indexSize;
-	HRESULT hr = D3DGlobal.pDevice->CreateIndexBuffer( m_ibAllocSize[currentIndexBuffer][m_swapFrame], D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 
-													   currentIndexBuffer ? D3DFMT_INDEX32 : D3DFMT_INDEX16,
-				 									   D3DPOOL_DEFAULT, &m_pIndexBuffer[currentIndexBuffer][m_swapFrame], nullptr );
-
-	if (FAILED(hr)) {
-		m_pIndexBuffer[currentIndexBuffer][m_swapFrame] = nullptr;
-		m_ibAllocSize[currentIndexBuffer][m_swapFrame] = 0;
-		QGL_SET_ERROR(hr);
-	}
-
-	return currentIndexBuffer;
+	m_startIndex = position / static_cast<UINT>(m_indexSize);
+	return ring;
 }
 
 void D3DVABuffer :: SetupTexCoords( const float *texcoords, int num_coords,
@@ -550,18 +558,11 @@ void D3DVABuffer :: Lock( GLint first, GLint last )
 	}
 	fvf |= (numSamplers << D3DFVF_TEXCOUNT_SHIFT);
 
-	//Check if vertex buffer has enough space
-	if (!SetMinimumVertexBufferSize(count) || !m_pVertexBuffer[m_swapFrame])
-		return;
-
 	//Lock vertex buffer
-	GLfloat *pLockedVertices = nullptr;
-	HRESULT hr = m_pVertexBuffer[m_swapFrame]->Lock( 0, count * m_vertexSize * sizeof(GLfloat), 
-													 (void**)&pLockedVertices, D3DLOCK_DISCARD );
-	if (FAILED(hr)) {
-		QGL_SET_ERROR(hr);
+	GLfloat *pLockedVertices = LockVertices( count );
+	if (!pLockedVertices)
 		return;
-	}
+	HRESULT hr;
 
 #define FAST_PATH_SAMPLERS 3
 	int fast_path_abort_reason = 0;
@@ -887,10 +888,10 @@ FAST_PATH_CHECK_ABORT:
 	}
 
 	//Unlock vertex buffer
-	m_pVertexBuffer[m_swapFrame]->Unlock();
+	m_pVertexBuffer->Unlock();
 
 	//Set stream source
-	hr = D3DGlobal.pDevice->SetStreamSource( 0, m_pVertexBuffer[m_swapFrame], 0, m_vertexSize * sizeof(GLfloat) );
+	hr = D3DGlobal.pDevice->SetStreamSource( 0, m_pVertexBuffer, 0, m_vertexSize * sizeof(GLfloat) );
 	if (FAILED(hr)) {
 		QGL_SET_ERROR(hr);
 		return;
@@ -914,10 +915,6 @@ void D3DVABuffer :: Unlock()
 
 	m_lockFirst = 0;
 	m_lockCount = 0;
-
-	++m_swapFrame;
-	if (m_swapFrame >= c_MaxSwapFrame)
-		m_swapFrame = 0;
 }
 
 template<typename T>
@@ -950,88 +947,86 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 	// past the actual VBO slice.  The index data is authoritative for this draw.
 	GLuint minVertexIndex = 0;
 	GLuint maxVertexIndex = count > 0 ? static_cast<GLuint>(count - 1) : 0;
-	if (indices && count > 0) {
-		minVertexIndex = UINT_MAX;
-		maxVertexIndex = 0;
-		for (GLsizei i = 0; i < count; ++i) {
-			const GLuint index = static_cast<GLuint>(indices[i]);
-			if (index < minVertexIndex) minVertexIndex = index;
-			if (index > maxVertexIndex) maxVertexIndex = index;
-		}
-	}
-	if (D3DGlobal.settings.game.yaeFallbackCompatibility && indices &&
-		(maxVertexIndex > USHRT_MAX || start != minVertexIndex || end != maxVertexIndex)) {
-		static unsigned int yaeIndexRangeLogs = 0;
-		if (yaeIndexRangeLogs++ < 32) {
-			logPrintfLevel(QGL_LOG_INFO, "YAE_INDEX_RANGE",
-				"count=%d advertised=%u..%u actual=%u..%u d3dIndexBits=%u",
-				count, start, end, minVertexIndex, maxVertexIndex,
-				maxVertexIndex > USHRT_MAX ? 32u : 16u);
-		}
-	}
-	if (maxVertexIndex > static_cast<GLuint>(std::numeric_limits<GLint>::max())) {
-		QGL_SET_ERROR(E_INVALIDARG);
-		m_primitiveIndexCount = 0;
-		return;
-	}
-
-	//Set index buffer size
-	int currentIndexBuffer = SetMinimumIndexBufferSize( m_primitiveIndexCount, maxVertexIndex );
-	if (currentIndexBuffer < 0) {
-		m_primitiveIndexCount = 0;
-		return;
-	}
-	if ( !m_pIndexBuffer[currentIndexBuffer][m_swapFrame] )
-		return;
-
-	//Lock index buffer
-	GLvoid *pLockedIndices = nullptr;
-	HRESULT hr = m_pIndexBuffer[currentIndexBuffer][m_swapFrame]->Lock( 0, m_primitiveIndexCount * m_indexSize, (void**)&pLockedIndices, D3DLOCK_DISCARD );
-	if (FAILED(hr)) {
-		QGL_SET_ERROR(hr);
-		return;
-	}
-
-	if (!indices) {
-		//Generate indices by ourselves
-		//Fill index buffer with data
-		GLuint dstIndex = 0;
-		for (GLsizei i = 0; i < count; ++i) {
-			if ((mode == GL_QUADS) && ((i % 4) == 3)) {
-				SetIndex(pLockedIndices, dstIndex, i-3);
-				SetIndex(pLockedIndices, dstIndex+1, i-1);
-				dstIndex+=2;
+	int currentIndexBuffer = -1;
+	{
+		QGLSectionTimer indexTimer(QGL_PERF_INDICES);
+		if (indices && count > 0) {
+			minVertexIndex = UINT_MAX;
+			maxVertexIndex = 0;
+			for (GLsizei i = 0; i < count; ++i) {
+				const GLuint index = static_cast<GLuint>(indices[i]);
+				if (index < minVertexIndex) minVertexIndex = index;
+				if (index > maxVertexIndex) maxVertexIndex = index;
 			}
-			//add index i
-			SetIndex(pLockedIndices, dstIndex, i);
-			++dstIndex;
 		}
-
-		if ( mode == GL_LINE_LOOP ) {
-			SetIndex(pLockedIndices, dstIndex, 0);
-		}
-	} else {
-		//Use provided index data
-		//Fill index buffer with data
-		GLuint dstIndex = 0;
-		for (GLsizei i = 0; i < count; ++i) {
-			if ((mode == GL_QUADS) && ((i % 4) == 3)) {
-				SetIndex<T>(pLockedIndices, dstIndex, indices[i-3]);
-				SetIndex<T>(pLockedIndices, dstIndex+1, indices[i-1]);
-				dstIndex+=2;
+		if (D3DGlobal.settings.game.yaeFallbackCompatibility && indices &&
+			(maxVertexIndex > USHRT_MAX || start != minVertexIndex || end != maxVertexIndex)) {
+			static unsigned int yaeIndexRangeLogs = 0;
+			if (yaeIndexRangeLogs++ < 32) {
+				logPrintfLevel(QGL_LOG_INFO, "YAE_INDEX_RANGE",
+					"count=%d advertised=%u..%u actual=%u..%u d3dIndexBits=%u",
+					count, start, end, minVertexIndex, maxVertexIndex,
+					maxVertexIndex > USHRT_MAX ? 32u : 16u);
 			}
-			//add index i
-			SetIndex<T>(pLockedIndices, dstIndex, indices[i]);
-			++dstIndex;
+		}
+		if (maxVertexIndex > static_cast<GLuint>(std::numeric_limits<GLint>::max())) {
+			QGL_SET_ERROR(E_INVALIDARG);
+			m_primitiveIndexCount = 0;
+			return;
 		}
 
-		if ( mode == GL_LINE_LOOP ) {
-			SetIndex<T>(pLockedIndices, dstIndex, indices[0]);
+		//Lock index buffer
+		GLvoid *pLockedIndices = nullptr;
+		currentIndexBuffer = LockIndices( m_primitiveIndexCount, maxVertexIndex, &pLockedIndices );
+		if (currentIndexBuffer < 0) {
+			m_primitiveIndexCount = 0;
+			return;
 		}
+
+		if (!indices) {
+			//Generate indices by ourselves
+			//Fill index buffer with data
+			GLuint dstIndex = 0;
+			for (GLsizei i = 0; i < count; ++i) {
+				if ((mode == GL_QUADS) && ((i % 4) == 3)) {
+					SetIndex(pLockedIndices, dstIndex, i-3);
+					SetIndex(pLockedIndices, dstIndex+1, i-1);
+					dstIndex+=2;
+				}
+				//add index i
+				SetIndex(pLockedIndices, dstIndex, i);
+				++dstIndex;
+			}
+
+			if ( mode == GL_LINE_LOOP ) {
+				SetIndex(pLockedIndices, dstIndex, 0);
+			}
+		} else if (mode != GL_QUADS && mode != GL_LINE_LOOP && sizeof(T) == static_cast<size_t>(m_indexSize)) {
+			// Same index type as the ring, no primitive conversion: copy as is.
+			memcpy(pLockedIndices, indices, sizeof(T) * static_cast<size_t>(count));
+		} else {
+			//Use provided index data
+			//Fill index buffer with data
+			GLuint dstIndex = 0;
+			for (GLsizei i = 0; i < count; ++i) {
+				if ((mode == GL_QUADS) && ((i % 4) == 3)) {
+					SetIndex<T>(pLockedIndices, dstIndex, indices[i-3]);
+					SetIndex<T>(pLockedIndices, dstIndex+1, indices[i-1]);
+					dstIndex+=2;
+				}
+				//add index i
+				SetIndex<T>(pLockedIndices, dstIndex, indices[i]);
+				++dstIndex;
+			}
+
+			if ( mode == GL_LINE_LOOP ) {
+				SetIndex<T>(pLockedIndices, dstIndex, indices[0]);
+			}
+		}
+
+		//Unlock index buffer
+		m_pIndexBuffer[currentIndexBuffer]->Unlock();
 	}
-
-	//Unlock index buffer
-	m_pIndexBuffer[currentIndexBuffer][m_swapFrame]->Unlock();
 
 	if (!m_lockCount) {
 		if (!indices)
@@ -1048,7 +1043,7 @@ void D3DVABuffer :: SetIndices( GLenum mode, GLuint start, GLuint end, GLsizei c
 		m_lockFirst = 0;	//our own indices are already offset
 
 	//Set indices
-	hr = D3DGlobal.pDevice->SetIndices( m_pIndexBuffer[currentIndexBuffer][m_swapFrame] );
+	HRESULT hr = D3DGlobal.pDevice->SetIndices( m_pIndexBuffer[currentIndexBuffer] );
 	if (FAILED(hr))
 		QGL_SET_ERROR(hr);
 }
@@ -1063,37 +1058,40 @@ void D3DVABuffer :: DrawPrimitive()
 		static_cast<uint32_t>(m_primitiveIndexCount) * static_cast<uint32_t>(m_indexSize));
 
 	HRESULT hr;
+	// The locked vertices start at ring vertex m_baseVertex and hold GL
+	// vertices m_lockFirst.. (index values are GL vertex numbers).
+	const INT baseVertexIndex = static_cast<INT>(m_baseVertex) - m_lockFirst;
 
 	switch (m_primitiveType)
 	{
 	case GL_LINES:
-		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_LINELIST, -m_lockFirst, 0, m_lockCount, 0, m_primitiveIndexCount / 2);
+		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_LINELIST, baseVertexIndex, m_lockFirst, m_lockCount, m_startIndex, m_primitiveIndexCount / 2);
 		break;
 
 	case GL_LINE_STRIP:
 	case GL_LINE_LOOP:
-		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_LINESTRIP, -m_lockFirst, 0, m_lockCount, 0, m_primitiveIndexCount - 1);
+		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_LINESTRIP, baseVertexIndex, m_lockFirst, m_lockCount, m_startIndex, m_primitiveIndexCount - 1);
 		break;
 
 	case GL_QUADS:
 		// quads are converted to triangles upon lock
 	case GL_TRIANGLES:
 		// D3DPT_TRIANGLELIST models GL_TRIANGLES when used for either a single triangle or multiple triangles
-		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, -m_lockFirst, 0, m_lockCount, 0, m_primitiveIndexCount / 3);
+		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, baseVertexIndex, m_lockFirst, m_lockCount, m_startIndex, m_primitiveIndexCount / 3);
 		break;
 
 	case GL_QUAD_STRIP:
 		// quadstrip is EXACT the same as tristrip
 	case GL_TRIANGLE_STRIP:
 		// regular tristrip
-		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, -m_lockFirst, 0, m_lockCount, 0, m_primitiveIndexCount - 2);
+		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, baseVertexIndex, m_lockFirst, m_lockCount, m_startIndex, m_primitiveIndexCount - 2);
 		break;
 
 	case GL_POLYGON:
 		// a GL_POLYGON has the same vertex layout and order as a trifan, and can be used interchangably in OpenGL
 	case GL_TRIANGLE_FAN:
 		// regular trifan
-		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLEFAN, -m_lockFirst, 0, m_lockCount, 0, m_primitiveIndexCount - 2);
+		hr = D3DGlobal.pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLEFAN, baseVertexIndex, m_lockFirst, m_lockCount, m_startIndex, m_primitiveIndexCount - 2);
 		break;
 		
 	default:
