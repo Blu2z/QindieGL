@@ -9,6 +9,7 @@
 #include "d3d_extension.hpp"
 #include "d3d_arb_program.hpp"
 #include "d3d_matrix_stack.hpp"
+#include "d3d_utils.hpp"
 
 #include <algorithm>
 #include <map>
@@ -1019,6 +1020,131 @@ namespace {
 			DumpProgramHistory(gYAEFogProbeRecords);
 	}
 
+	//----------------------------------------------------------------------
+	// Frame capture
+	//----------------------------------------------------------------------
+	struct CaptureState
+	{
+		int configuredFrame;	// DebugCaptureFrame, -1 = none
+		bool scrollLockDown;
+		bool active;
+		uint64_t frame;
+		FILE *file;
+		char directory[MAX_PATH];
+		std::set<GLuint> copiedTextures;
+		unsigned int copies;
+		unsigned int shots;
+		bool shotAfterDraw;
+	};
+	CaptureState gCapture = { -1, false, false, 0, nullptr, "", {}, 0, 0, false };
+	const unsigned int kCaptureMaxShots = 48;
+
+	HRESULT SaveRenderTargetPng( const char *path )
+	{
+		LPDIRECT3DSURFACE9 renderTarget = nullptr;
+		LPDIRECT3DSURFACE9 systemCopy = nullptr;
+		HRESULT result = D3DGlobal.pDevice->GetRenderTarget(0, &renderTarget);
+		if (SUCCEEDED(result) && renderTarget) {
+			D3DSURFACE_DESC desc = {};
+			result = renderTarget->GetDesc(&desc);
+			if (SUCCEEDED(result))
+				result = D3DGlobal.pDevice->CreateOffscreenPlainSurface(desc.Width, desc.Height,
+					desc.Format, D3DPOOL_SYSTEMMEM, &systemCopy, nullptr);
+			if (SUCCEEDED(result))
+				result = D3DGlobal.pDevice->GetRenderTargetData(renderTarget, systemCopy);
+			if (SUCCEEDED(result))
+				result = D3DXSaveSurfaceToFileA(path, D3DXIFF_PNG, systemCopy, nullptr, nullptr);
+		}
+		if (systemCopy) systemCopy->Release();
+		if (renderTarget) renderTarget->Release();
+		return result;
+	}
+
+	void CaptureShot( const char *name )
+	{
+		if (gCapture.shots >= kCaptureMaxShots) return;
+		++gCapture.shots;
+		char path[MAX_PATH];
+		sprintf_s(path, "%s\\%s.png", gCapture.directory, name);
+		const HRESULT result = SaveRenderTargetPng(path);
+		fprintf(gCapture.file, "  -> %s.png (0x%08X)\n", name, static_cast<unsigned int>(result));
+	}
+
+	void StartCapture( uint64_t frame, const char *trigger )
+	{
+		_mkdir("QindieGL-capture");
+		sprintf_s(gCapture.directory, "QindieGL-capture\\frame_%06llu", static_cast<unsigned long long>(frame));
+		_mkdir(gCapture.directory);
+		char path[MAX_PATH];
+		sprintf_s(path, "%s\\draws.txt", gCapture.directory);
+		if (fopen_s(&gCapture.file, path, "w") || !gCapture.file) {
+			gCapture.file = nullptr;
+			return;
+		}
+		gCapture.active = true;
+		gCapture.frame = frame;
+		gCapture.copiedTextures.clear();
+		gCapture.copies = 0;
+		gCapture.shots = 0;
+		gCapture.shotAfterDraw = false;
+		fprintf(gCapture.file, "QindieGL frame capture: frame %llu (%s)\n"
+			"Columns: draw api mode count | projection/hash depth(test/write/func) blend(src,dst) alpha(func,ref) cull stencil colorMask "
+			"lighting(mask) fog color arrays | per enabled texture unit: id target env texgen matrix\n\n",
+			static_cast<unsigned long long>(frame), trigger);
+		logPrintfLevel(QGL_LOG_INFO, "FRAME_CAPTURE", "capturing frame %llu (%s) into %s",
+			static_cast<unsigned long long>(frame), trigger, gCapture.directory);
+	}
+
+	void FinishCapture()
+	{
+		CaptureShot("final");
+		fprintf(gCapture.file, "\nEnd of frame %llu: %llu draws, %u framebuffer copies\n",
+			static_cast<unsigned long long>(gCapture.frame), static_cast<unsigned long long>(gDiagnostics.drawId),
+			gCapture.copies);
+		fclose(gCapture.file);
+		gCapture.file = nullptr;
+		gCapture.active = false;
+	}
+
+	void CaptureDraw( const char *api, unsigned int mode, int count )
+	{
+		const auto &enable = D3DState.EnableState;
+		const auto &color = D3DState.ColorBufferState;
+		unsigned int lightMask = 0;
+		for (int i = 0; i < IMPL_MAX_LIGHTS; ++i)
+			if (enable.lightEnabled[i]) lightMask |= 1u << i;
+		const bool ortho = D3DGlobal.projectionMatrixStack && D3DGlobal_IsOrthoProjection();
+		const uint32_t projectionHash = D3DGlobal.projectionMatrixStack ?
+			HashBytes(D3DGlobal.projectionMatrixStack->top(), sizeof(D3DXMATRIX)) : 0;
+		fprintf(gCapture.file,
+			"D%04llu %s mode=0x%X count=%d | %s/%08X depth=%u/%u/%u blend=%u(0x%X,0x%X) alpha=%u(%u,%u) cull=%u(%u) stencil=%u colorMask=0x%X "
+			"lighting=%u(0x%X) fog=%u color=0x%08X arrays=0x%08X |",
+			static_cast<unsigned long long>(gDiagnostics.drawId), api, mode, count,
+			ortho ? "ORTHO" : "PERSP", projectionHash, enable.depthTestEnabled,
+			D3DState.DepthBufferState.depthWriteMask, D3DState.DepthBufferState.depthTestFunc,
+			enable.alphaBlendEnabled, color.glBlendSrc, color.glBlendDst, enable.alphaTestEnabled,
+			color.alphaTestFunc, color.alphaTestReference, enable.cullEnabled, D3DState.PolygonState.cullMode,
+			enable.stencilTestEnabled, color.colorWriteMask, enable.lightingEnabled, lightMask, enable.fogEnabled,
+			D3DState.CurrentState.currentColor, D3DState.ClientVertexArrayState.vertexArrayEnable);
+		bool samplesCopy = false;
+		for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
+			if (!enable.textureEnabled[unit]) continue;
+			for (int target = 0; target < D3D_TEXTARGET_MAX; ++target) {
+				if (!enable.textureTargetEnabled[unit][target]) continue;
+				D3DTextureObject *texture = D3DState.TextureState.currentTexture[unit][target];
+				const GLuint id = texture ? texture->GetGLIndex() : 0;
+				const bool copied = gCapture.copiedTextures.count(id) != 0;
+				samplesCopy = samplesCopy || copied;
+				fprintf(gCapture.file, " t%d:%u%s tgt=%d env=0x%X texgen=%u matrix=%s", unit, id,
+					copied ? "*" : "", target, D3DState.TextureState.TextureCombineState[unit].envMode,
+					enable.texGenEnabled[unit],
+					D3DGlobal.textureMatrixStack[unit]->top().is_identity() ? "I" : "M");
+			}
+		}
+		fprintf(gCapture.file, "\n");
+		gCapture.shotAfterDraw = samplesCopy;
+	}
+
 	void SnapshotState()
 	{
 		if (!D3DGlobal.initialized)
@@ -1381,6 +1507,8 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 	SnapshotState();
 	QGL_ViewDiagnosticsOnDraw(gDiagnostics.frameId, gDiagnostics.drawId);
 	CensusLitDraw(api ? api : "<unknown>", count);
+	if (gCapture.active)
+		CaptureDraw(api ? api : "<unknown>", mode, count);
 	CensusYAEWorldDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
 	TraceYAEPostEffectDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
 	if (ProgramHistoryActive()) {
@@ -1414,7 +1542,47 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 
 void QGL_DiagnosticsBeginPresent()
 {
+	if (gCapture.active)
+		FinishCapture();
 	gPerformance.presentStart = PerformanceNow();
+}
+
+void QGL_DiagnosticsConfigureCapture( int frame )
+{
+	gCapture.configuredFrame = frame;
+}
+
+void QGL_DiagnosticsCaptureCopy( bool afterCopy, unsigned int target, int level, int xoffset, int yoffset,
+	int x, int y, int width, int height )
+{
+	if (!gCapture.active)
+		return;
+	const int targetIndex = UTIL_GLTextureTargettoInternalIndex(target);
+	const int unit = static_cast<int>(D3DState.TextureState.currentTMU);
+	D3DTextureObject *texture = targetIndex >= 0 && targetIndex < D3D_TEXTARGET_MAX ?
+		D3DState.TextureState.currentTexture[unit][targetIndex] : nullptr;
+	const GLuint id = texture ? texture->GetGLIndex() : 0;
+	char name[64];
+	if (!afterCopy) {
+		++gCapture.copies;
+		fprintf(gCapture.file, "COPY #%u after D%04llu: target=0x%X level=%d dst=(%d,%d) src=(%d,%d) size=%dx%d into t%d:%u (%ux%u)\n",
+			gCapture.copies, static_cast<unsigned long long>(gDiagnostics.drawId), target, level, xoffset, yoffset,
+			x, y, width, height, unit, id, texture ? texture->GetWidth() : 0, texture ? texture->GetHeight() : 0);
+		sprintf_s(name, "copy_%02u_framebuffer", gCapture.copies);
+		CaptureShot(name);
+		return;
+	}
+	if (!texture || !texture->GetD3DTexture())
+		return;
+	gCapture.copiedTextures.insert(id);
+	if (gCapture.shots >= kCaptureMaxShots)
+		return;
+	++gCapture.shots;
+	char path[MAX_PATH];
+	sprintf_s(path, "%s\\copy_%02u_texture_%u.png", gCapture.directory, gCapture.copies, id);
+	const HRESULT result = D3DXSaveTextureToFileA(path, D3DXIFF_PNG, texture->GetD3DTexture(), nullptr);
+	fprintf(gCapture.file, "  -> copy_%02u_texture_%u.png (0x%08X)\n", gCapture.copies, id,
+		static_cast<unsigned int>(result));
 }
 
 void QGL_DiagnosticsRecordVertexUpload( uint32_t vertices, uint32_t vertexBytes, uint32_t indexBytes )
@@ -1494,6 +1662,13 @@ void QGL_DiagnosticsRecordProgramOp( char op, unsigned int target, unsigned int 
 
 void QGL_DiagnosticsAfterDraw()
 {
+	if (gCapture.active && gCapture.shotAfterDraw) {
+		gCapture.shotAfterDraw = false;
+		char name[48];
+		sprintf_s(name, "after_draw_%04llu", static_cast<unsigned long long>(gDiagnostics.drawId));
+		CaptureShot(name);
+	}
+
 	if (gYAEPostEffectAfterDumped || !D3DGlobal.settings.game.yaeFallbackCompatibility ||
 		!D3DState.EnableState.fragmentProgramEnabled || ARB_GetBoundFragmentProgram() != 8)
 		return;
@@ -1538,6 +1713,15 @@ void QGL_DiagnosticsEndFrame( long presentResult )
 		++gDiagnostics.framesPresented;
 		++gDiagnostics.frameId;
 		gDiagnostics.drawId = 0;
+
+		// Scroll Lock (edge-triggered) or DebugCaptureFrame captures the next frame.
+		const bool scrollLockDown = (GetAsyncKeyState(VK_SCROLL) & 0x8000) != 0;
+		const bool scrollLockPressed = scrollLockDown && !gCapture.scrollLockDown;
+		gCapture.scrollLockDown = scrollLockDown;
+		const bool configured = gCapture.configuredFrame >= 0 &&
+			gDiagnostics.frameId == static_cast<uint64_t>(gCapture.configuredFrame);
+		if (!gCapture.active && (scrollLockPressed || configured))
+			StartCapture(gDiagnostics.frameId, scrollLockPressed ? "Scroll Lock" : "DebugCaptureFrame");
 	}
 }
 

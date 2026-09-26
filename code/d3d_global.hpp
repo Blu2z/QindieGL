@@ -168,6 +168,7 @@ typedef struct D3DGlobal_s
 		LONG				debugMaxDrawCall;
 		LONG				debugDumpFrame;
 		LONG				debugDumpDraw;
+		LONG				debugCaptureFrame;
 		struct {
 			DWORD               remixapi;
 			DWORD               orthovertexshader;

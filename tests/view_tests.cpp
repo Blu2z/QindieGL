@@ -103,4 +103,20 @@ void check_view_diagnostics_log( const std::string &logPath )
 	CHECK(log.find(expected) != std::string::npos, "session summary contains \"%s\"", expected);
 	const char *streamed = "Streamed to D3D9 by vertex arrays: avg 8 vertices";
 	CHECK(log.find(streamed) != std::string::npos, "session summary contains \"%s\" (world + HUD quads)", streamed);
+
+	// DebugCaptureFrame = 1 in this configuration.
+	const std::string directory = logPath.substr(0, logPath.find_last_of("\\/")) + "\\QindieGL-capture\\frame_000001";
+	std::string draws;
+	if (!fopen_s(&file, (directory + "\\draws.txt").c_str(), "rb") && file) {
+		char buffer[4096];
+		size_t read;
+		while ((read = fread(buffer, 1, sizeof(buffer), file)) > 0) draws.append(buffer, read);
+		fclose(file);
+	}
+	CHECK(draws.find("\nD0001 glDrawArrays mode=0x5 count=4 | PERSP/") != std::string::npos &&
+		draws.find("\nD0002 glDrawArrays mode=0x5 count=4 | ORTHO/") != std::string::npos &&
+		draws.find("End of frame 1: 2 draws") != std::string::npos,
+		"frame capture draws.txt lists both draws of frame 1");
+	CHECK(GetFileAttributesA((directory + "\\final.png").c_str()) != INVALID_FILE_ATTRIBUTES,
+		"frame capture wrote final.png");
 }
