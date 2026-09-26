@@ -776,3 +776,39 @@ the floor brightness) match native. Not investigated further, by decision:
 - QindieGL ignores the first five framebuffer copies after the device is created
   or reset (upstream behaviour); silhouettes and the pickup effect are stale for
   those copies.
+
+### Performance
+
+Profiling runs: 5-10 minutes over the same route, `VSync = 0` in `[Settings]`
+(new setting, default 1), 1920x1080, ending in the heaviest location seen
+(about 2150 draws and 370000 vertices per frame). The log now has a `PERF`
+interval line every 10 seconds and separate sections for index upload and
+framebuffer copies.
+
+| | Baseline | Vertex/index rings | GPU framebuffer copies |
+|---|---|---|---|
+| Session frame time avg / p95 / p99 | 7.0 / 16.8 / 26.9 ms | 5.9 / 10.4 / 14.1 ms | 4.5 / 7.1 / 8.0 ms |
+| Session fps avg | 142 | 171 | 225 |
+| Heaviest location | 37 fps | 118 fps | 152 fps |
+| Inside QindieGL there | 20.4 ms | 5.0 ms | 3.6 ms |
+| `DrawIndexedPrimitive` there | 10.7 ms | 1.45 ms | 0.18 ms |
+| Framebuffer copies there | 2.2 ms | 0.4 ms | 0.01 ms |
+
+(The later runs averaged more draws per frame than the baseline: 507, 759 and
+980.) All three runs were CPU-bound: `Present` stayed below 0.6 ms.
+
+- **Rings.** Every draw locked a whole dynamic vertex and index buffer with
+  `D3DLOCK_DISCARD`, making the driver rename buffers thousands of times per
+  frame. Draws now append with `D3DLOCK_NOOVERWRITE` to one vertex ring (8 MB)
+  and one index ring per index size (2 MB), discarding only on wrap.
+- **Framebuffer copies.** `glCopyTexSubImage2D` read the whole back buffer into
+  system memory and waited for the GPU. A copy replacing a whole single-level
+  2D texture now makes it a render-target texture, copied on the GPU with
+  `StretchRect` and a flipping quad; uploads, read-backs and device resets
+  make it an ordinary managed texture again, keeping its content. Validated
+  in game (shadows, pickup effect, Alt+Tab). No device reset occurred in these
+  runs, so the reset path is covered only by code review.
+
+Remaining cost: vertex conversion/upload, 1.5 ms per frame on average and
+2.3 ms in the heaviest location, re-copies VBO contents on every draw. Keeping
+static VBOs in D3D9 vertex buffers would remove most of it.
