@@ -469,6 +469,83 @@ namespace {
 		}
 	}
 
+	// Fixed-function lighting census (You Are Empty profile). DS2 lights dynamic
+	// geometry with GL lights; this records which light types, spot parameters,
+	// materials and blend modes actually reach lit draws, and counts lit draws
+	// using spot lights for the session summary.
+	std::set<uint32_t> gYAELitDrawStates;
+	uint64_t gLitDraws = 0;
+	uint64_t gLitDrawsWithSpot = 0;
+
+	void CensusLitDraw( const char *api, int count )
+	{
+		if (!D3DState.EnableState.lightingEnabled)
+			return;
+		const auto &lighting = D3DState.LightingState;
+		uint32_t signature = 2166136261u;
+		bool spot = false;
+		for (int i = 0; i < IMPL_MAX_LIGHTS && i < D3DGlobal.maxActiveLights; ++i) {
+			if (!D3DState.EnableState.lightEnabled[i]) continue;
+			const bool lightSpot = lighting.lightType[i] != D3DLIGHT_DIRECTIONAL && lighting.lightSpotCutoff[i] < 180.0f;
+			spot = spot || lightSpot;
+			MixHash(signature, &i, sizeof(i));
+			MixHash(signature, &lighting.lightType[i], sizeof(lighting.lightType[i]));
+			MixHash(signature, &lightSpot, sizeof(lightSpot));
+		}
+		++gLitDraws;
+		if (spot) ++gLitDrawsWithSpot;
+
+		if (!D3DGlobal.settings.game.yaeFallbackCompatibility || gDiagnostics.frameId < 250 ||
+			gYAELitDrawStates.size() >= 48)
+			return;
+		D3DTextureObject *texture = D3DState.TextureState.currentTexture[0][D3D_TEXTARGET_2D];
+		const GLuint textureId = texture && D3DState.EnableState.textureEnabled[0] ? texture->GetGLIndex() : 0;
+		MixHash(signature, &D3DState.EnableState.alphaBlendEnabled, sizeof(DWORD));
+		MixHash(signature, &D3DState.ColorBufferState.glBlendSrc, sizeof(GLenum));
+		MixHash(signature, &D3DState.ColorBufferState.glBlendDst, sizeof(GLenum));
+		MixHash(signature, &D3DState.EnableState.colorMaterialEnabled, sizeof(DWORD));
+		MixHash(signature, &lighting.colorMaterial, sizeof(GLenum));
+		MixHash(signature, &textureId, sizeof(textureId));
+		if (!gYAELitDrawStates.insert(signature).second)
+			return;
+
+		const D3DXMATRIX &mv = *static_cast<const D3DXMATRIX *>(D3DGlobal.modelviewMatrixStack->top());
+		const auto &material = lighting.currentMaterial;
+		const unsigned int record = static_cast<unsigned int>(gYAELitDrawStates.size());
+		logPrintfLevel(QGL_LOG_INFO, "YAE_LIGHT_CENSUS",
+			"state=%u/48 frame=%llu draw=%llu api=%s count=%d arrays=0x%08X tex0=%u blend=%u(0x%X,0x%X) colorMaterial=%u(0x%X) "
+			"matDiffuse=(%.2f,%.2f,%.2f,%.2f) matAmbient=(%.2f,%.2f,%.2f) matEmissive=(%.2f,%.2f,%.2f) modelAmbient=0x%08X "
+			"normalize=%u localViewer=%u mvScale=(%.3f,%.3f,%.3f)",
+			record, static_cast<unsigned long long>(gDiagnostics.frameId),
+			static_cast<unsigned long long>(gDiagnostics.drawId), api, count,
+			D3DState.ClientVertexArrayState.vertexArrayEnable, textureId,
+			D3DState.EnableState.alphaBlendEnabled, D3DState.ColorBufferState.glBlendSrc,
+			D3DState.ColorBufferState.glBlendDst, D3DState.EnableState.colorMaterialEnabled, lighting.colorMaterial,
+			material.Diffuse.r, material.Diffuse.g, material.Diffuse.b, material.Diffuse.a,
+			material.Ambient.r, material.Ambient.g, material.Ambient.b,
+			material.Emissive.r, material.Emissive.g, material.Emissive.b, lighting.lightModelAmbient,
+			D3DState.EnableState.normalizeEnabled, lighting.lightModelLocalViewer,
+			sqrtf(mv._11 * mv._11 + mv._12 * mv._12 + mv._13 * mv._13),
+			sqrtf(mv._21 * mv._21 + mv._22 * mv._22 + mv._23 * mv._23),
+			sqrtf(mv._31 * mv._31 + mv._32 * mv._32 + mv._33 * mv._33));
+		for (int i = 0; i < IMPL_MAX_LIGHTS && i < D3DGlobal.maxActiveLights; ++i) {
+			if (!D3DState.EnableState.lightEnabled[i]) continue;
+			const bool directional = lighting.lightType[i] == D3DLIGHT_DIRECTIONAL;
+			logPrintfLevel(QGL_LOG_INFO, "YAE_LIGHT_CENSUS",
+				"state=%u light=%d %s eyePos=(%.2f,%.2f,%.2f) diffuse=(%.2f,%.2f,%.2f) ambient=(%.2f,%.2f,%.2f) "
+				"atten=(%.4f,%.6f,%.8f) spotCutoff=%.1f spotExponent=%.2f spotDir=(%.3f,%.3f,%.3f)",
+				record, i, directional ? "DIRECTIONAL" : "POSITIONAL",
+				directional ? -lighting.lightPosition[i].x : lighting.lightPosition[i].x,
+				directional ? -lighting.lightPosition[i].y : lighting.lightPosition[i].y,
+				directional ? -lighting.lightPosition[i].z : lighting.lightPosition[i].z,
+				lighting.lightColorDiffuse[i].r, lighting.lightColorDiffuse[i].g, lighting.lightColorDiffuse[i].b,
+				lighting.lightColorAmbient[i].r, lighting.lightColorAmbient[i].g, lighting.lightColorAmbient[i].b,
+				lighting.lightAttenuation[i].x, lighting.lightAttenuation[i].y, lighting.lightAttenuation[i].z,
+				lighting.lightSpotCutoff[i], lighting.lightSpotExponent[i],
+				lighting.lightDirection[i].x, lighting.lightDirection[i].y, lighting.lightDirection[i].z);
+		}
+	}
+
 	// Reads one array element without integer normalization, matching how the
 	// draw path feeds texcoord arrays (YAE bone indices are GL_SHORT texcoords).
 	// Unlike D3DBuffer_ResolvePointer this never records a GL error.
@@ -1169,6 +1246,7 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 
 	SnapshotState();
 	QGL_ViewDiagnosticsOnDraw(gDiagnostics.frameId, gDiagnostics.drawId);
+	CensusLitDraw(api ? api : "<unknown>", count);
 	CensusYAEWorldDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
 	TraceYAEPostEffectDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
 	if (ProgramHistoryActive()) {
@@ -1476,6 +1554,8 @@ void QGL_DiagnosticsDumpSessionSummary()
 	logPrintf("ARB program compilation failures: %llu\n", static_cast<unsigned long long>(gDiagnostics.arbProgramFailures));
 	logPrintf("VBOs created: %llu\n", static_cast<unsigned long long>(gDiagnostics.vbosCreated));
 	logPrintf("Peak VBO bytes: %llu\n", static_cast<unsigned long long>(gDiagnostics.peakVBOBytes));
+	logPrintf("Fixed-function lit draws: %llu, with a spot light enabled: %llu\n",
+		static_cast<unsigned long long>(gLitDraws), static_cast<unsigned long long>(gLitDrawsWithSpot));
 	QGL_ViewDiagnosticsDumpSummary();
 	DumpPerformanceSummary();
 	logPrintf("====================================\n");
