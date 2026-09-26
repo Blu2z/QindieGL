@@ -1038,6 +1038,7 @@ namespace {
 	};
 	CaptureState gCapture = { -1, false, false, 0, nullptr, "", {}, 0, 0, false };
 	const unsigned int kCaptureMaxShots = 48;
+	std::set<GLuint> gCaptureDumpedTextures;	// textures written by the current capture
 
 	HRESULT SaveRenderTargetPng( const char *path )
 	{
@@ -1084,6 +1085,7 @@ namespace {
 		gCapture.active = true;
 		gCapture.frame = frame;
 		gCapture.copiedTextures.clear();
+		gCaptureDumpedTextures.clear();
 		gCapture.copies = 0;
 		gCapture.shots = 0;
 		gCapture.shotAfterDraw = false;
@@ -1143,6 +1145,83 @@ namespace {
 		}
 		fprintf(gCapture.file, "\n");
 		gCapture.shotAfterDraw = samplesCopy;
+	}
+
+	// For draws with texgen or a texture matrix: modes, planes, the GL matrix,
+	// the coordinates of one vertex as the vertex-array path computes them
+	// (generated coordinates, the rest from (0,0,0,1)), each bound texture once,
+	// and the framebuffer before and after the draw.
+
+	void CaptureTexgenDetails( int first, unsigned int indexType, const void *indices )
+	{
+		const auto &arrays = D3DState.ClientVertexArrayState;
+		bool involved = false;
+		for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
+			if (!D3DState.EnableState.textureEnabled[unit]) continue;
+			D3DStateMatrix &matrixState = D3DGlobal.textureMatrixStack[unit]->top();
+			const DWORD texgen = D3DState.EnableState.texGenEnabled[unit];
+			if (!texgen && matrixState.is_identity()) continue;
+			involved = true;
+			const D3DXMATRIX &m = *static_cast<const D3DXMATRIX *>(matrixState);
+			const auto *gen = D3DState.TextureState.TexGen[unit];
+			fprintf(gCapture.file, "    t%d texgen=0x%X modes(0x%X,0x%X,0x%X,0x%X) projective=%u\n", unit, texgen,
+				gen[0].mode, gen[1].mode, gen[2].mode, gen[3].mode, D3DState_IsProjectiveTextureStage(unit) ? 1u : 0u);
+			static const char coordNames[4] = { 'S', 'T', 'R', 'Q' };
+			for (int coord = 0; coord < 4; ++coord) {
+				if (!(texgen & (1u << coord))) continue;
+				fprintf(gCapture.file, "      %c object=(%g,%g,%g,%g) eye=(%g,%g,%g,%g)\n", coordNames[coord],
+					gen[coord].objectPlane[0], gen[coord].objectPlane[1], gen[coord].objectPlane[2], gen[coord].objectPlane[3],
+					gen[coord].eyePlane[0], gen[coord].eyePlane[1], gen[coord].eyePlane[2], gen[coord].eyePlane[3]);
+			}
+			fprintf(gCapture.file, "      matrix GL rows [%g %g %g %g | %g %g %g %g | %g %g %g %g | %g %g %g %g]\n",
+				m._11, m._21, m._31, m._41, m._12, m._22, m._32, m._42,
+				m._13, m._23, m._33, m._43, m._14, m._24, m._34, m._44);
+
+			const int vertex = ResolveSampleVertex(first, indexType, indices);
+			float position[4];
+			if ((arrays.vertexArrayEnable & VA_ENABLE_VERTEX_BIT) &&
+				ReadArrayElement(arrays.vertexInfo, vertex, position)) {
+				float coords[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+				if (VA_TEXTURE_BIT_IS_SET(arrays.vertexArrayEnable, unit))
+					ReadArrayElement(arrays.texCoordInfo[unit], vertex, coords);
+				for (int coord = 0; coord < 4; ++coord) {
+					if (!(texgen & (1u << coord)) || !gen[coord].func) continue;
+					float transformed[4] = { position[0], position[1], position[2], position[3] };
+					float normal[3] = { D3DState.CurrentState.currentNormal[0],
+						D3DState.CurrentState.currentNormal[1], D3DState.CurrentState.currentNormal[2] };
+					float transformedNormal[3] = { normal[0], normal[1], normal[2] };
+					if (gen[coord].trVertex) gen[coord].trVertex(position, transformed);
+					if (gen[coord].trNormal) gen[coord].trNormal(normal, transformedNormal);
+					gen[coord].func(unit, coord, transformed, transformedNormal, &coords[coord]);
+				}
+				D3DXVECTOR4 result;
+				D3DXVec4Transform(&result, reinterpret_cast<const D3DXVECTOR4 *>(coords), &m);
+				fprintf(gCapture.file, "      vertex %d pos=(%g,%g,%g) generated=(%g,%g,%g,%g) matrix=(%g,%g,%g,%g) s/q=%g t/q=%g\n",
+					vertex, position[0], position[1], position[2], coords[0], coords[1], coords[2], coords[3],
+					result.x, result.y, result.z, result.w,
+					result.w != 0.0f ? result.x / result.w : 0.0f, result.w != 0.0f ? result.y / result.w : 0.0f);
+			}
+
+			for (int target = 0; target < D3D_TEXTARGET_MAX; ++target) {
+				if (!D3DState.EnableState.textureTargetEnabled[unit][target]) continue;
+				D3DTextureObject *texture = D3DState.TextureState.currentTexture[unit][target];
+				if (!texture || !texture->GetD3DTexture() || gCapture.shots >= kCaptureMaxShots ||
+					!gCaptureDumpedTextures.insert(texture->GetGLIndex()).second)
+					continue;
+				++gCapture.shots;
+				char path[MAX_PATH];
+				sprintf_s(path, "%s\\texture_%u.png", gCapture.directory, texture->GetGLIndex());
+				const HRESULT result = D3DXSaveTextureToFileA(path, D3DXIFF_PNG, texture->GetD3DTexture(), nullptr);
+				fprintf(gCapture.file, "      -> texture_%u.png %ux%u (0x%08X)\n", texture->GetGLIndex(),
+					texture->GetWidth(), texture->GetHeight(), static_cast<unsigned int>(result));
+			}
+		}
+		if (involved) {
+			char name[48];
+			sprintf_s(name, "before_draw_%04llu", static_cast<unsigned long long>(gDiagnostics.drawId));
+			CaptureShot(name);
+			gCapture.shotAfterDraw = true;
+		}
 	}
 
 	void SnapshotState()
@@ -1507,8 +1586,10 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 	SnapshotState();
 	QGL_ViewDiagnosticsOnDraw(gDiagnostics.frameId, gDiagnostics.drawId);
 	CensusLitDraw(api ? api : "<unknown>", count);
-	if (gCapture.active)
+	if (gCapture.active) {
 		CaptureDraw(api ? api : "<unknown>", mode, count);
+		CaptureTexgenDetails(first, indexType, indices);
+	}
 	CensusYAEWorldDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
 	TraceYAEPostEffectDraw(api ? api : "<unknown>", mode, count, first, indexType, indices);
 	if (ProgramHistoryActive()) {
