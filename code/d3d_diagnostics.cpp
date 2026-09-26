@@ -23,14 +23,43 @@ namespace {
 	static const LONG kEventCapacity = 256;
 	static const size_t kEventTextSize = 384;
 
+	// GL object bindings captured before every draw. Kept as raw values: they
+	// are only formatted when a crash report or a state-change event needs them.
+	struct StateSnapshot
+	{
+		GLuint arrayBuffer;
+		GLuint elementBuffer;
+		GLuint vertexProgram;
+		GLuint fragmentProgram;
+		GLuint textures[MAX_D3D_TMU][D3D_TEXTARGET_MAX];
+	};
+
+	struct DrawEventPayload
+	{
+		const char *api;	// string literal
+		unsigned int mode;
+		int count;
+		int first;
+		unsigned int indexType;
+		const void *indices;
+	};
+
+	// Hot per-draw events store raw payloads; text is produced when dumped.
+	enum EventKind { EVENT_TEXT, EVENT_DRAW, EVENT_STATE };
+
 	struct DiagnosticEvent
 	{
 		LONG sequence;
 		bool d3dEvent;
+		EventKind kind;
 		uint64_t frameId;
 		uint64_t drawId;
 		char category[24];
-		char text[kEventTextSize];
+		union {
+			char text[kEventTextSize];
+			DrawEventPayload draw;
+			StateSnapshot state;
+		};
 	};
 
 	struct DiagnosticState
@@ -125,6 +154,17 @@ namespace {
 			gPerformance.vertexBytesSum += gPerformance.frameVertexBytes;
 			gPerformance.indexBytesSum += gPerformance.frameIndexBytes;
 			++gPerformance.histogram[std::min(static_cast<int>(frameMs * 10.0), kFrameHistogramBuckets - 1)];
+
+			static unsigned int slowFramesLogged = 0;
+			if (frameMs > 100.0 && slowFramesLogged < 32 && logIsEnabled(QGL_LOG_INFO)) {
+				++slowFramesLogged;
+				const double uploadMs = TicksToMs(gPerformance.frameSectionTicks[QGL_PERF_TEXTURE_UPLOAD]);
+				logPrintfLevel(QGL_LOG_INFO, "PERF",
+					"slow frame %llu: %.1f ms = draw calls %.1f + Present %.1f + texture uploads %.1f + outside QindieGL %.1f; draws %llu, vertices %llu",
+					static_cast<unsigned long long>(gDiagnostics.frameId), frameMs, drawMs, presentMs, uploadMs,
+					std::max(0.0, frameMs - drawMs - presentMs - uploadMs), static_cast<unsigned long long>(draws),
+					static_cast<unsigned long long>(gPerformance.frameVertices));
+			}
 		}
 		gPerformance.lastFrameEnd = now;
 		gPerformance.presentStart = 0;
@@ -161,8 +201,10 @@ namespace {
 		const double stateMs = gPerformance.sectionMsSum[QGL_PERF_STATE] / frames;
 		const double verticesMs = gPerformance.sectionMsSum[QGL_PERF_VERTICES] / frames;
 		const double submitMs = gPerformance.sectionMsSum[QGL_PERF_SUBMIT] / frames;
-		logPrintf("    state application %.2f ms, vertex conversion/upload %.2f ms, DrawIndexedPrimitive %.2f ms, other %.2f ms\n",
-			stateMs, verticesMs, submitMs, std::max(0.0, drawMs - stateMs - verticesMs - submitMs));
+		const double diagnosticsMs = gPerformance.sectionMsSum[QGL_PERF_DIAGNOSTICS] / frames;
+		logPrintf("    state application %.2f ms, vertex conversion/upload %.2f ms, DrawIndexedPrimitive %.2f ms, diagnostics %.2f ms, other %.2f ms\n",
+			stateMs, verticesMs, submitMs, diagnosticsMs,
+			std::max(0.0, drawMs - stateMs - verticesMs - submitMs - diagnosticsMs));
 		const uint64_t locks = gPerformance.fastPathLocks + gPerformance.slowPathLocks;
 		logPrintf("    vertex copy path (all frames): fast %llu, slow %llu (%.0f%% slow)\n",
 			static_cast<unsigned long long>(gPerformance.fastPathLocks),
@@ -175,6 +217,8 @@ namespace {
 			logPrintf("      slow because of d3d_array.cpp:%d: %llu\n", reasons[i].second,
 				static_cast<unsigned long long>(reasons[i].first));
 		logPrintf("  Present: avg %.2f ms/frame\n", gPerformance.presentMsSum / frames);
+		logPrintf("  Texture uploads (outside draw calls): avg %.2f ms/frame\n",
+			gPerformance.sectionMsSum[QGL_PERF_TEXTURE_UPLOAD] / frames);
 		logPrintf("  Draw calls: avg %.0f/frame, max %llu\n", static_cast<double>(gPerformance.drawsSum) / frames,
 			static_cast<unsigned long long>(gPerformance.drawsMax));
 		logPrintf("  Streamed to D3D9 by vertex arrays: avg %.0f vertices, %.1f KB vertex data, %.1f KB index data per frame\n",
@@ -198,6 +242,71 @@ namespace {
 	static std::set<GLuint> gYAEDumpedTextures;
 	static unsigned int gYAEPostEffectDraws = 0;
 	static bool gYAEPostEffectAfterDumped = false;
+	static StateSnapshot gSnapshot = {};
+	static DrawEventPayload gLastDraw = {};
+	static StateSnapshot gRecordedSnapshot = {};
+	static bool gHaveRecordedSnapshot = false;
+
+	DiagnosticEvent &BeginEvent( bool d3dEvent, const char *category, EventKind kind, LONG &sequence )
+	{
+		sequence = InterlockedIncrement(&gNextEvent);
+		DiagnosticEvent &event = gEvents[(sequence - 1) % kEventCapacity];
+		event.sequence = 0;
+		event.d3dEvent = d3dEvent;
+		event.kind = kind;
+		event.frameId = gDiagnostics.frameId;
+		event.drawId = gDiagnostics.drawId;
+		strncpy_s(event.category, category ? category : "GENERAL", _TRUNCATE);
+		return event;
+	}
+
+	void CommitEvent( DiagnosticEvent &event, LONG sequence )
+	{
+		MemoryBarrier();
+		event.sequence = sequence;
+	}
+
+	void RecordDrawEvent( const char *api, unsigned int mode, int count, int first,
+		unsigned int indexType, const void *indices )
+	{
+		gLastDraw.api = api;
+		gLastDraw.mode = mode;
+		gLastDraw.count = count;
+		if (!gDiagnostics.initialized) return;
+		LONG sequence;
+		DiagnosticEvent &event = BeginEvent(false, "GL_DRAW", EVENT_DRAW, sequence);
+		event.draw.api = api;
+		event.draw.mode = mode;
+		event.draw.count = count;
+		event.draw.first = first;
+		event.draw.indexType = indexType;
+		event.draw.indices = indices;
+		CommitEvent(event, sequence);
+	}
+
+	void RecordStateEvent( const StateSnapshot &snapshot )
+	{
+		if (!gDiagnostics.initialized) return;
+		LONG sequence;
+		DiagnosticEvent &event = BeginEvent(false, "STATE", EVENT_STATE, sequence);
+		event.state = snapshot;
+		CommitEvent(event, sequence);
+	}
+
+	void FormatTextures( const StateSnapshot &snapshot, char *out, size_t size )
+	{
+		size_t used = 0;
+		out[0] = '\0';
+		for (int unit = 0; unit < MAX_D3D_TMU; ++unit) {
+			for (int target = 0; target < D3D_TEXTARGET_MAX; ++target) {
+				if (!snapshot.textures[unit][target] || used + 32 >= size) continue;
+				const int written = _snprintf_s(out + used, size - used, _TRUNCATE, "tmu%d:id%u ",
+					unit, snapshot.textures[unit][target]);
+				if (written > 0) used += static_cast<size_t>(written);
+			}
+		}
+		if (!used) strcpy_s(out, size, "none");
+	}
 
 	const char *GLModeName( unsigned int mode )
 	{
@@ -213,6 +322,29 @@ namespace {
 		case GL_QUAD_STRIP: return "QUAD_STRIP";
 		case GL_POLYGON: return "POLYGON";
 		default: return "UNKNOWN";
+		}
+	}
+
+	void FormatEventText( const DiagnosticEvent &event, char *out, size_t size )
+	{
+		switch (event.kind) {
+		case EVENT_DRAW:
+			_snprintf_s(out, size, _TRUNCATE, "%s mode=%s(0x%X) count=%d first=%d type=0x%X indices=%p",
+				event.draw.api ? event.draw.api : "<unknown>", GLModeName(event.draw.mode), event.draw.mode,
+				event.draw.count, event.draw.first, event.draw.indexType, event.draw.indices);
+			break;
+		case EVENT_STATE:
+			{
+				char textures[384];
+				FormatTextures(event.state, textures, sizeof(textures));
+				_snprintf_s(out, size, _TRUNCATE, "buffers(array=%u element=%u) programs(vp=%u fp=%u) textures(%s)",
+					event.state.arrayBuffer, event.state.elementBuffer, event.state.vertexProgram,
+					event.state.fragmentProgram, textures);
+			}
+			break;
+		default:
+			strncpy_s(out, size, event.text, _TRUNCATE);
+			break;
 		}
 	}
 
@@ -892,39 +1024,38 @@ namespace {
 		if (!D3DGlobal.initialized)
 			return;
 
-		const GLuint arrayBuffer = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
-		const GLuint elementBuffer = D3DBuffer_GetBinding(GL_ELEMENT_ARRAY_BUFFER_ARB);
-		const GLuint vertexProgram = ARB_GetBoundVertexProgram();
-		const GLuint fragmentProgram = ARB_GetBoundFragmentProgram();
-		const char *projection = "UNAVAILABLE";
-		uint32_t projectionHash = 0;
-		uint32_t modelviewHash = 0;
-		if (D3DGlobal.projectionMatrixStack && D3DGlobal.modelviewMatrixStack) {
-			projection = D3DGlobal_IsOrthoProjection() ? "ORTHOGRAPHIC" : "PERSPECTIVE";
-			projectionHash = HashBytes(D3DGlobal.projectionMatrixStack->top(), sizeof(D3DXMATRIX));
-			modelviewHash = HashBytes(D3DGlobal.modelviewMatrixStack->top(), sizeof(D3DXMATRIX));
-		}
-		sprintf_s(gActiveBuffers, "array=%u element=%u", arrayBuffer, elementBuffer);
-		sprintf_s(gActivePrograms, "vp=%u fp=%u", vertexProgram, fragmentProgram);
-		sprintf_s(gProjectionState, "%s projHash=%08X modelviewHash=%08X",
-			projection, projectionHash, modelviewHash);
-		gActiveTextures[0] = '\0';
-		for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
+		// Runs before every draw, so only raw values are captured here; a STATE
+		// event is recorded when a binding changes and formatted when dumped.
+		gSnapshot.arrayBuffer = D3DBuffer_GetBinding(GL_ARRAY_BUFFER_ARB);
+		gSnapshot.elementBuffer = D3DBuffer_GetBinding(GL_ELEMENT_ARRAY_BUFFER_ARB);
+		gSnapshot.vertexProgram = ARB_GetBoundVertexProgram();
+		gSnapshot.fragmentProgram = ARB_GetBoundFragmentProgram();
+		for (int unit = 0; unit < MAX_D3D_TMU; ++unit) {
 			for (int target = 0; target < D3D_TEXTARGET_MAX; ++target) {
-				D3DTextureObject *texture = D3DState.TextureState.currentTexture[unit][target];
-				if (!texture) continue;
-				const size_t used = strlen(gActiveTextures);
-				if (used + 32 >= sizeof(gActiveTextures)) continue;
-				_snprintf_s(gActiveTextures + used, sizeof(gActiveTextures) - used, _TRUNCATE,
-					"tmu%d:id%u ", unit, texture->GetGLIndex());
+				D3DTextureObject *texture = unit < D3DGlobal.maxActiveTMU ?
+					D3DState.TextureState.currentTexture[unit][target] : nullptr;
+				gSnapshot.textures[unit][target] = texture ? texture->GetGLIndex() : 0;
 			}
 		}
-		if (!*gActiveTextures)
-			strcpy_s(gActiveTextures, "none");
+		if (!gHaveRecordedSnapshot || memcmp(&gSnapshot, &gRecordedSnapshot, sizeof(gSnapshot))) {
+			gRecordedSnapshot = gSnapshot;
+			gHaveRecordedSnapshot = true;
+			RecordStateEvent(gSnapshot);
+		}
+	}
 
-		QGL_DiagnosticsRecordEvent(false, "STATE",
-			"buffers(%s) programs(%s) textures(%s) rt=%s projection=%s",
-			gActiveBuffers, gActivePrograms, gActiveTextures, gRenderTarget, gProjectionState);
+	// Formats the current state for a crash report.
+	void FormatSnapshotStrings()
+	{
+		sprintf_s(gActiveBuffers, "array=%u element=%u", gSnapshot.arrayBuffer, gSnapshot.elementBuffer);
+		sprintf_s(gActivePrograms, "vp=%u fp=%u", gSnapshot.vertexProgram, gSnapshot.fragmentProgram);
+		FormatTextures(gSnapshot, gActiveTextures, sizeof(gActiveTextures));
+		if (D3DGlobal.projectionMatrixStack && D3DGlobal.modelviewMatrixStack) {
+			sprintf_s(gProjectionState, "%s projHash=%08X modelviewHash=%08X",
+				D3DGlobal_IsOrthoProjection() ? "ORTHOGRAPHIC" : "PERSPECTIVE",
+				HashBytes(D3DGlobal.projectionMatrixStack->top(), sizeof(D3DXMATRIX)),
+				HashBytes(D3DGlobal.modelviewMatrixStack->top(), sizeof(D3DXMATRIX)));
+		}
 	}
 
 	void DumpArray( const char *name, bool enabled, const D3DVAInfo& info )
@@ -1009,9 +1140,11 @@ namespace {
 			const DiagnosticEvent& event = gEvents[sequence % kEventCapacity];
 			if (event.sequence != sequence + 1 || event.d3dEvent != d3dEvents)
 				continue;
+			char text[kEventTextSize + 256];
+			FormatEventText(event, text, sizeof(text));
 			WriteCrashFormat(file, "[F:%08llu D:%06llu][%s] %s\r\n",
 				static_cast<unsigned long long>(event.frameId),
-				static_cast<unsigned long long>(event.drawId), event.category, event.text);
+				static_cast<unsigned long long>(event.drawId), event.category, text);
 			++emitted;
 		}
 	}
@@ -1147,6 +1280,7 @@ namespace {
 		WriteCrashFormat(file, "Frame: %llu\r\nDraw: %llu\r\nLast GL error source: %s\r\nRender target: %s\r\n",
 			static_cast<unsigned long long>(gDiagnostics.frameId),
 			static_cast<unsigned long long>(gDiagnostics.drawId), gLastErrorSource, gRenderTarget);
+		FormatSnapshotStrings();
 		WriteCrashFormat(file, "Active buffers: %s\r\nActive textures: %s\r\nActive ARB programs: %s\r\nProjection: %s\r\n",
 			gActiveBuffers, gActiveTextures, gActivePrograms, gProjectionState);
 		DumpCrashContext(file, exceptionInfo);
@@ -1239,8 +1373,8 @@ bool QGL_DiagnosticsBeginDraw( const char *api, unsigned int mode, int count,
 {
 	++gDiagnostics.drawId;
 	++gDiagnostics.drawsSubmitted;
-	QGL_DiagnosticsRecordEvent(false, "GL_DRAW", "%s mode=%s(0x%X) count=%d first=%d type=0x%X indices=%p",
-		api ? api : "<unknown>", GLModeName(mode), mode, count, first, indexType, indices);
+	QGLSectionTimer diagnosticsTimer(QGL_PERF_DIAGNOSTICS);
+	RecordDrawEvent(api, mode, count, first, indexType, indices);
 	logPrintfLevel(QGL_LOG_TRACE, "GL_DRAW", "%s mode=%s(0x%X) count=%d first=%d type=0x%X indices=%p",
 		api ? api : "<unknown>", GLModeName(mode), mode, count, first, indexType, indices);
 
@@ -1292,14 +1426,32 @@ void QGL_DiagnosticsRecordVertexUpload( uint32_t vertices, uint32_t vertexBytes,
 
 QGLDrawTimer::QGLDrawTimer() : m_start( 0 )
 {
-	if (gPerformance.drawTimerDepth++ == 0)
+	if (gPerformance.drawTimerDepth++ == 0) {
 		m_start = PerformanceNow();
+		memcpy(m_sectionStart, gPerformance.frameSectionTicks, sizeof(m_sectionStart));
+	}
 }
 
 QGLDrawTimer::~QGLDrawTimer()
 {
-	if (--gPerformance.drawTimerDepth == 0 && m_start)
-		gPerformance.frameDrawTicks += PerformanceNow() - m_start;
+	if (--gPerformance.drawTimerDepth != 0 || !m_start)
+		return;
+	const int64_t elapsed = PerformanceNow() - m_start;
+	gPerformance.frameDrawTicks += elapsed;
+	static unsigned int slowDrawsLogged = 0;
+	if (TicksToMs(elapsed) > 20.0 && slowDrawsLogged < 32 && logIsEnabled(QGL_LOG_INFO)) {
+		++slowDrawsLogged;
+		char textures[384];
+		FormatTextures(gSnapshot, textures, sizeof(textures));
+		double section[QGL_PERF_SECTIONS];
+		for (int i = 0; i < QGL_PERF_SECTIONS; ++i)
+			section[i] = TicksToMs(gPerformance.frameSectionTicks[i] - m_sectionStart[i]);
+		logPrintfLevel(QGL_LOG_INFO, "PERF",
+			"slow draw %.1f ms (state %.1f, vertices %.1f, DrawIndexedPrimitive %.1f, diagnostics %.1f, texture upload %.1f): %s mode=0x%X count=%d textures(%s)",
+			TicksToMs(elapsed), section[QGL_PERF_STATE], section[QGL_PERF_VERTICES], section[QGL_PERF_SUBMIT],
+			section[QGL_PERF_DIAGNOSTICS], section[QGL_PERF_TEXTURE_UPLOAD],
+			gLastDraw.api ? gLastDraw.api : "<unknown>", gLastDraw.mode, gLastDraw.count, textures);
+	}
 }
 
 QGLSectionTimer::QGLSectionTimer( QGLPerfSection section ) : m_section( section ), m_start( PerformanceNow() )
@@ -1393,19 +1545,13 @@ void QGL_DiagnosticsRecordEvent( bool d3dEvent, const char *category, const char
 {
 	if (!gDiagnostics.initialized || !fmt)
 		return;
-	const LONG sequence = InterlockedIncrement(&gNextEvent);
-	DiagnosticEvent& event = gEvents[(sequence - 1) % kEventCapacity];
-	event.sequence = 0;
-	event.d3dEvent = d3dEvent;
-	event.frameId = gDiagnostics.frameId;
-	event.drawId = gDiagnostics.drawId;
-	strncpy_s(event.category, category ? category : "GENERAL", _TRUNCATE);
+	LONG sequence;
+	DiagnosticEvent &event = BeginEvent(d3dEvent, category, EVENT_TEXT, sequence);
 	va_list args;
 	va_start(args, fmt);
 	_vsnprintf_s(event.text, sizeof(event.text), _TRUNCATE, fmt, args);
 	va_end(args);
-	MemoryBarrier();
-	event.sequence = sequence;
+	CommitEvent(event, sequence);
 }
 
 void QGL_DiagnosticsRecordD3DFailure( const char *call, long result )

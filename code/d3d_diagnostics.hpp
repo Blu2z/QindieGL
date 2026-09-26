@@ -55,8 +55,21 @@ void QGL_ViewDiagnosticsDumpSummary();
 void QGL_DiagnosticsBeginPresent();
 void QGL_DiagnosticsRecordVertexUpload( uint32_t vertices, uint32_t vertexBytes, uint32_t indexBytes );
 
+// Sections reported separately in the session summary. The first four are
+// parts of draw calls; texture uploads happen outside them.
+enum QGLPerfSection
+{
+	QGL_PERF_STATE,		// D3DState_Check: deferred state application
+	QGL_PERF_VERTICES,	// D3DVABuffer::Lock: array conversion and upload
+	QGL_PERF_SUBMIT,	// D3DVABuffer::DrawPrimitive: DrawIndexedPrimitive
+	QGL_PERF_DIAGNOSTICS,	// per-draw diagnostics in QGL_DiagnosticsBeginDraw
+	QGL_PERF_TEXTURE_UPLOAD,	// glTexImage*/glTexSubImage*/glCopyTex* entry points
+	QGL_PERF_SECTIONS
+};
+
 // Accumulates the wall time spent inside a draw entry point: QindieGL's CPU
 // cost plus the D3D9 runtime/driver calls it makes. Nested draws count once.
+// Draws slower than 20 ms are logged with their section breakdown.
 class QGLDrawTimer
 {
 public:
@@ -64,15 +77,7 @@ public:
 	~QGLDrawTimer();
 private:
 	int64_t m_start;
-};
-
-// Sections of the draw path reported separately in the session summary.
-enum QGLPerfSection
-{
-	QGL_PERF_STATE,		// D3DState_Check: deferred state application
-	QGL_PERF_VERTICES,	// D3DVABuffer::Lock: array conversion and upload
-	QGL_PERF_SUBMIT,	// D3DVABuffer::DrawPrimitive: DrawIndexedPrimitive
-	QGL_PERF_SECTIONS
+	int64_t m_sectionStart[QGL_PERF_SECTIONS];
 };
 
 class QGLSectionTimer
