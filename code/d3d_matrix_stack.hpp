@@ -66,6 +66,7 @@ public:
 
 	D3DStateMatrix &top()				{ return m_Stack[m_iStackDepth]; }
 	const D3DStateMatrix &top() const	{ return m_Stack[m_iStackDepth]; }
+	const D3DStateMatrix &level( int depth ) const	{ return m_Stack[depth]; }
 	int stack_depth() const				{ return m_iStackDepth; }
 	int max_stack_depth() const			{ return D3D_MAX_MATRIX_STACK_DEPTH; }
 
@@ -81,7 +82,17 @@ private:
 	D3DStateMatrix	m_Stack[D3D_MAX_MATRIX_STACK_DEPTH];
 };
 
-// Camera tracking of the modelview for yae_camera_split (d3d_matrix.cpp).
+// How the modelview was built (d3d_matrix.cpp). DS2 starts every camera with
+// glLoadIdentity and one transform at modelview stack depth 0.
+struct D3DCameraTrackInfo
+{
+	unsigned int	generation;			// changes whenever the depth-0 matrix is reset
+	int				depth0Transforms;	// transforms at depth 0 since that reset; a load counts as one
+	bool			depth0Loaded;		// the reset was a glLoadMatrix
+	bool			eyeSpace;			// the current stack level was reset above depth 0
+};
+
 void D3DMatrix_ResetCameraTracking();
+void D3DMatrix_GetCameraTrackInfo( D3DCameraTrackInfo *info );
 
 #endif //QINDIEGL_D3D_MATRIX_STACK_H
