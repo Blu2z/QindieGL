@@ -47,6 +47,8 @@ struct GLApi
 	decltype(&::glLoadMatrixf) LoadMatrixf;
 	decltype(&::glOrtho) Ortho;
 	decltype(&::glDepthMask) DepthMask;
+	decltype(&::glTexGeni) TexGeni;
+	decltype(&::glTexGenfv) TexGenfv;
 
 	PFNGLBINDBUFFERARBPROC BindBufferARB;
 	PFNGLGENBUFFERSARBPROC GenBuffersARB;

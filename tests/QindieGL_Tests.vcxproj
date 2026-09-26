@@ -126,6 +126,7 @@
     <ClCompile Include="gl_harness.cpp" />
     <ClCompile Include="lighting_tests.cpp" />
     <ClCompile Include="texgen.cpp" />
+    <ClCompile Include="texture_projection_tests.cpp" />
     <ClCompile Include="vbo_tests.cpp" />
     <ClCompile Include="view_tests.cpp" />
     <ClCompile Include="_main.cpp" />

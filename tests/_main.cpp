@@ -22,6 +22,7 @@ extern void do_texgen_tests();
 extern void do_vbo_tests();
 extern void do_multitexture_tests();
 extern void do_lighting_tests();
+extern void do_texture_projection_tests();
 extern void do_extension_availability_tests( bool expectBufferObjects );
 extern void do_view_tests();
 extern void check_view_diagnostics_log( const std::string &logPath );
@@ -166,6 +167,7 @@ int RunGLChild( const char *dll, const char *configurationName )
 	case MODE_BUFFER_OBJECTS:
 		do_extension_availability_tests(true);
 		do_lighting_tests();
+		do_texture_projection_tests();
 		do_vbo_tests();
 		do_multitexture_tests();
 		break;
