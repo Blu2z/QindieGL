@@ -169,6 +169,7 @@ typedef struct D3DGlobal_s
 		LONG				debugDumpFrame;
 		LONG				debugDumpDraw;
 		LONG				debugCaptureFrame;
+		DWORD				vSync;			// 0 presents immediately (profiling without the refresh-rate cap)
 		struct {
 			DWORD               remixapi;
 			DWORD               orthovertexshader;

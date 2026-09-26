@@ -1804,7 +1804,8 @@ OPENGL_API void WINAPI glCopyTexImage1D( GLenum target, GLint level, GLenum /*in
 }
 OPENGL_API void WINAPI glCopyTexImage2D( GLenum target, GLint level, GLenum /*internalFormat*/, GLint x, GLint y, GLsizei width, GLsizei height, GLint /*border*/ )
 {
-	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
+	QGLSectionTimer copyTimer(QGL_PERF_FRAMEBUFFER_COPY);
+	QGL_DiagnosticsRecordFramebufferCopy( width, height );
 	QGL_DiagnosticsCaptureCopy( false, target, level, 0, 0, x, y, width, height );
 	//FIXME: format conversion! border!!
 	D3DTex_CopySubImage( target, level, 0, 0, x, y, width, height );
@@ -1820,7 +1821,8 @@ OPENGL_API void WINAPI glCopyTexSubImage1D( GLenum target, GLint level, GLint xo
 }
 OPENGL_API void WINAPI glCopyTexSubImage2D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height )
 {
-	QGLSectionTimer uploadTimer(QGL_PERF_TEXTURE_UPLOAD);
+	QGLSectionTimer copyTimer(QGL_PERF_FRAMEBUFFER_COPY);
+	QGL_DiagnosticsRecordFramebufferCopy( width, height );
 	QGL_DiagnosticsCaptureCopy( false, target, level, xoffset, yoffset, x, y, width, height );
 	D3DTex_CopySubImage( target, level, xoffset, yoffset, x, y, width, height );
 	QGL_DiagnosticsCaptureCopy( true, target, level, xoffset, yoffset, x, y, width, height );

@@ -99,6 +99,7 @@ void D3DGlobal_Init( bool clearGlobals )
 	D3DGlobal.settings.debugDumpFrame = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugDumpFrame", "Settings", static_cast<DWORD>(-1) ));
 	D3DGlobal.settings.debugDumpDraw = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugDumpDraw", "Settings", static_cast<DWORD>(-1) ));
 	D3DGlobal.settings.debugCaptureFrame = static_cast<LONG>(D3DGlobal_GetRegistryValue( "DebugCaptureFrame", "Settings", static_cast<DWORD>(-1) ));
+	D3DGlobal.settings.vSync = D3DGlobal_GetRegistryValue( "VSync", "Settings", 1 );
 	QGL_DiagnosticsConfigureCapture( D3DGlobal.settings.debugCaptureFrame );
 	logSetLevel( static_cast<int>(D3DGlobal.settings.logLevel) );
 	QGL_DiagnosticsConfigure( D3DGlobal.settings.crashDiagnostics != 0,
@@ -909,7 +910,8 @@ static bool D3DGlobal_SetupPresentParams( int width, int height, int bpp, BOOL w
 
 	D3DGlobal.hPresentParams.FullScreen_RefreshRateInHz = D3DGlobal.hCurrentMode.RefreshRate;
 	D3DGlobal.hPresentParams.Windowed = windowed;
-	D3DGlobal.hPresentParams.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+	D3DGlobal.hPresentParams.PresentationInterval =
+		D3DGlobal.settings.vSync ? D3DPRESENT_INTERVAL_ONE : D3DPRESENT_INTERVAL_IMMEDIATE;
 
 	// request 1 backbuffer
 	D3DGlobal.hPresentParams.BackBufferCount = 1;
