@@ -28,6 +28,8 @@
 #include "d3d_matrix_detection.hpp"
 #include "d3d_lists.hpp"
 #include "d3d_arb_program.hpp"
+
+#include <algorithm>
 #include <map>
 
 D3DState_t D3DState;
@@ -318,6 +320,26 @@ static void D3DState_SetLight()
 			dl.Direction = D3DState.LightingState.lightPosition[i];
 		} else {
 			dl.Position = D3DState.LightingState.lightPosition[i];
+			const float cutoff = D3DState.LightingState.lightSpotCutoff[i];
+			if (cutoff < 180.0f) {
+				// GL spot: lit inside the cutoff cone, scaled by cos(angle)^exponent.
+				// A zero exponent is a hard-edged cone (Theta == Phi). Otherwise D3D's
+				// falloff between Theta=0 and Phi is matched to GL at half the cutoff.
+				const float halfCone = D3DXToRadian(std::min(std::max(cutoff, 0.0f), 90.0f));
+				const float exponent = D3DState.LightingState.lightSpotExponent[i];
+				dl.Type = D3DLIGHT_SPOT;
+				dl.Direction = D3DState.LightingState.lightDirection[i];
+				dl.Phi = 2.0f * halfCone;
+				dl.Theta = dl.Phi;
+				dl.Falloff = 1.0f;
+				const float cosCutoff = cosf(halfCone);
+				const float cosMiddle = cosf(0.5f * halfCone);
+				const float d3dMiddle = cosCutoff < 1.0f ? (cosMiddle - cosCutoff) / (1.0f - cosCutoff) : 1.0f;
+				if (exponent > 0.0f && d3dMiddle > 0.0f && d3dMiddle < 1.0f) {
+					dl.Theta = 0.0f;
+					dl.Falloff = exponent * logf(cosMiddle) / logf(d3dMiddle);
+				}
+			}
 		}
 
 	/*	logPrintf("Light %i: type %x\n", i, dl.Type );
@@ -851,6 +873,10 @@ void D3DState_SetDefaults()
 		D3DState.LightingState.lightPosition[i].x = 0.0f;
 		D3DState.LightingState.lightPosition[i].y = 0.0f;
 		D3DState.LightingState.lightPosition[i].z = -1.0f;
+		// GL defaults: no spot cone (180), pointing along -Z, exponent 0.
+		D3DState.LightingState.lightSpotCutoff[i] = 180.0f;
+		D3DState.LightingState.lightSpotExponent[i] = 0.0f;
+		D3DState.LightingState.lightDirection[i] = D3DXVECTOR3(0.0f, 0.0f, -1.0f);
 		D3DState.LightingState.lightAttenuation[i].x = 1.0f;
 		D3DState.LightingState.lightAttenuation[i].y = 0.0f;
 		D3DState.LightingState.lightAttenuation[i].z = 0.0f;

@@ -70,4 +70,33 @@ void do_lighting_tests()
 	const float front[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
 	gl.Lightfv(GL_LIGHT0, GL_POSITION, front);
 	ExpectLightPosition("LIGHT0 set to (0,0,1,0)", 0.0f, 0.0f, 1.0f, 0.0f);
+
+	// Spot lights. Lighting is per vertex; the quad's corners are 54.7 degrees
+	// off the axis of a spot at (0,0,1) pointing along -Z.
+	float value = 0.0f;
+	gl.GetLightfv(GL_LIGHT0, GL_SPOT_CUTOFF, &value);
+	CHECK(value == 180.0f, "default GL_SPOT_CUTOFF %g, expected 180", value);
+	float direction[4] = {};
+	gl.GetLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, direction);
+	CHECK(direction[0] == 0.0f && direction[1] == 0.0f && direction[2] == -1.0f,
+		"default GL_SPOT_DIRECTION (%g,%g,%g), expected (0,0,-1)", direction[0], direction[1], direction[2]);
+
+	const float positional[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+	const float down[3] = { 0.0f, 0.0f, -1.0f };
+	gl.Lightfv(GL_LIGHT0, GL_POSITION, positional);
+	gl.Lightfv(GL_LIGHT0, GL_SPOT_DIRECTION, down);
+	const unsigned char pointLit = DrawLitQuad();
+	CHECK(pointLit > 90, "positional light without a cone: green %d, expected ~128", pointLit);
+
+	const float wideCone = 70.0f, narrowCone = 40.0f;
+	gl.Lightfv(GL_LIGHT0, GL_SPOT_CUTOFF, &wideCone);
+	const unsigned char insideCone = DrawLitQuad();
+	CHECK(insideCone > 90, "vertices inside a 70 degree spot cone: green %d, expected ~128", insideCone);
+	gl.Lightfv(GL_LIGHT0, GL_SPOT_CUTOFF, &narrowCone);
+	const unsigned char outsideCone = DrawLitQuad();
+	CHECK(outsideCone < 40, "vertices outside a 40 degree spot cone: green %d, expected ~10", outsideCone);
+
+	const float noCone = 180.0f;
+	gl.Lightfv(GL_LIGHT0, GL_SPOT_CUTOFF, &noCone);
+	gl.Lightfv(GL_LIGHT0, GL_POSITION, front);
 }
