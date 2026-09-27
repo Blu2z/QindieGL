@@ -29,6 +29,24 @@
 // Light operations
 //==================================================================================
 
+// World coordinates for yae_camera_split. Written out rather than D3DX, whose
+// TransformCoord misses by a unit in the last place even for the identity:
+// DS2 gives its lights in world coordinates, so they must come out unchanged.
+static D3DXVECTOR3 LightToWorldPoint( const D3DXMATRIX &m, const D3DXVECTOR3 &p )
+{
+	const float w = p.x * m._14 + p.y * m._24 + p.z * m._34 + m._44;
+	return D3DXVECTOR3( (p.x * m._11 + p.y * m._21 + p.z * m._31 + m._41) / w,
+		(p.x * m._12 + p.y * m._22 + p.z * m._32 + m._42) / w,
+		(p.x * m._13 + p.y * m._23 + p.z * m._33 + m._43) / w );
+}
+
+static D3DXVECTOR3 LightToWorldDirection( const D3DXMATRIX &m, const D3DXVECTOR3 &d )
+{
+	return D3DXVECTOR3( d.x * m._11 + d.y * m._21 + d.z * m._31,
+		d.x * m._12 + d.y * m._22 + d.z * m._32,
+		d.x * m._13 + d.y * m._23 + d.z * m._33 );
+}
+
 OPENGL_API void WINAPI glGetLightfv( GLenum light, GLenum pname, GLfloat *params )
 {
 	int lightIndex = light - GL_LIGHT0;
@@ -230,6 +248,10 @@ OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *par
 			lpos.x = params[0];
 			lpos.y = params[1];
 			lpos.z = params[2];
+			// yae_camera_split: also keep the world coordinates (see D3DState_SetLight).
+			unsigned int camera = 0;
+			const D3DStateMatrix *objectToWorld = D3DMatrix_ObjectToWorld( &camera );
+			D3DState.LightingState.lightWorldPositionCamera[lightIndex] = objectToWorld ? camera : 0;
 			
 			// WG: figure out how matrix heuristics applies here
 			if( params[3] == 0.0f ) {
@@ -238,6 +260,8 @@ OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *par
 				D3DState.LightingState.lightPosition[lightIndex].x = -lresult.x;
 				D3DState.LightingState.lightPosition[lightIndex].y = -lresult.y;
 				D3DState.LightingState.lightPosition[lightIndex].z = -lresult.z;
+				if( objectToWorld )
+					D3DState.LightingState.lightWorldPosition[lightIndex] = -LightToWorldDirection( *static_cast<const D3DXMATRIX *>(*objectToWorld), lpos );
 			} else {
 				lpos.x /= params[3];
 				lpos.y /= params[3];
@@ -247,6 +271,8 @@ OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *par
 				D3DState.LightingState.lightPosition[lightIndex].x = lresult.x;
 				D3DState.LightingState.lightPosition[lightIndex].y = lresult.y;
 				D3DState.LightingState.lightPosition[lightIndex].z = lresult.z;
+				if( objectToWorld )
+					D3DState.LightingState.lightWorldPosition[lightIndex] = LightToWorldPoint( *static_cast<const D3DXMATRIX *>(*objectToWorld), lpos );
 			}
 		}
 		break;
@@ -258,6 +284,11 @@ OPENGL_API void WINAPI glLightfv( GLenum light, GLenum pname, const GLfloat *par
 			lpos.z = params[2];
 			// WG: figure out how matrix heuristics applies here
 			D3DXVec3TransformNormal( &D3DState.LightingState.lightDirection[lightIndex], &lpos, D3DGlobal.modelviewMatrixStack->top( ) );
+			unsigned int camera = 0;
+			const D3DStateMatrix *objectToWorld = D3DMatrix_ObjectToWorld( &camera );
+			D3DState.LightingState.lightWorldDirectionCamera[lightIndex] = objectToWorld ? camera : 0;
+			if( objectToWorld )
+				D3DState.LightingState.lightWorldDirection[lightIndex] = LightToWorldDirection( *static_cast<const D3DXMATRIX *>(*objectToWorld), lpos );
 		}
 		break;
 	case GL_CONSTANT_ATTENUATION:

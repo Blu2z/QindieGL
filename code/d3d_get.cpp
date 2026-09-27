@@ -360,10 +360,13 @@ template<typename T> static void glGet( GLenum pname, T *params )
 			for (int i = 0; i < 16; i++) {
 				params[i] = (T)pm->m[i/4][i%4];
 			}
+			// Only the idtech2 detection mode moves the modelview into the view.
 			D3DXMATRIX model, view;
-			matrix_detect_on_world_retrieve(&pm->m[0][0], &model, &view);
-			D3DGlobal.modelMatrixStack->load(model);
-			D3DGlobal.viewMatrixStack->load(view);
+			if (!D3DGlobal.settings.game.yaeCameraSplit &&
+				matrix_detect_on_world_retrieve(&pm->m[0][0], &model, &view)) {
+				D3DGlobal.modelMatrixStack->load(model);
+				D3DGlobal.viewMatrixStack->load(view);
+			}
 			return;
 		}
 	case GL_PROJECTION_MATRIX:

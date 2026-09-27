@@ -289,6 +289,7 @@ namespace {
 	static char gProjectionState[160] = "unavailable";
 	static std::map<std::string, uint64_t> gD3DFailures;
 	static std::map<std::string, uint64_t> gUnsupportedEnums;
+	static std::map<std::string, uint64_t> gCallsWithoutContext;
 	static std::set<uint32_t> gYAEWorldDrawStates;
 	static std::set<GLuint> gYAEDumpedTextures;
 	static unsigned int gYAEPostEffectDraws = 0;
@@ -1095,8 +1096,9 @@ namespace {
 		unsigned int copies;
 		unsigned int shots;
 		bool shotAfterDraw;
+		std::string camera;	// last camera census segment written
 	};
-	CaptureState gCapture = { -1, false, false, 0, nullptr, "", {}, 0, 0, false };
+	CaptureState gCapture = { -1, false, false, 0, nullptr, "", {}, 0, 0, false, {} };
 	const unsigned int kCaptureMaxShots = 48;
 	std::set<GLuint> gCaptureDumpedTextures;	// textures written by the current capture
 
@@ -1149,9 +1151,12 @@ namespace {
 		gCapture.copies = 0;
 		gCapture.shots = 0;
 		gCapture.shotAfterDraw = false;
+		gCapture.camera.clear();
 		fprintf(gCapture.file, "QindieGL frame capture: frame %llu (%s)\n"
 			"Columns: draw api mode count | projection/hash depth(test/write/func) blend(src,dst) alpha(func,ref) cull stencil colorMask "
-			"lighting(mask) fog color arrays | per enabled texture unit: id target env texgen matrix\n\n",
+			"lighting(mask) fog color arrays offset vp fp mv=d<modelview stack depth>[e: level reset above depth 0] | "
+			"per enabled texture unit: id target env texgen matrix\n"
+			"CAMERA lines: camera census label, generation, depth-0 transforms, eye position and direction of the depth-0 matrix\n\n",
 			static_cast<unsigned long long>(frame), trigger);
 		logPrintfLevel(QGL_LOG_INFO, "FRAME_CAPTURE", "capturing frame %llu (%s) into %s",
 			static_cast<unsigned long long>(frame), trigger, gCapture.directory);
@@ -1188,9 +1193,19 @@ namespace {
 		const bool ortho = D3DGlobal.projectionMatrixStack && D3DGlobal_IsOrthoProjection();
 		const uint32_t projectionHash = D3DGlobal.projectionMatrixStack ?
 			HashBytes(D3DGlobal.projectionMatrixStack->top(), sizeof(D3DXMATRIX)) : 0;
+		// The camera census segment, written when it changes.
+		char camera[256];
+		QGL_ViewDiagnosticsDescribeCamera(camera, sizeof(camera));
+		if (gCapture.camera != camera) {
+			gCapture.camera = camera;
+			fprintf(gCapture.file, "CAMERA %s\n", camera);
+		}
+		D3DCameraTrackInfo track = {};
+		D3DMatrix_GetCameraTrackInfo(&track);
+		const int stackDepth = D3DGlobal.modelviewMatrixStack ? D3DGlobal.modelviewMatrixStack->stack_depth() : 0;
 		fprintf(gCapture.file,
 			"D%04llu %s mode=0x%X count=%d | %s/%08X depth=%u/%u/%u blend=%u(0x%X,0x%X) alpha=%u(%u,%u) cull=%u(%u) stencil=%u colorMask=0x%X "
-			"lighting=%u(0x%X) fog=%u color=0x%08X arrays=0x%08X offset=%u(%g,%g) vp=%u(%u) fp=%u(%u,%s) |",
+			"lighting=%u(0x%X) fog=%u color=0x%08X arrays=0x%08X offset=%u(%g,%g) vp=%u(%u) fp=%u(%u,%s) mv=d%d%s |",
 			static_cast<unsigned long long>(gDiagnostics.drawId), api, mode, count,
 			ortho ? "ORTHO" : "PERSP", projectionHash, enable.depthTestEnabled,
 			D3DState.DepthBufferState.depthWriteMask, D3DState.DepthBufferState.depthTestFunc,
@@ -1200,7 +1215,7 @@ namespace {
 			D3DState.CurrentState.currentColor, D3DState.ClientVertexArrayState.vertexArrayEnable,
 			enable.depthBiasEnabled, D3DState.PolygonState.depthBiasFactor, D3DState.PolygonState.depthBiasUnits,
 			enable.vertexProgramEnabled, ARB_GetBoundVertexProgram(), enable.fragmentProgramEnabled,
-			ARB_GetBoundFragmentProgram(), FragmentProgramBuild());
+			ARB_GetBoundFragmentProgram(), FragmentProgramBuild(), stackDepth, track.eyeSpace ? "e" : "");
 		bool samplesCopy = false;
 		for (int unit = 0; unit < D3DGlobal.maxActiveTMU; ++unit) {
 			if (!enable.textureEnabled[unit]) continue;
@@ -1634,6 +1649,7 @@ void QGL_DiagnosticsInitialize()
 	strcpy_s(gProjectionState, "unavailable");
 	gD3DFailures.clear();
 	gUnsupportedEnums.clear();
+	gCallsWithoutContext.clear();
 	gYAEWorldDrawStates.clear();
 	gYAEDumpedTextures.clear();
 	gPreviousExceptionFilter = SetUnhandledExceptionFilter(QGL_UnhandledExceptionFilter);
@@ -1958,6 +1974,12 @@ void QGL_DiagnosticsRecordD3DFailure( const char *call, long result )
 	logPrintfLevel(QGL_LOG_ERROR, "D3D_ERROR", "%s", key);
 }
 
+void QGL_DiagnosticsRecordCallWithoutContext( const char *api )
+{
+	if (gCallsWithoutContext[api]++ == 0)
+		logPrintfLevel(QGL_LOG_INFO, "GL_NO_CONTEXT", "%s called without a context; ignored", api);
+}
+
 void QGL_DiagnosticsRecordDeviceReset( long result )
 {
 	++gDiagnostics.deviceResets;
@@ -2052,6 +2074,8 @@ void QGL_DiagnosticsDumpCapabilityReport()
 	logPrintf("  YAEFallbackCompatibility: %u\n", D3DGlobal.settings.game.yaeFallbackCompatibility);
 	logPrintf("  YAECompileARBPrograms: %u\n", D3DGlobal.settings.game.yaeCompileARBPrograms);
 	logPrintf("  YAEEyeDistanceFog: %u\n", D3DGlobal.settings.game.yaeEyeDistanceFog);
+	logPrintf("  YAECameraSplit: %u\n", D3DGlobal.settings.game.yaeCameraSplit);
+	logPrintf("  RemixServerAllCPUs: %u\n", D3DGlobal.settings.game.remixServerAllCPUs);
 	logPrintf("  MultiSample: %u\n", D3DGlobal.settings.multisample);
 	logPrintf("  CrashDiagnostics: %u\n", D3DGlobal.settings.crashDiagnostics);
 	logPrintf("  DebugMaxDrawCall: %d\n", D3DGlobal.settings.debugMaxDrawCall);
@@ -2086,6 +2110,8 @@ void QGL_DiagnosticsDumpSessionSummary()
 	DumpCountMap("none", gUnsupportedEnums);
 	logPrintf("Failed D3D calls:\n");
 	DumpCountMap("none", gD3DFailures);
+	logPrintf("GL calls without a context (ignored):\n");
+	DumpCountMap("none", gCallsWithoutContext);
 	logPrintf("Device resets: %llu\n", static_cast<unsigned long long>(gDiagnostics.deviceResets));
 	logPrintf("PBuffers created: %llu\n", static_cast<unsigned long long>(gDiagnostics.pBuffersCreated));
 	logPrintf("ARB programs uploaded: %llu\n", static_cast<unsigned long long>(gDiagnostics.arbProgramsUploaded));

@@ -18,6 +18,15 @@
     <ClCompile Include="_main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="affinity_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="camera_split_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="context_lifetime_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="framebuffer_copy_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -25,6 +34,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="lighting_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="projection_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="texgen.cpp">

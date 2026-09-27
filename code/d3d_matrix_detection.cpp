@@ -312,14 +312,16 @@ void matrix_detect_process_upload(const float* mat, D3DXMATRIX* detected_model, 
 	}
 }
 
-void matrix_detect_on_world_retrieve(const float* mat, D3DXMATRIX* detected_model, D3DXMATRIX* detected_view)
+bool matrix_detect_on_world_retrieve(const float* mat, D3DXMATRIX* detected_model, D3DXMATRIX* detected_view)
 {
 	if (g_mat_detection_mode == DETECTION_IDTECH2)
 	{
 		//store modelview in view matrix
 		D3DXMatrixIdentity(detected_model);
 		memcpy(&(detected_view->m[0][0]), mat, sizeof(detected_view->m));
+		return true;
 	}
+	return false;
 }
 
 void matrix_detect_frame_ended()

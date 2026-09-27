@@ -123,9 +123,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="affinity_tests.cpp" />
+    <ClCompile Include="camera_split_tests.cpp" />
+    <ClCompile Include="context_lifetime_tests.cpp" />
     <ClCompile Include="framebuffer_copy_tests.cpp" />
     <ClCompile Include="gl_harness.cpp" />
     <ClCompile Include="lighting_tests.cpp" />
+    <ClCompile Include="projection_tests.cpp" />
     <ClCompile Include="texgen.cpp" />
     <ClCompile Include="rectangle_texture_tests.cpp" />
     <ClCompile Include="shadow_receiver_tests.cpp" />

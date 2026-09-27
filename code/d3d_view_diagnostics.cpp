@@ -9,6 +9,12 @@
 * tested) are compared with the previous frame; changes are logged at DEBUG
 * and aggregated for the session summary. Clip planes are the D3D-effective
 * distances (NDC z 0..1) of the matrix actually sent to the device.
+*
+* Camera census (Phase G, RTX Remix): DS2 sets each camera with glLoadIdentity
+* and one transform at modelview stack depth 0. For every draw the census
+* records how the modelview was built (d3d_matrix.cpp), the kind of the
+* depth-0 matrix and its relation to the frame's main perspective camera, per
+* label and as per-frame patterns: the evidence behind yae_camera_split.
 ***************************************************************************/
 #include "d3d_wrapper.hpp"
 #include "d3d_global.hpp"
@@ -181,6 +187,285 @@ namespace {
 		if (boundary & BOUNDARY_DEPTH_WRITE_OFF) text += " depthWrite on->off";
 		return text.empty() ? std::string(" no-state-change") : text;
 	}
+
+	//----------------------------------------------------------------------
+	// Camera census
+	//----------------------------------------------------------------------
+	// Segments are runs of draws sharing the depth-0 matrix and projection
+	// label. Relations compare a segment's depth-0 matrix with the main camera:
+	// the perspective segment of the frame with the most draws.
+	enum { RELATION_MAIN, RELATION_SAME_ROTATION, RELATION_OTHER, RELATION_NO_MAIN, RELATION_COUNT };
+	const char kRelationMarker[RELATION_COUNT] = { '=', '~', '!', '?' };
+
+	struct CameraSegment
+	{
+		unsigned int generation;
+		int transforms;
+		unsigned int projectionSerial;
+		std::string label;
+		D3DXMATRIX view;
+		bool perspective;
+		unsigned int draws, depth0Draws, objectDraws, eyeDraws;
+		int relation;
+	};
+
+	struct CameraClass
+	{
+		uint64_t firstFrame, lastCountedFrame, frames, draws, depth0Draws, objectDraws, eyeDraws;
+		uint64_t relation[RELATION_COUNT];
+	};
+
+	struct CameraPattern
+	{
+		uint64_t firstFrame, frames;
+	};
+
+	const size_t kMaxCameraClasses = 96, kMaxCameraPatterns = 256;
+	std::string gProjectionLabel("?");
+	unsigned int gProjectionSerial = 0;
+	std::vector<CameraSegment> gCameraSegments;
+	std::map<std::string, CameraClass> gCameraClasses;
+	std::map<std::string, CameraPattern> gCameraPatterns;
+	uint64_t gCameraClassesDropped = 0, gCameraPatternsDropped = 0;
+	std::string gLastCameraDescription("<none>");
+
+	std::string ProjectionLabel( const ProjectionInfo &info, const D3DXMATRIX &m )
+	{
+		if (D3DXMatrixIsIdentity(&m))
+			return "I";
+		char label[48];
+		switch (info.type) {
+		case PROJECTION_PERSPECTIVE:
+			if (info.infiniteFar)
+				sprintf_s(label, "P%.1f-inf", info.nearPlane);
+			else
+				sprintf_s(label, "P%.1f-%.0f", info.nearPlane,
+					info.farPlane >= 1000.0f ? 100.0f * roundf(info.farPlane / 100.0f) : info.farPlane);
+			return label;
+		case PROJECTION_ORTHO:
+			return "O";
+		default:
+			return "X";
+		}
+	}
+
+	// The stack holds the transpose of the GL matrix: rows _1x.._3x are the
+	// images of the axes and _41.._43 the translation.
+	const char *ViewKind( const D3DXMATRIX &m )
+	{
+		if (fabsf(m._14) > 1e-5f || fabsf(m._24) > 1e-5f || fabsf(m._34) > 1e-5f || fabsf(m._44 - 1.0f) > 1e-5f)
+			return "proj";
+		const D3DXVECTOR3 x(m._11, m._12, m._13), y(m._21, m._22, m._23), z(m._31, m._32, m._33);
+		const bool orthonormal =
+			fabsf(D3DXVec3Length(&x) - 1.0f) < 1e-3f && fabsf(D3DXVec3Length(&y) - 1.0f) < 1e-3f &&
+			fabsf(D3DXVec3Length(&z) - 1.0f) < 1e-3f && fabsf(D3DXVec3Dot(&x, &y)) < 1e-3f &&
+			fabsf(D3DXVec3Dot(&x, &z)) < 1e-3f && fabsf(D3DXVec3Dot(&y, &z)) < 1e-3f;
+		if (!orthonormal)
+			return "affine";
+		D3DXVECTOR3 xy;
+		D3DXVec3Cross(&xy, &x, &y);
+		const bool mirrored = D3DXVec3Dot(&xy, &z) < 0.0f;
+		const bool translated = fabsf(m._41) > 1e-3f || fabsf(m._42) > 1e-3f || fabsf(m._43) > 1e-3f;
+		if (mirrored)
+			return translated ? "rigid-mirror" : "rot-mirror";
+		if (!translated)
+			return D3DXMatrixIsIdentity(&m) ? "ident" : "rot";
+		return "rigid";
+	}
+
+	std::string ViewLabel( const D3DCameraTrackInfo &camera, const D3DXMATRIX &view )
+	{
+		if (camera.depth0Transforms == 0)
+			return "none";
+		std::string label = camera.depth0Loaded ? "load:" : "";
+		label += ViewKind(view);
+		if (camera.depth0Transforms > 1) {
+			char extra[16];
+			sprintf_s(extra, "+%d", camera.depth0Transforms - 1);
+			label += extra;
+		}
+		return label;
+	}
+
+	// Eye position and viewing direction (GL -Z) of a depth-0 matrix in world space.
+	void DescribeView( const D3DXMATRIX &view, char *text, size_t size )
+	{
+		D3DXMATRIX inverse;
+		if (!D3DXMatrixInverse(&inverse, nullptr, &view)) {
+			sprintf_s(text, size, "singular");
+			return;
+		}
+		sprintf_s(text, size, "pos=(%.1f,%.1f,%.1f) fwd=(%.3f,%.3f,%.3f)",
+			inverse._41, inverse._42, inverse._43, -inverse._31, -inverse._32, -inverse._33);
+	}
+
+	bool SameRotation( const D3DXMATRIX &a, const D3DXMATRIX &b )
+	{
+		for (int row = 0; row < 3; ++row)
+			for (int column = 0; column < 3; ++column)
+				if (fabsf(a.m[row][column] - b.m[row][column]) > 1e-4f)
+					return false;
+		return true;
+	}
+
+	void CameraCensusOnDraw( uint64_t frame, uint64_t draw, bool perspective )
+	{
+		D3DCameraTrackInfo camera;
+		D3DMatrix_GetCameraTrackInfo(&camera);
+		const int depth = D3DGlobal.modelviewMatrixStack->stack_depth();
+
+		if (gCameraSegments.empty() || gCameraSegments.back().generation != camera.generation ||
+			gCameraSegments.back().transforms != camera.depth0Transforms ||
+			gCameraSegments.back().projectionSerial != gProjectionSerial) {
+			CameraSegment segment = {};
+			segment.generation = camera.generation;
+			segment.transforms = camera.depth0Transforms;
+			segment.projectionSerial = gProjectionSerial;
+			segment.view = *static_cast<const D3DXMATRIX *>(D3DGlobal.modelviewMatrixStack->level(0));
+			segment.label = gProjectionLabel + " " + ViewLabel(camera, segment.view);
+			segment.perspective = perspective;
+			segment.relation = RELATION_NO_MAIN;
+			gCameraSegments.push_back(segment);
+
+			char view[96], text[224];
+			DescribeView(segment.view, view, sizeof(view));
+			sprintf_s(text, "\"%s\" g%u t%d depth0 %s", segment.label.c_str(), camera.generation,
+				camera.depth0Transforms, view);
+			gLastCameraDescription = text;
+
+			auto it = gCameraClasses.find(segment.label);
+			if (it == gCameraClasses.end()) {
+				if (gCameraClasses.size() >= kMaxCameraClasses) {
+					++gCameraClassesDropped;
+				} else {
+					CameraClass created = {};
+					created.firstFrame = frame;
+					created.lastCountedFrame = ~0ull;
+					gCameraClasses.emplace(segment.label, created);
+					logPrintfLevel(QGL_LOG_INFO, "CAMERA",
+						"new class \"%s\" first at frame=%llu draw=%llu stackDepth=%d eyeSpace=%d depth0 %s",
+						segment.label.c_str(), static_cast<unsigned long long>(frame),
+						static_cast<unsigned long long>(draw), depth, camera.eyeSpace ? 1 : 0, view);
+				}
+			}
+		}
+
+		CameraSegment &segment = gCameraSegments.back();
+		++segment.draws;
+		if (camera.eyeSpace) ++segment.eyeDraws;
+		else if (depth == 0) ++segment.depth0Draws;
+		else ++segment.objectDraws;
+	}
+
+	void CameraCensusOnFrameEnd( uint64_t frame )
+	{
+		const CameraSegment *main = nullptr;
+		for (const CameraSegment &segment : gCameraSegments)
+			if (segment.perspective && (!main || segment.draws > main->draws))
+				main = &segment;
+
+		std::string key;
+		const std::string *previous = nullptr;
+		int previousRelation = -1;
+		for (CameraSegment &segment : gCameraSegments) {
+			if (main) {
+				if (!memcmp(&segment.view, &main->view, sizeof(D3DXMATRIX)))
+					segment.relation = RELATION_MAIN;
+				else if (SameRotation(segment.view, main->view))
+					segment.relation = RELATION_SAME_ROTATION;
+				else
+					segment.relation = RELATION_OTHER;
+			}
+
+			auto it = gCameraClasses.find(segment.label);
+			if (it != gCameraClasses.end()) {
+				CameraClass &stats = it->second;
+				if (stats.lastCountedFrame != frame) {
+					stats.lastCountedFrame = frame;
+					++stats.frames;
+				}
+				stats.draws += segment.draws;
+				stats.depth0Draws += segment.depth0Draws;
+				stats.objectDraws += segment.objectDraws;
+				stats.eyeDraws += segment.eyeDraws;
+				++stats.relation[segment.relation];
+			}
+
+			// Consecutive segments with the same label and relation form one item.
+			if (previous && *previous == segment.label && previousRelation == segment.relation)
+				continue;
+			previous = &segment.label;
+			previousRelation = segment.relation;
+			char item[96];
+			sprintf_s(item, "%s%s%c", key.empty() ? "" : " | ", segment.label.c_str(),
+				kRelationMarker[segment.relation]);
+			key += item;
+		}
+
+		if (!key.empty()) {
+			auto it = gCameraPatterns.find(key);
+			if (it == gCameraPatterns.end()) {
+				if (gCameraPatterns.size() >= kMaxCameraPatterns) {
+					++gCameraPatternsDropped;
+				} else {
+					CameraPattern created = { frame, 0 };
+					it = gCameraPatterns.emplace(key, created).first;
+					std::string counts;
+					for (const CameraSegment &segment : gCameraSegments) {
+						char item[32];
+						sprintf_s(item, "%s%u", counts.empty() ? "" : ",", segment.draws);
+						counts += item;
+					}
+					logPrintfLevel(QGL_LOG_INFO, "CAMERA", "new frame pattern at frame=%llu: %s (draws per segment %s)",
+						static_cast<unsigned long long>(frame), key.c_str(), counts.c_str());
+				}
+			}
+			if (it != gCameraPatterns.end())
+				++it->second.frames;
+		}
+		gCameraSegments.clear();
+	}
+
+	void CameraCensusDumpSummary()
+	{
+		logPrintf("  Camera census (depth-0 modelview vs the main camera: = same, ~ same rotation, ! other, ? no perspective camera):\n");
+		std::vector<const std::pair<const std::string, CameraClass> *> classes;
+		for (const auto &entry : gCameraClasses) classes.push_back(&entry);
+		std::sort(classes.begin(), classes.end(), []( const auto *a, const auto *b ) {
+			return a->second.draws > b->second.draws; });
+		for (const auto *entry : classes) {
+			const CameraClass &c = entry->second;
+			logPrintf("    \"%s\" frames=%llu draws=%llu (depth0 %llu, objects %llu, eye-space %llu) "
+				"segments: =%llu ~%llu !%llu ?%llu firstFrame=%llu\n",
+				entry->first.c_str(), static_cast<unsigned long long>(c.frames),
+				static_cast<unsigned long long>(c.draws), static_cast<unsigned long long>(c.depth0Draws),
+				static_cast<unsigned long long>(c.objectDraws), static_cast<unsigned long long>(c.eyeDraws),
+				static_cast<unsigned long long>(c.relation[RELATION_MAIN]),
+				static_cast<unsigned long long>(c.relation[RELATION_SAME_ROTATION]),
+				static_cast<unsigned long long>(c.relation[RELATION_OTHER]),
+				static_cast<unsigned long long>(c.relation[RELATION_NO_MAIN]),
+				static_cast<unsigned long long>(c.firstFrame));
+		}
+		if (gCameraClassesDropped)
+			logPrintf("    ... %llu segments of classes beyond the first %u not counted\n",
+				static_cast<unsigned long long>(gCameraClassesDropped), static_cast<unsigned int>(kMaxCameraClasses));
+
+		std::vector<const std::pair<const std::string, CameraPattern> *> patterns;
+		for (const auto &entry : gCameraPatterns) patterns.push_back(&entry);
+		std::sort(patterns.begin(), patterns.end(), []( const auto *a, const auto *b ) {
+			return a->second.frames > b->second.frames; });
+		logPrintf("  Camera frame patterns: %u\n", static_cast<unsigned int>(patterns.size()));
+		const size_t listed = std::min<size_t>(patterns.size(), 24);
+		for (size_t i = 0; i < listed; ++i)
+			logPrintf("    [%s] frames=%llu firstFrame=%llu\n", patterns[i]->first.c_str(),
+				static_cast<unsigned long long>(patterns[i]->second.frames),
+				static_cast<unsigned long long>(patterns[i]->second.firstFrame));
+		if (patterns.size() > listed)
+			logPrintf("    ... %u more\n", static_cast<unsigned int>(patterns.size() - listed));
+		if (gCameraPatternsDropped)
+			logPrintf("    ... %llu frames with patterns beyond the first %u not counted\n",
+				static_cast<unsigned long long>(gCameraPatternsDropped), static_cast<unsigned int>(kMaxCameraPatterns));
+	}
 }
 
 void QGL_ViewDiagnosticsOnDraw( uint64_t frame, uint64_t draw )
@@ -193,6 +478,11 @@ void QGL_ViewDiagnosticsOnDraw( uint64_t frame, uint64_t draw )
 	if (gLastClass < 0 || hash != gLastHash) {
 		gLastHash = hash;
 		const ProjectionInfo info = Classify(projection);
+		const std::string label = ProjectionLabel(info, projection);
+		if (label != gProjectionLabel) {
+			gProjectionLabel = label;
+			++gProjectionSerial;
+		}
 		const std::string key = ClassKey(info, hash);
 		auto it = gClassByKey.find(key);
 		// Continuously animated projections (zoom) must not grow the table
@@ -245,6 +535,14 @@ void QGL_ViewDiagnosticsOnDraw( uint64_t frame, uint64_t draw )
 	if (D3DState.EnableState.depthTestEnabled) flags |= DRAW_DEPTH_TEST;
 	if (D3DState.DepthBufferState.depthWriteMask) flags |= DRAW_DEPTH_WRITE;
 	gDrawFlags.push_back(flags);
+
+	if (D3DGlobal.modelviewMatrixStack)
+		CameraCensusOnDraw(frame, draw, gProjectionLabel[0] == 'P');
+}
+
+void QGL_ViewDiagnosticsDescribeCamera( char *text, size_t size )
+{
+	sprintf_s(text, size, "%s", gLastCameraDescription.c_str());
 }
 
 bool QGL_ViewDiagnosticsOnFrameEnd( uint64_t frame )
@@ -308,6 +606,7 @@ bool QGL_ViewDiagnosticsOnFrameEnd( uint64_t frame )
 
 	gDrawFlags.clear();
 	gSegments.clear();
+	CameraCensusOnFrameEnd(frame);
 	return summary.world;
 }
 
@@ -337,4 +636,5 @@ void QGL_ViewDiagnosticsDumpSummary()
 	}
 	if (order.size() > listed)
 		logPrintf("    ... %u more\n", static_cast<unsigned int>(order.size() - listed));
+	CameraCensusDumpSummary();
 }

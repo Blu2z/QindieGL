@@ -92,6 +92,11 @@ bool Harness_Init( const char *dllPath, int width, int height, std::string &erro
 		!LoadExport(gl.Lightfv, "glLightfv", error) ||
 		!LoadExport(gl.GetLightfv, "glGetLightfv", error) ||
 		!LoadExport(gl.LoadMatrixf, "glLoadMatrixf", error) ||
+		!LoadExport(gl.MultMatrixf, "glMultMatrixf", error) ||
+		!LoadExport(gl.PushMatrix, "glPushMatrix", error) ||
+		!LoadExport(gl.PopMatrix, "glPopMatrix", error) ||
+		!LoadExport(gl.ClipPlane, "glClipPlane", error) ||
+		!LoadExport(gl.Lightf, "glLightf", error) ||
 		!LoadExport(gl.Ortho, "glOrtho", error) ||
 		!LoadExport(gl.DepthMask, "glDepthMask", error) ||
 		!LoadExport(gl.TexGeni, "glTexGeni", error) ||
