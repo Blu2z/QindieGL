@@ -30,6 +30,17 @@ extern void do_framebuffer_copy_tests();
 extern void do_extension_availability_tests( bool expectBufferObjects );
 extern void do_view_tests();
 extern void check_view_diagnostics_log( const std::string &logPath );
+extern void do_projection_tests( bool projectionFix );
+extern void do_camera_split_tests();
+extern void compare_camera_split_frames( const std::string &withoutSplit, const std::string &withSplit );
+extern void check_camera_split_log( const std::string &logPath, bool split );
+extern void prepare_calls_without_context();
+extern void do_calls_without_context_tests();
+extern void check_calls_without_context_log( const std::string &logPath );
+extern bool affinity_can_be_widened();
+extern void pin_to_one_cpu();
+extern void do_affinity_tests();
+extern void check_affinity_log( const std::string &logPath, bool widened );
 
 namespace {
 
@@ -38,6 +49,7 @@ enum GLTestMode
 	MODE_BUFFER_OBJECTS,	// VBO, lighting and multitexture tests
 	MODE_NO_BUFFER_OBJECTS,	// the extension must be hidden
 	MODE_VIEW_DIAGNOSTICS,	// frames checked afterwards through QindieGL.log
+	MODE_PINNED_CPU,	// pinned to one CPU before the context is created, as DS2 is
 };
 
 struct GLConfiguration
@@ -60,10 +72,18 @@ const GLConfiguration kConfigurations[] = {
 		"[Settings]\r\nLogLevel = 1\r\nDrawCallFastPath = 1\r\n\r\n"
 		"[Extensions]\r\nGL_ARB_vertex_buffer_object = 1\r\n", MODE_BUFFER_OBJECTS },
 	// Mirrors the You Are Empty profile: VBO is exposed by the YAE switch while
-	// the global extension setting stays disabled.
+	// the global extension setting stays disabled. LogLevel 2 writes the session
+	// summary with the camera census.
 	{ "yae-profile",
-		"[Settings]\r\nLogLevel = 1\r\nDrawCallFastPath = 1\r\nProjectionFix = 1\r\n\r\n"
+		"[Settings]\r\nLogLevel = 2\r\nDrawCallFastPath = 1\r\nProjectionFix = 1\r\n\r\n"
 		"[game.QindieGL_Tests]\r\nyae_fallback_compatibility = 1\r\nyae_compile_arb_programs = 1\r\n\r\n"
+		"[Extensions]\r\nGL_ARB_vertex_buffer_object = 0\r\n", MODE_BUFFER_OBJECTS },
+	// The YAE profile with the Phase G camera split: every test must still pass
+	// and the camera split frame must equal the one rendered by yae-profile.
+	{ "yae-camera-split",
+		"[Settings]\r\nLogLevel = 2\r\nDrawCallFastPath = 1\r\nProjectionFix = 1\r\n\r\n"
+		"[game.QindieGL_Tests]\r\nyae_fallback_compatibility = 1\r\nyae_compile_arb_programs = 1\r\n"
+		"yae_camera_split = 1\r\n\r\n"
 		"[Extensions]\r\nGL_ARB_vertex_buffer_object = 0\r\n", MODE_BUFFER_OBJECTS },
 	{ "vbo-disabled",
 		"[Settings]\r\nLogLevel = 1\r\n\r\n"
@@ -71,6 +91,15 @@ const GLConfiguration kConfigurations[] = {
 	{ "view-diagnostics",
 		"[Settings]\r\nLogLevel = 3\r\nProjectionFix = 1\r\nDebugCaptureFrame = 1\r\n\r\n"
 		"[Extensions]\r\n", MODE_VIEW_DIAGNOSTICS },
+	// A process that Direct3DCreate9 starts (the RTX Remix bridge server)
+	// inherits the CPU affinity in effect during that call.
+	{ "pinned-cpu",
+		"[Settings]\r\nLogLevel = 2\r\n\r\n"
+		"[Extensions]\r\n", MODE_PINNED_CPU },
+	{ "pinned-cpu-remix-server-all-cpus",
+		"[Settings]\r\nLogLevel = 2\r\n\r\n"
+		"[game.QindieGL_Tests]\r\nremix_server_all_cpus = 1\r\n\r\n"
+		"[Extensions]\r\n", MODE_PINNED_CPU },
 };
 
 std::string ExecutablePath()
@@ -126,6 +155,8 @@ DWORD RunConfiguration( const GLConfiguration &configuration, const std::string 
 	CreateDirectoryA(root.c_str(), nullptr);
 	CreateDirectoryA(directory.c_str(), nullptr);
 
+	// Outputs compared by the parent must come from this run.
+	DeleteFileA((directory + "\\camera_split_frame.bin").c_str());
 	std::string ini = configuration.ini;
 	ini += kCommonExtensions;
 	if (!WriteTextFile(directory + "\\QindieGL.ini", ini.c_str())) {
@@ -162,6 +193,8 @@ int RunGLChild( const char *dll, const char *configurationName )
 		return 1;
 	}
 
+	if (configuration->mode == MODE_PINNED_CPU)
+		pin_to_one_cpu();
 	std::string error;
 	if (!Harness_Init(dll, 64, 64, error)) {
 		printf("[%s] harness initialisation failed: %s\n", configurationName, error.c_str());
@@ -170,6 +203,9 @@ int RunGLChild( const char *dll, const char *configurationName )
 	switch (configuration->mode) {
 	case MODE_BUFFER_OBJECTS:
 		do_extension_availability_tests(true);
+		do_projection_tests(strstr(configuration->ini, "ProjectionFix = 1") != nullptr);
+		if (strstr(configuration->ini, "yae_fallback_compatibility = 1"))
+			do_camera_split_tests();
 		do_lighting_tests();
 		do_texture_projection_tests();
 		do_rectangle_texture_tests();
@@ -178,6 +214,7 @@ int RunGLChild( const char *dll, const char *configurationName )
 		do_framebuffer_copy_tests();
 		do_vbo_tests();
 		do_multitexture_tests();
+		prepare_calls_without_context();
 		break;
 	case MODE_NO_BUFFER_OBJECTS:
 		do_extension_availability_tests(false);
@@ -185,8 +222,14 @@ int RunGLChild( const char *dll, const char *configurationName )
 	case MODE_VIEW_DIAGNOSTICS:
 		do_view_tests();
 		break;
+	case MODE_PINNED_CPU:
+		do_affinity_tests();
+		break;
 	}
 	Harness_Shutdown();
+	// DS2 deletes textures after wglDeleteContext; a crash fails this child.
+	if (configuration->mode == MODE_BUFFER_OBJECTS)
+		do_calls_without_context_tests();
 
 	printf("[%s] %d/%d checks passed\n", configurationName, tests_ok, tests_total);
 	return tests_total - tests_ok;
@@ -225,6 +268,18 @@ int main( int argc, char **argv )
 			if (configuration.mode == MODE_VIEW_DIAGNOSTICS)
 				check_view_diagnostics_log(DirectoryOf(ExecutablePath()) + "\\gl-tests\\" +
 					configuration.name + "\\QindieGL.log");
+		}
+		const std::string root = DirectoryOf(ExecutablePath()) + "\\gl-tests\\";
+		check_camera_split_log(root + "yae-profile\\QindieGL.log", false);
+		check_camera_split_log(root + "yae-camera-split\\QindieGL.log", true);
+		compare_camera_split_frames(root + "yae-profile\\camera_split_frame.bin",
+			root + "yae-camera-split\\camera_split_frame.bin");
+		check_calls_without_context_log(root + "yae-profile\\QindieGL.log");
+		if (affinity_can_be_widened()) {
+			check_affinity_log(root + "pinned-cpu\\QindieGL.log", false);
+			check_affinity_log(root + "pinned-cpu-remix-server-all-cpus\\QindieGL.log", true);
+		} else {
+			printf("Single CPU: the affinity checks are skipped\n");
 		}
 	}
 

@@ -37,6 +37,8 @@ void QGL_DiagnosticsEndFrame( long presentResult );
 
 void QGL_DiagnosticsRecordEvent( bool d3dEvent, const char *category, const char *fmt, ... );
 void QGL_DiagnosticsRecordD3DFailure( const char *call, long result );
+// A GL call ignored because no context exists (see glDeleteTextures).
+void QGL_DiagnosticsRecordCallWithoutContext( const char *api );
 void QGL_DiagnosticsRecordDeviceReset( long result );
 void QGL_DiagnosticsRecordPBufferCreated();
 void QGL_DiagnosticsRecordARBProgramUpload( bool compiled, bool failed );
@@ -54,11 +56,14 @@ void QGL_DiagnosticsCaptureClear( unsigned int mask );
 void QGL_DiagnosticsCaptureCopy( bool afterCopy, unsigned int target, int level, int xoffset, int yoffset,
 	int x, int y, int width, int height );
 
-// Projection classes and world-to-HUD boundaries (d3d_view_diagnostics.cpp).
+// Projection classes, world-to-HUD boundaries and the camera census
+// (d3d_view_diagnostics.cpp).
 void QGL_ViewDiagnosticsOnDraw( uint64_t frame, uint64_t draw );
 // Returns true when the frame contained world draws (perspective, depth tested).
 bool QGL_ViewDiagnosticsOnFrameEnd( uint64_t frame );
 void QGL_ViewDiagnosticsDumpSummary();
+// The camera census segment of the last draw, for frame captures.
+void QGL_ViewDiagnosticsDescribeCamera( char *text, size_t size );
 
 // Performance counters for the session summary. Frame statistics cover
 // frames with world draws only, so menus and loading screens do not skew them.

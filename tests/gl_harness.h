@@ -45,6 +45,11 @@ struct GLApi
 	decltype(&::glLightfv) Lightfv;
 	decltype(&::glGetLightfv) GetLightfv;
 	decltype(&::glLoadMatrixf) LoadMatrixf;
+	decltype(&::glMultMatrixf) MultMatrixf;
+	decltype(&::glPushMatrix) PushMatrix;
+	decltype(&::glPopMatrix) PopMatrix;
+	decltype(&::glClipPlane) ClipPlane;
+	decltype(&::glLightf) Lightf;
 	decltype(&::glOrtho) Ortho;
 	decltype(&::glDepthMask) DepthMask;
 	decltype(&::glTexGeni) TexGeni;

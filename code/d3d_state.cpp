@@ -198,6 +198,40 @@ void D3DState_AssureBeginScene()
 	}
 }
 
+// yae_camera_split: the view reaches D3D as D3DTS_VIEW (see d3d_matrix.cpp).
+// D3D keeps lights and clip planes in world space while QindieGL keeps them in
+// eye space (GL semantics), so a new view re-sends them relative to it.
+static HRESULT D3DState_SetSplitView()
+{
+	const D3DXMATRIX &view = *static_cast<const D3DXMATRIX *>(D3DGlobal.viewMatrixStack->top());
+	auto &sent = D3DState.ViewTransformState;
+	if (sent.valid && !memcmp(&view, &sent.matrix, sizeof(view)))
+		return S_OK;
+
+	HRESULT hr = D3DGlobal.pDevice->SetTransform(D3DTS_VIEW, &view);
+	if (FAILED(hr))
+		return hr;
+	sent.matrix = view;
+	sent.valid = true;
+	sent.identity = D3DXMatrixIsIdentity(&view) != FALSE;
+	if (!sent.identity && !D3DXMatrixInverse(&sent.inverse, nullptr, &view)) {
+		PRINT_ONCE("WARNING: yae_camera_split: singular view matrix, lights and clip planes stay in eye space\n");
+		sent.identity = true;
+	}
+	static bool reported = false;
+	if (!sent.identity && !reported) {
+		reported = true;
+		logPrintfLevel(QGL_LOG_INFO, "CAMERA_SPLIT", "first camera sent as D3DTS_VIEW: pos=(%.1f,%.1f,%.1f) fwd=(%.3f,%.3f,%.3f)",
+			sent.inverse._41, sent.inverse._42, sent.inverse._43, -sent.inverse._31, -sent.inverse._32, -sent.inverse._33);
+	}
+	for (int i = 0; i < IMPL_MAX_LIGHTS; ++i)
+		D3DState.LightingState.lightModified[i] = TRUE;
+	for (int i = 0; i < IMPL_MAX_CLIP_PLANES; ++i)
+		D3DState.TransformState.clipPlaneModified[i] = TRUE;
+	D3DState.TransformState.clippingModified = TRUE;
+	return S_OK;
+}
+
 static void D3DState_SetTransform()
 {
 	HRESULT hr;
@@ -207,7 +241,18 @@ static void D3DState_SetTransform()
 	if (D3DState.modelViewMatrixModified) {
 		D3DState.modelViewMatrixModified = false;
 		static bool prev_dectection_enabled = false;
-		if (!matrix_detect_is_detection_enabled())
+		if (D3DGlobal.settings.game.yaeCameraSplit)
+		{
+			// WORLD * VIEW is the GL modelview; the inherited detection is not used.
+			hr = D3DGlobal.pDevice->SetTransform(D3DTS_WORLD, D3DGlobal.modelMatrixStack->top());
+			if (SUCCEEDED(hr))
+				hr = D3DState_SetSplitView();
+			if (FAILED(hr)) {
+				QGL_SET_ERROR(hr);
+				return;
+			}
+		}
+		else if (!matrix_detect_is_detection_enabled())
 		{
 			hr = D3DGlobal.pDevice->SetTransform( D3DTS_WORLD, D3DGlobal.modelviewMatrixStack->top() );
 			if (FAILED(hr)) {
@@ -283,7 +328,15 @@ static void D3DState_SetTransform()
 		for (int i = 0; i < IMPL_MAX_CLIP_PLANES; ++i) {
 			if (D3DState.TransformState.clipPlaneModified[i]) {
 				D3DState.TransformState.clipPlaneModified[i] = FALSE;
-				hr = D3DGlobal.pDevice->SetClipPlane( i, D3DState.TransformState.clipPlane[i] );
+				D3DXPLANE plane( D3DState.TransformState.clipPlane[i] );
+				if (D3DGlobal.settings.game.yaeCameraSplit && !D3DState.ViewTransformState.identity) {
+					// Eye space to world space: planes transform by the transposed view.
+					D3DXMATRIX viewTranspose;
+					D3DXMatrixTranspose( &viewTranspose, &D3DState.ViewTransformState.matrix );
+					const D3DXPLANE eyePlane( plane );
+					D3DXPlaneTransform( &plane, &eyePlane, &viewTranspose );
+				}
+				hr = D3DGlobal.pDevice->SetClipPlane( i, plane );
 				if (FAILED(hr)) {
 					QGL_SET_ERROR(hr);
 					return;
@@ -338,6 +391,42 @@ static void D3DState_SetLight()
 				if (exponent > 0.0f && d3dMiddle > 0.0f && d3dMiddle < 1.0f) {
 					dl.Theta = 0.0f;
 					dl.Falloff = exponent * logf(cosMiddle) / logf(d3dMiddle);
+				}
+			}
+		}
+		if (D3DGlobal.settings.game.yaeCameraSplit && !D3DState.ViewTransformState.identity) {
+			// GL light state is in eye space; D3D expects world space. A light given
+			// under the current camera uses the world coordinates recorded with it:
+			// the way back through the inverse view changes their last bits whenever
+			// the camera moves, and RTX Remix, which tells game lights apart by their
+			// exact position, then takes every lamp for a moving light.
+			const auto &lighting = D3DState.LightingState;
+			D3DCameraTrackInfo camera;
+			D3DMatrix_GetCameraTrackInfo( &camera );
+			const bool worldPosition = camera.generation && lighting.lightWorldPositionCamera[i] == camera.generation;
+			const bool worldDirection = camera.generation && lighting.lightWorldDirectionCamera[i] == camera.generation;
+			const D3DXMATRIX &eyeToWorld = D3DState.ViewTransformState.inverse;
+			D3DXVECTOR3 world;
+			if (dl.Type == D3DLIGHT_DIRECTIONAL && worldPosition) {
+				dl.Direction = lighting.lightWorldPosition[i];
+			} else if (dl.Type == D3DLIGHT_SPOT && worldDirection) {
+				dl.Direction = lighting.lightWorldDirection[i];
+			} else if (dl.Type != D3DLIGHT_POINT) {
+				D3DXVec3TransformNormal( &world, static_cast<const D3DXVECTOR3 *>(&dl.Direction), &eyeToWorld );
+				dl.Direction = world;
+			}
+			if (dl.Type != D3DLIGHT_DIRECTIONAL) {
+				if (worldPosition) {
+					dl.Position = lighting.lightWorldPosition[i];
+					static bool reported = false;
+					if (!reported) {
+						reported = true;
+						logPrintfLevel(QGL_LOG_INFO, "CAMERA_SPLIT", "first light sent at the world position it was given: bits %08lX %08lX %08lX",
+							UTIL_FloatToDword(dl.Position.x), UTIL_FloatToDword(dl.Position.y), UTIL_FloatToDword(dl.Position.z));
+					}
+				} else {
+					D3DXVec3TransformCoord( &world, static_cast<const D3DXVECTOR3 *>(&dl.Position), &eyeToWorld );
+					dl.Position = world;
 				}
 			}
 		}
@@ -853,6 +942,7 @@ void D3DState_SetDefaults()
 	D3DStateClientCopyMask = 0;
 	memset( &D3DStateCopy, 0, sizeof(D3DStateCopy) );
 	memset( &D3DState, 0, sizeof(D3DState) );
+	D3DMatrix_ResetCameraTracking();
 
 	D3DState.ColorBufferState.clearColor = D3DCOLOR_ARGB(0,0,0,0);
 	D3DState.DepthBufferState.clearDepth = 1.0f;
@@ -935,6 +1025,9 @@ void D3DState_SetDefaults()
 		D3DState.LightingState.lightSpotCutoff[i] = 180.0f;
 		D3DState.LightingState.lightSpotExponent[i] = 0.0f;
 		D3DState.LightingState.lightDirection[i] = D3DXVECTOR3(0.0f, 0.0f, -1.0f);
+		// The defaults are given in eye space.
+		D3DState.LightingState.lightWorldPositionCamera[i] = 0;
+		D3DState.LightingState.lightWorldDirectionCamera[i] = 0;
 		D3DState.LightingState.lightAttenuation[i].x = 1.0f;
 		D3DState.LightingState.lightAttenuation[i].y = 0.0f;
 		D3DState.LightingState.lightAttenuation[i].z = 0.0f;
