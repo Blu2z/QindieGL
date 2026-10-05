@@ -1,0 +1,17 @@
+QindieGL — the Project Empty fork for You Are Empty
+
+QindieGL, an OpenGL → Direct3D 9 wrapper, is by Crystice Softworks (2016;
+XaeroX, crystice), with later work by whisperglen; this fork adds the changes
+for You Are Empty (2026, the Project Empty contributors). It is under the GNU
+General Public License, version 3, as upstream (LICENSE).
+
+Included third-party code, as the upstream README lists it:
+  DXErr (part of Microsoft DXUT)          MIT
+  mINI                                    MIT
+  Microsoft Detours                       MIT
+  FNV hash                                CC0 1.0
+  Dear ImGui                              MIT
+
+You Are Empty, its content and the original DS2 Engine belong to their rights
+holders. None of it is part of this repository; the project is not affiliated
+with the rights holders.
